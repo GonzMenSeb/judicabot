@@ -9,6 +9,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.shared import Pt
 
 from tutela2 import formato_b
+from tutela2.festivos import siguiente_habil
 from tutela2.config import Config
 from tutela2.letras import MESES, _a_fecha, fecha_larga, numero_titulo
 from tutela2.models import DatosAuto, Metadatos
@@ -46,17 +47,11 @@ def corridas(par, texto: str, fuente: str, tam: float, *, negrita=None, cursiva=
             run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
 
-def _siguiente_habil(dia):
-    dia += timedelta(days=1)
-    while dia.weekday() >= 5:
-        dia += timedelta(days=1)
-    return dia
-
-
 def auto_por_defecto(md: Metadatos) -> DatosAuto:
     reparto = _a_fecha(md.fechas.reparto_2a)
     return DatosAuto(
-        fecha=_siguiente_habil(reparto).isoformat() if reparto else None,
+        fecha=siguiente_habil(reparto).isoformat() if reparto else None,
+        fecha_reparto=reparto.isoformat() if reparto else None,
         accionante=md.accionante,
         accionada=", ".join(md.accionadas) or None,
     )
@@ -73,8 +68,9 @@ def _juzgado(md: Metadatos) -> Juzgado | None:
     return juzgado_de_radicado(md.cui_1a or "")
 
 
-def cuando(md: Metadatos, fecha: str | None) -> str:
-    reparto = _a_fecha(md.fechas.reparto_2a)
+def cuando(md: Metadatos, fecha: str | None, fecha_reparto: str | None = None) -> str:
+    texto = fecha_reparto if _a_fecha(fecha_reparto) else md.fechas.reparto_2a
+    reparto = _a_fecha(texto)
     if reparto is None:
         return falta("fecha de reparto")
     hoy = _a_fecha(fecha)
@@ -82,7 +78,7 @@ def cuando(md: Metadatos, fecha: str | None) -> str:
         return "el día de ayer"
     if hoy is not None and hoy.year == reparto.year:
         return f"el día {reparto.day} de {MESES[reparto.month - 1]} del año en curso"
-    return f"el día {fecha_larga(md.fechas.reparto_2a)}"
+    return f"el día {fecha_larga(texto)}"
 
 
 def _par(doc, texto="", *, alin=WD_ALIGN_PARAGRAPH.LEFT, antes=0.0, pitch=PITCH, negrita=None,
@@ -125,7 +121,7 @@ def render_auto(md: Metadatos, datos: DatosAuto, cfg: Config, ruta: Path) -> Pat
     corridas(constancia, ":", FUENTE, TAM)
     _par(
         doc,
-        f"Las presentes diligencias fueron recibidas {cuando(md, datos.fecha)}, vía correo "
+        f"Las presentes diligencias fueron recibidas {cuando(md, datos.fecha, datos.fecha_reparto)}, vía correo "
         f"electrónico por reparto de la Oficina Judicial procedente del {origen}, con "
         "impugnación del fallo de tutela de primera instancia, a Despacho del señor Juez.",
         alin=J, antes=12, izq=SANGRIA_CONSTANCIA,

@@ -23,6 +23,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from tutela2 import acceso
 from tutela2 import config as cfgmod
 from tutela2.config import Config
+from tutela2.jev import clave_valida
 
 log = logging.getLogger("tutela2.server")
 
@@ -261,6 +262,7 @@ def modelo_actual() -> str:
 def estado_servidor() -> dict[str, Any]:
     return {
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "jev_key": bool(os.environ.get("JEV_API_KEY", "").strip()),
         "modelo": modelo_actual(),
         "modelos": list(cfgmod.MODELOS),
     }
@@ -283,6 +285,17 @@ def guardar_api_key(body: ApiKeyBody) -> dict[str, bool]:
         raise HTTPException(422, "La API key no puede estar vacía.")
     os.environ["ANTHROPIC_API_KEY"] = key
     return {"api_key": True}
+
+
+@app.post("/api/jev-key")
+def guardar_jev_key(body: ApiKeyBody) -> dict[str, bool]:
+    key = body.key.strip()
+    if not key:
+        raise HTTPException(422, "La clave de Jev no puede estar vacía.")
+    if not clave_valida(key):
+        raise HTTPException(422, "La clave de Jev solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.")
+    os.environ["JEV_API_KEY"] = key
+    return {"jev_key": True}
 
 
 @app.get("/api/casos")

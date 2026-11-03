@@ -48,7 +48,11 @@ class Doc(BaseModel):
     motivo_ruido: str = ""
     cuis: list[str] = []
     evidencia: str = ""
-    rol_origen: Literal["contenido", "usuario"] = "contenido"
+    rol_origen: Literal["contenido", "usuario", "jev"] = "contenido"
+    jev_rol: Optional[str] = None
+    jev_confianza: Optional[float] = None
+    jev_umbral: Optional[float] = None
+    jev_probabilidades: dict[str, float] = {}
 
     def texto(self) -> str:
         return "\n".join(p.texto for p in self.paginas)
@@ -107,6 +111,7 @@ class Ingesta(BaseModel):
     alertas_lectura: list[str] = []
     ignorados: list[str] = []
     metadatos: Metadatos = Metadatos()
+    llamadas_jev: list[dict] = []
 
     @property
     def completo(self) -> bool:
@@ -325,8 +330,18 @@ class _SinControl(BaseModel):
 
 class DatosAuto(_SinControl):
     fecha: Optional[str] = None
+    fecha_reparto: Optional[str] = None
     accionante: Optional[str] = None
     accionada: Optional[str] = None
+
+    @field_validator("fecha", "fecha_reparto", mode="before")
+    @classmethod
+    def _fecha_iso(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip() or None
+        if v is not None and (not isinstance(v, str) or not _iso_valida(v)):
+            raise ValueError(f"no es una fecha ISO válida: {v!r}")
+        return v
 
 
 CLAVES_NUMERAL = ("resultado", "sustitutiva", "prevenir", "desvincular", "compulsa", "notificar", "remitir")
@@ -442,3 +457,4 @@ class Estado(TypedDict, total=False):
     intentos: dict[str, int]
     bitacora: Annotated[list[dict[str, Any]], operator.add]
     salidas: dict[str, str]
+    jev_metadatos: Optional[dict[str, Any]]

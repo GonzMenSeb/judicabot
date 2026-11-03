@@ -17,6 +17,7 @@ from docx.text.paragraph import Paragraph
 
 from tutela2 import formulas, render
 from tutela2.config import Config, LLMConfig
+from tutela2.jev import ErrorJev, RespuestaJev, llamada_fallida, llamada_ia
 from tutela2.models import (
     AperturaLLM,
     BloqueLLM,
@@ -801,6 +802,49 @@ def test_declaracion_modelos_usados_desde_la_bitacora(tmp_path):
     plano = "\n".join(lineas(render.render_declaracion_ia(estado, cfg, tmp_path / "d.docx", hoy=HOY)))
     assert "Modelos usados | claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5" in plano
     assert "Modelo configurado" not in plano and "claude-fable-5-1" not in plano
+
+
+def _llamada_jev(nodo: str) -> dict:
+    return llamada_ia(nodo, "estado", {"p": {}}, RespuestaJev("jev-1.14.0", {}, 10, 1), "jev-latest")
+
+
+def _linea(plano: str, prefijo: str) -> str:
+    return next(linea for linea in plano.splitlines() if linea.startswith(prefijo))
+
+
+def test_declaracion_con_llamadas_de_jev_nombra_a_cada_proveedor_con_sus_modelos(tmp_path):
+    estado = construir_estado()
+    estado["bitacora"] = [_llamada("claude-sonnet-5-5", "claude-sonnet-5-5"), _llamada_jev("roles"), _llamada_jev("metadatos")]
+    plano = "\n".join(lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY)))
+    assert "Empresa proveedora | Anthropic PBC; TypeSafe AI" in plano
+    assert "Modelos usados | Anthropic PBC: claude-sonnet-5-5; TypeSafe AI: jev-latest, jev-1.14.0" in plano
+    uso = _linea(plano, "Uso |")
+    assert "TypeSafe AI" in uso and "rol de cada documento" in uso and "sentido de la decisión" in uso
+    assert "fragmentos" in uso and "Redacción de antecedentes" in uso
+
+
+def test_declaracion_con_jev_solo_menciona_lo_que_se_le_pidio(tmp_path):
+    estado = construir_estado()
+    estado["bitacora"] = [_llamada("claude-sonnet-5-5", "claude-sonnet-5-5"), _llamada_jev("roles")]
+    uso = _linea("\n".join(lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY))), "Uso |")
+    assert "rol de cada documento" in uso and "sentido de la decisión" not in uso
+    estado["bitacora"] = [_llamada("claude-sonnet-5-5", "claude-sonnet-5-5"), _llamada_jev("metadatos")]
+    uso = _linea("\n".join(lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d2.docx", hoy=HOY))), "Uso |")
+    assert "sentido de la decisión" in uso and "rol de cada documento" not in uso
+
+
+def test_declaracion_sin_llamadas_de_jev_no_menciona_a_typesafe(tmp_path):
+    plano = "\n".join(lineas(render.render_declaracion_ia(construir_estado(), Config(), tmp_path / "d.docx", hoy=HOY)))
+    assert "TypeSafe" not in plano and "Jev" not in plano
+    assert "Empresa proveedora | Anthropic PBC" in plano and "Modelos usados | claude-opus-5-5" in plano
+
+
+def test_declaracion_marca_la_llamada_fallida_de_jev(tmp_path):
+    estado = construir_estado()
+    estado["bitacora"].append(llamada_fallida("roles", "e", {"p": {}}, "jev-latest", ErrorJev("Jev respondió 500: boom", enviada=True)))
+    plano = "\n".join(lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY)))
+    assert "jev / jev-latest" in plano and "Jev respondió 500: boom" in plano
+    assert "Empresa proveedora | Anthropic PBC; TypeSafe AI" in plano
 
 
 def test_declaracion_modelos_usados_sin_llamadas_dice_ninguno(tmp_path):

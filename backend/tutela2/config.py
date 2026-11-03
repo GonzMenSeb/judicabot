@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
@@ -22,6 +22,16 @@ class LLMConfig(BaseModel):
     fallbacks_default: bool = True
     modelo_por_nodo: dict[str, str] = {}
     effort_por_nodo: dict[str, str] = {}
+
+
+class JevConfig(BaseModel):
+    modo: Literal["apagado", "sombra", "relleno"] = "apagado"
+    modelo: str = "jev-latest"
+    umbral_confianza: float = Field(0.9, ge=0, le=1)
+    timeout_s: float = Field(60.0, gt=0, allow_inf_nan=False)
+    max_chars_cabecera: int = 1500
+    max_chars_sentido: int = 2500
+    concurrencia: int = 6
 
 
 class Despacho(BaseModel):
@@ -55,6 +65,7 @@ class Config(BaseModel):
     plantilla_gen: Literal["A", "B"] = "B"
     despacho: Despacho = Despacho()
     llm: LLMConfig = LLMConfig()
+    jev: JevConfig = JevConfig()
     max_intentos: int = 3
     ocr: bool = True
     verificar_relatoria: bool = True

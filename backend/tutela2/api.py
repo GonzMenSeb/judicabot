@@ -60,6 +60,9 @@ def _doc_resumen(ing: Ingesta, d: Any) -> dict:
         "paginas_sin_texto": sum(1 for p in d.paginas if p.sin_texto),
         "ruido": d.ruido,
         "ajeno": d.doc_id in ing.docs_ajenos,
+        "jev_rol": d.jev_rol,
+        "jev_confianza": d.jev_confianza,
+        "jev_umbral": d.jev_umbral,
     }
 
 
@@ -80,6 +83,7 @@ def _resumen(valores: dict) -> dict:
     decisiones = valores.get("decisiones") or []
     return {
         "metadatos": valores.get("metadatos"),
+        "jev_metadatos": valores.get("jev_metadatos"),
         "apertura": valores.get("apertura"),
         "consideraciones": valores.get("consideraciones"),
         "citas": valores.get("citas") or [],

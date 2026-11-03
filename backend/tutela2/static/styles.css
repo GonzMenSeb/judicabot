@@ -18,6 +18,12 @@
   --info-fondo: #e3ebf3;
   --neutro: #4a5262;
   --neutro-fondo: #e8e6de;
+  --conf-1-texto: #1d6b45;
+  --conf-1-fondo: #e1f1e8;
+  --conf-2-texto: #14573a;
+  --conf-2-fondo: #bfe2cf;
+  --conf-3-texto: #0e3f2a;
+  --conf-3-fondo: #8fcfae;
   --foco: #2f6fb0;
   --radio: 8px;
   --sombra: 0 1px 2px rgb(20 25 40 / 6%);
@@ -48,6 +54,12 @@
     --info-fondo: #1d2c3f;
     --neutro: #b3bac7;
     --neutro-fondo: #272c36;
+    --conf-1-texto: #6fcf9b;
+    --conf-1-fondo: #173326;
+    --conf-2-texto: #8fe0b4;
+    --conf-2-fondo: #1f4d38;
+    --conf-3-texto: #c4f2da;
+    --conf-3-fondo: #2b6b4e;
     --foco: #8dbbe8;
     --sombra: none;
   }
@@ -254,6 +266,26 @@ fieldset:disabled { opacity: 0.6; }
 .chip-mal { color: var(--mal); background: var(--mal-fondo); }
 .chip-info { color: var(--info); background: var(--info-fondo); }
 .chip-neutro { color: var(--neutro); background: var(--neutro-fondo); }
+
+.conf {
+  display: inline-block;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.5;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.conf-0 { color: var(--neutro); background: var(--neutro-fondo); }
+.conf-1 { color: var(--conf-1-texto); background: var(--conf-1-fondo); }
+.conf-2 { color: var(--conf-2-texto); background: var(--conf-2-fondo); }
+.conf-3 { color: var(--conf-3-texto); background: var(--conf-3-fondo); }
+.jev-linea .chip { margin-left: 0.4rem; }
+.jev-discrepa { color: var(--alerta); }
+.clave-jev { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.9rem; }
+.clave-jev .campo { max-width: 28rem; }
+.clave-jev .acciones { align-items: center; margin-top: 0; }
 
 .errores {
   padding: 0.7rem 0.9rem;

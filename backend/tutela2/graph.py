@@ -14,6 +14,8 @@ from pydantic import BaseModel, ValidationError
 
 from tutela2 import citas, expediente, fallos, ingest, lint, prompts
 from tutela2.config import Config
+from tutela2.jev import JevClient, cliente_jev
+from tutela2.jev_metadatos import verificar_apertura
 from tutela2.llm import LLMClient, leer_secciones, seccion
 from tutela2.models import (
     AperturaLLM,
@@ -49,8 +51,9 @@ def estado_inicial(caso_dir: Path, cfg: Config, ing: Ingesta) -> Estado:
         "errores": [],
         "alertas": {},
         "intentos": {},
-        "bitacora": [],
+        "bitacora": list(ing.llamadas_jev),
         "salidas": {},
+        "jev_metadatos": None,
     }
 
 
@@ -237,7 +240,7 @@ def _verificar_metadatos(ap: AperturaLLM, ing: Ingesta) -> list[str]:
     return mensajes
 
 
-def nodo_validar_apertura(state: Estado, cfg: Config) -> dict:
+def nodo_validar_apertura(state: Estado, cfg: Config, jev: JevClient | None = None) -> dict:
     ap = AperturaLLM.model_validate(state["apertura"])
     ing = Ingesta.model_validate(state["ingesta"])
     mensajes = list(lint.anclas_literales(ap, ing))
@@ -257,6 +260,8 @@ def nodo_validar_apertura(state: Estado, cfg: Config) -> dict:
     for campo, texto in medidas.items():
         mensajes += lint.extension(texto, cfg.rango_palabras[campo], campo)
     mensajes += _verificar_metadatos(ap, ing)
+    alertas_jev, llamadas_jev, metadatos_jev = verificar_apertura(ing, ap, jev, cfg)
+    mensajes += alertas_jev
     mensajes += lint.duplicados(
         [p for texto in prosa.values() for p in texto.split("\n\n") if p.strip()], cfg.jaccard_duplicados
     )
@@ -269,7 +274,11 @@ def nodo_validar_apertura(state: Estado, cfg: Config) -> dict:
     parrafos_impugnacion = [p for p in ap.impugnacion.split("\n\n") if p.strip()]
     if len(parrafos_impugnacion) < len(ids):
         mensajes.append("ALERTA: La sección de impugnación tiene menos párrafos que reparos; puede faltar alguno.")
-    return _cierre_validacion(state, cfg, "apertura", mensajes)
+    return {
+        **_cierre_validacion(state, cfg, "apertura", mensajes),
+        "bitacora": llamadas_jev,
+        "jev_metadatos": metadatos_jev,
+    }
 
 
 def nodo_consideraciones(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
@@ -540,7 +549,9 @@ def nodo_ensamblar(state: Estado, cfg: Config) -> dict:
     return {"salidas": expediente.generar_final(Path(state["caso_dir"]), dict(state), cfg)}
 
 
-def construir(cfg: Config, llm: LLMClient, checkpointer: Any):
+def construir(cfg: Config, llm: LLMClient, checkpointer: Any, jev: JevClient | None = None):
+    verificador_jev = jev if jev is not None else cliente_jev(cfg)
+
     def tras_validar_apertura(state: Estado) -> Literal["apertura", "consideraciones"]:
         reintentar = state.get("errores") and state.get("intentos", {}).get("apertura", 0) < cfg.max_intentos
         return "apertura" if reintentar else "consideraciones"
@@ -563,7 +574,7 @@ def construir(cfg: Config, llm: LLMClient, checkpointer: Any):
 
     g = StateGraph(Estado)
     g.add_node("apertura", lambda s: nodo_apertura(s, cfg, llm))
-    g.add_node("validar_apertura", lambda s: nodo_validar_apertura(s, cfg))
+    g.add_node("validar_apertura", lambda s: nodo_validar_apertura(s, cfg, verificador_jev))
     g.add_node("consideraciones", lambda s: nodo_consideraciones(s, cfg, llm))
     g.add_node("verificar_consideraciones", lambda s: nodo_verificar_consideraciones(s, cfg))
     g.add_node("decision", nodo_decision)

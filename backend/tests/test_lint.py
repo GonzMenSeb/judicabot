@@ -159,10 +159,11 @@ def test_anclas_literales_parentesis_sin_cerrar_en_el_documento():
 def test_anclas_literales_umbral_de_cobertura(ing):
     casi = (
         "desde el mes de enero la entidad no le ha entregado el medicamento formulado por su médico tratante "
-        "pese a las múltiples solicitudes verbales x y"
+        "pese a las múltiples solicitudes verbales"
     )
-    cumple = lint.anclas_literales(_apertura([_ev("2a-001", casi)]), ing)
-    assert cumple == []
+    assert lint.anclas_literales(_apertura([_ev("2a-001", casi)]), ing) == []
+    con_relleno = casi + " x y"
+    assert len(lint.anclas_literales(_apertura([_ev("2a-001", con_relleno)]), ing)) == 1
     mitad = "desde el mes de enero la entidad no le ha entregado el medicamento " + " ".join(f"inventada{i}" for i in range(9))
     assert len(lint.anclas_literales(_apertura([_ev("2a-001", mitad)]), ing)) == 1
 
@@ -664,4 +665,201 @@ def test_coherencia_decision_conceder_amparo_sin_negador_bajo_negar_bloquea():
 def test_coherencia_decision_si_bien_no_es_condicional():
     conclusion = "Si bien hubo dudas, se confirmará la sentencia y se concederá el amparo."
     msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "NEGAR"))
+    assert any("AMPARAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize("verbo", ["verificó", "determinó", "estableció", "analizó", "supo", "examinó", "revisó", "constató", "precisó"])
+@pytest.mark.parametrize("resultado,sustitutiva", [("CONFIRMAR", "NEGAR"), ("CONFIRMAR", "IMPROCEDENTE")])
+def test_coherencia_decision_si_interrogativo_indirecto_no_excusa(verbo, resultado, sustitutiva):
+    conclusion = f"Se {verbo} si la EPS cumplió la orden, y por ello se concederá el amparo."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva))
+    assert any("AMPARAR" in m and m.startswith("BLOQUEA: ") for m in msgs)
+
+
+def test_coherencia_decision_si_condicional_tras_punto_no_bloquea():
+    conclusion = "Por ello se confirmará la decisión. Si el accionante acreditara un perjuicio irremediable, se revocaría el fallo."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR")) == []
+
+
+def test_coherencia_decision_pregunta_indirecta_tras_punto_sigue_bloqueando():
+    conclusion = "Se confirmará la decisión. Falta verificar si se revocará el fallo."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR"))
+    assert any(m.startswith(lint.BLOQUEA) for m in msgs)
+
+
+def test_coherencia_decision_si_bien_tras_punto_no_se_excusa():
+    conclusion = "Se confirmará la decisión. Si bien se revocará el fallo, nada cambia."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR"))
+    assert any(m.startswith(lint.BLOQUEA) for m in msgs)
+
+
+@pytest.mark.parametrize(
+    ("resultado", "sustitutiva", "conclusion"),
+    [
+        ("CONFIRMAR", None, "Se revocarán las decisiones y se confirmará el fallo."),
+        ("REVOCAR", "NEGAR", "Se revocará el fallo y se ampararán los derechos fundamentales."),
+        ("REVOCAR", "IMPROCEDENTE", "Se revocará el fallo y se tutelarán los derechos fundamentales."),
+        ("REVOCAR", "AMPARAR", "Se revocará el fallo y se negarán las pretensiones."),
+        ("REVOCAR", "NEGAR", "Se revocará el fallo y se concederán el amparo y la protección."),
+        ("REVOCAR", "AMPARAR", "Se revocará el fallo y se declararán improcedentes las pretensiones; se declararán improcedente la acción."),
+        ("CONFIRMAR", None, "Se confirmará el fallo y se revocarían las órdenes."),
+    ],
+)
+def test_coherencia_decision_formas_plurales_del_futuro_bloquean(resultado, sustitutiva, conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva))
+    assert any("La conclusión anuncia" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    ("resultado", "sustitutiva", "conclusion"),
+    [
+        ("CONFIRMAR", None, "Advierte la Sala que si la entidad no acredita el pago dentro del término, se revocará la orden, por lo que se confirmará el fallo."),
+        ("CONFIRMAR", None, "Se actuará de modo que si el actor incumple, se revocará la orden; se confirmará el fallo."),
+        ("CONFIRMAR", None, "Se confirmará el fallo, por lo que si el actor incumple, se revocará la orden."),
+        ("CONFIRMAR", None, "Así que si el actor incumple, se revocará la orden; se confirmará el fallo."),
+        ("CONFIRMAR", None, "La Corte ha dicho «si el juez constata el daño, revocará la decisión». Por ello, se confirmará el fallo."),
+        ("REVOCAR", "AMPARAR", "Se debe aclarar —si hay otro medio, se declarará improcedente la acción—; se revocará el fallo y se amparará el derecho."),
+        ("CONFIRMAR", None, "Se confirmará el fallo, pues de lo contrario se revocarían decisiones ejecutoriadas."),
+        ("CONFIRMAR", None, "Se confirmará el fallo; en caso contrario, se revocarían las órdenes."),
+        ("CONFIRMAR", None, "Se confirmará el fallo; de otro modo se revocarán decisiones firmes."),
+    ],
+)
+def test_coherencia_decision_condicional_y_alternativa_hipotetica_no_bloquean(resultado, sustitutiva, conclusion):
+    assert lint._contradicciones(conclusion, _decision(resultado, sustitutiva)) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se confirmará el fallo y se revocará la sentencia.",
+        "Advierte la Sala que se verificó si se revocará el fallo.",
+        "Se confirmará el fallo. Si bien se revocará la sentencia, nada cambia.",
+    ],
+)
+def test_coherencia_decision_contradiccion_genuina_sigue_bloqueando(conclusion):
+    assert lint._contradicciones(conclusion, _decision("CONFIRMAR", None))
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "No hay razón para mantener la decisión, de modo que procede revocar. Dicho de otro modo, la Sala confirmará el fallo impugnado.",
+        "La EPS debía autorizar el servicio; de lo contrario, vulneraba el derecho. Así, se confirmará el fallo y no procede revocarlo.",
+    ],
+)
+def test_coherencia_decision_hipotetico_no_cruza_oraciones_ni_reformulacion(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("CONFIRMAR" in m for m in msgs)
+
+
+def test_coherencia_decision_de_lo_contrario_en_la_misma_oracion_no_bloquea():
+    conclusion = "Se confirmará el fallo, pues de lo contrario se revocarían decisiones ejecutoriadas."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", None)) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se confirmará el fallo, salvo si la entidad no ha cumplido, caso en el cual se revocaría.",
+        "Se confirmará el fallo; únicamente si se hubiera acreditado el perjuicio se revocaría la decisión.",
+        "Se confirmará el fallo, salvo que la entidad incumpla, pues se revocaría.",
+        "Se confirmará el fallo, siempre y cuando se cumpla; a menos que no, se revocaría.",
+        "Se confirmará el fallo; en tal caso se revocaría solo si hubiera incumplimiento.",
+    ],
+)
+def test_coherencia_decision_conectores_condicionales_no_bloquean(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", None)) == []
+
+
+def test_coherencia_decision_salvo_en_otra_oracion_no_excusa():
+    conclusion = "Se confirmará el fallo, salvo el numeral 2. La Sala revocará la decisión."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", None))
+    assert any("REVOCAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará el fallo, se amparará el derecho de petición y se negarán las demás pretensiones.",
+        "Se revocará el fallo, se amparará el derecho de petición y se negará las demás pretensiones.",
+        "Se revocará el fallo y se amparará el derecho de petición; las demás pretensiones se negarán.",
+    ],
+)
+def test_coherencia_decision_negar_lo_demas_con_amparo_no_bloquea(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Por lo demás, la Sala revocará el fallo impugnado y negará el amparo solicitado.",
+        "Valoradas las demás pruebas, se revocará el fallo y se negará el amparo.",
+        "Analizados los demás argumentos, se revocará el fallo y se negarán las súplicas.",
+    ],
+)
+def test_coherencia_decision_demas_que_no_son_pretensiones_no_excusa_negar(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("NEGAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Desestimados los demás reparos, la Sala revocará el fallo y negará el amparo.",
+        "Al no prosperar los demás reparos, se revocará el fallo y se negará el amparo.",
+        "Revisadas las demás pretensiones, la Sala revocará el fallo y negará el amparo solicitado.",
+        "Examinados los demás derechos invocados, se revocará el fallo y se negará el amparo.",
+    ],
+)
+def test_coherencia_decision_demas_en_clausula_introductoria_sin_concesion_bloquea(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("NEGAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará el fallo, se amparará el derecho de petición y se negará en lo demás.",
+        "Se revocará el fallo, se amparará el derecho a la salud y se negará el amparo en lo demás.",
+        "Se revocará el fallo, se amparará el derecho a la salud; en lo demás, se negará el amparo.",
+        "Se revocará el fallo, se amparará el derecho de petición y se negará lo demás pedido.",
+        "Se revocará el fallo, se amparará el derecho y se negará el amparo respecto de las demás pretensiones.",
+        "Se revocará el fallo, se amparará el derecho y se negarán las demás súplicas.",
+        "Se revocará el fallo, se amparará el derecho y se negarán las pretensiones restantes.",
+    ],
+)
+def test_coherencia_decision_negacion_parcial_con_concesion_no_bloquea(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "La Sala revocará el fallo, no amparará el derecho invocado y negará las demás pretensiones.",
+        "Se revocará el fallo; no se tutelarán los derechos y se negará lo demás.",
+        "Se revocará el fallo. Tampoco se amparará el derecho, y se negará el amparo en lo demás.",
+        "La Sala revocará el fallo y negará el amparo del derecho a la salud y las demás pretensiones, pues no se ampararía un derecho sin prueba.",
+        "Desestimados los demás reparos, la Sala revocará el fallo y negará el amparo. Se ampararía el derecho solo si se hubiera probado el perjuicio.",
+    ],
+)
+def test_coherencia_decision_concesion_negada_o_hipotetica_no_excusa_la_negacion(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("NEGAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará la sentencia y se amparará el derecho de petición, si bien no en los términos pedidos, y se negarán las demás pretensiones.",
+        "Se revocará la sentencia y se amparará el derecho de petición, pues la entidad no indicó si resolvió la solicitud, y se negarán las demás pretensiones.",
+        "Se revocará el fallo, se amparará el derecho a la salud, se ordenará a la EPS valorar si requiere la cirugía y se negarán las demás pretensiones.",
+    ],
+)
+def test_coherencia_decision_si_no_condicional_tras_la_concesion_no_la_descarta(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+def test_coherencia_decision_negar_lo_demas_sigue_bloqueando_si_se_decidio_improcedente():
+    conclusion = "Se revocará el fallo, se amparará el derecho y se negarán las demás pretensiones."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "IMPROCEDENTE"))
     assert any("AMPARAR" in m for m in msgs)

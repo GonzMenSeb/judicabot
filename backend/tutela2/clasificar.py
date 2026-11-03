@@ -39,6 +39,8 @@ ENCABEZADO = 1500
 MAX_PAGINAS_AUTO = 4
 MIN_CHARS_FALLO = 10000
 CABECERA_DOCX = 4000
+EVIDENCIA_SIN_TEXTO = "Sin texto legible."
+EVIDENCIA_SIN_ROL = "Sin rasgos de ningún rol."
 
 
 @dataclass
@@ -275,7 +277,7 @@ def _por_nombre(nombre: str) -> tuple[Rol, str] | None:
 def clasificar(doc: Doc) -> tuple[Rol, str]:
     v = _vista(doc)
     if not v.original.strip():
-        return _por_nombre(doc.nombre) or ("otro", "Sin texto legible.")
+        return _por_nombre(doc.nombre) or ("otro", EVIDENCIA_SIN_TEXTO)
     if (r := _acta(v)) is not None:
         return r
     if v.buscar(r"indice\s+del\s+expediente|indice\s+electronico", 700):
@@ -321,7 +323,7 @@ def clasificar(doc: Doc) -> tuple[Rol, str]:
         return "contestacion", v.cita(m)
     if (m := v.buscar(r"\bmemorial\b", ENCABEZADO)) is not None:
         return "memorial", v.cita(m)
-    return "otro", "Sin rasgos de ningún rol."
+    return "otro", EVIDENCIA_SIN_ROL
 
 
 def texto_cabecera(d: Doc) -> str:

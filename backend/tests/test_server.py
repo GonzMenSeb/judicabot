@@ -64,7 +64,7 @@ def api(monkeypatch) -> types.SimpleNamespace:
     return types.SimpleNamespace(modulo=fake, llamadas=llamadas, soltar=soltar)
 
 
-_VARIABLES_ENTORNO = ("TUTELA2_MODELO", "ANTHROPIC_API_KEY")
+_VARIABLES_ENTORNO = ("TUTELA2_MODELO", "ANTHROPIC_API_KEY", "JEV_API_KEY")
 
 
 @pytest.fixture(autouse=True)
@@ -545,3 +545,84 @@ def test_config_no_hornea_el_modelo_del_entorno(cliente, caso, tmp_path, monkeyp
     assert guardado["llm"]["modelo"] == "claude-sonnet-5-5"
     assert cfgmod.cargar(tmp_path / "casos" / caso).llm.modelo == "claude-opus-5-5"
     assert cfgmod.cargar(tmp_path / "casos" / caso, entorno=False).llm.modelo == "claude-sonnet-5-5"
+
+
+def test_jev_key_se_guarda_solo_en_el_entorno(cliente, tmp_path, monkeypatch):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    assert cliente.get("/api/estado-servidor").json()["jev_key"] is False
+    r = cliente.post("/api/jev-key", json={"key": "  k-jev-prueba-123  "})
+    assert r.status_code == 200 and r.json() == {"jev_key": True}
+    assert "k-jev-prueba" not in r.text
+    assert os.environ["JEV_API_KEY"] == "k-jev-prueba-123"
+    estado = cliente.get("/api/estado-servidor")
+    assert estado.json()["jev_key"] is True and "k-jev-prueba" not in estado.text
+    _subir(cliente, "x", {"a.pdf": b"1"})
+    assert not any(b"k-jev-prueba" in p.read_bytes() for p in tmp_path.rglob("*") if p.is_file())
+    monkeypatch.delenv("JEV_API_KEY")
+
+
+def test_jev_key_vacia_se_rechaza(cliente, monkeypatch):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    assert cliente.post("/api/jev-key", json={"key": "   "}).status_code == 422
+    assert "JEV_API_KEY" not in os.environ
+
+
+@pytest.mark.parametrize("clave", ["clave\u2013con-raya", "con espacio", "SECRETO\nx", "clave\u200bx", "ñandú"])
+def test_jev_key_con_caracteres_no_validos_se_rechaza_sin_repetirla(cliente, monkeypatch, clave):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    r = cliente.post("/api/jev-key", json={"key": clave})
+    assert r.status_code == 422 and "JEV_API_KEY" not in os.environ
+    assert "SECRETO" not in r.text and "raya" not in r.text and "ñandú" not in r.text
+
+
+def test_estado_servidor_informa_si_hay_clave_de_jev(cliente, monkeypatch):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    assert cliente.get("/api/estado-servidor").json()["jev_key"] is False
+    monkeypatch.setenv("JEV_API_KEY", "x")
+    assert cliente.get("/api/estado-servidor").json()["jev_key"] is True
+    monkeypatch.setenv("JEV_API_KEY", "   ")
+    assert cliente.get("/api/estado-servidor").json()["jev_key"] is False
+
+
+def test_config_de_un_caso_acepta_y_devuelve_los_ajustes_de_jev(cliente, caso):
+    cfg = cliente.get(f"/api/casos/{caso}/config").json()
+    assert cfg["jev"]["modo"] == "apagado" and cfg["jev"]["umbral_confianza"] == 0.9
+    cfg["jev"].update(modo="sombra", umbral_confianza=0.95, timeout_s=30.0, max_chars_cabecera=1200, max_chars_sentido=2000, concurrencia=3)
+    r = cliente.put(f"/api/casos/{caso}/config", json=cfg)
+    assert r.status_code == 200 and r.json()["jev"]["modo"] == "sombra"
+    devuelto = cliente.get(f"/api/casos/{caso}/config").json()["jev"]
+    assert devuelto == {**cfg["jev"], "modo": "sombra"}
+    assert devuelto["umbral_confianza"] == 0.95 and devuelto["concurrencia"] == 3
+
+
+def test_config_con_modo_de_jev_invalido_no_se_guarda(cliente, caso):
+    cfg = cliente.get(f"/api/casos/{caso}/config").json()
+    cfg["jev"]["modo"] = "total"
+    r = cliente.put(f"/api/casos/{caso}/config", json=cfg)
+    assert r.status_code == 422
+    assert r.json()["detail"]["errores"][0] == {"campo": "jev.modo", "mensaje": "no es una de las opciones permitidas."}
+    assert cliente.get(f"/api/casos/{caso}/config").json()["jev"]["modo"] == "apagado"
+
+
+@pytest.mark.parametrize(
+    "umbral, mensaje",
+    [(90, "como máximo 1"), (-0.1, "al menos 0")],
+)
+def test_config_con_umbral_de_jev_fuera_de_0_a_1_no_se_guarda(cliente, caso, umbral, mensaje):
+    cfg = cliente.get(f"/api/casos/{caso}/config").json()
+    cfg["jev"]["umbral_confianza"] = umbral
+    r = cliente.put(f"/api/casos/{caso}/config", json=cfg)
+    assert r.status_code == 422
+    [error] = r.json()["detail"]["errores"]
+    assert error["campo"] == "jev.umbral_confianza" and mensaje in error["mensaje"]
+    assert cliente.get(f"/api/casos/{caso}/config").json()["jev"]["umbral_confianza"] == 0.9
+
+
+@pytest.mark.parametrize("timeout", [0, -1])
+def test_config_con_tiempo_maximo_de_jev_no_positivo_no_se_guarda(cliente, caso, timeout):
+    cfg = cliente.get(f"/api/casos/{caso}/config").json()
+    cfg["jev"]["timeout_s"] = timeout
+    r = cliente.put(f"/api/casos/{caso}/config", json=cfg)
+    assert r.status_code == 422
+    [error] = r.json()["detail"]["errores"]
+    assert error["campo"] == "jev.timeout_s" and "mayor que 0" in error["mensaje"]

@@ -832,8 +832,16 @@ def render_informe(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
     return d.guardar(ruta)
 
 
-def _modelos_usados(c: Any, cfg: Config) -> list[str]:
-    usados = list(dict.fromkeys(m for b in c.bitacora for m in (b.modelo_pedido, b.modelo_efectivo) if m))
+def _modelos_usados(c: Any, cfg: Config, proveedor: str | None = None) -> list[str]:
+    usados = list(
+        dict.fromkeys(
+            m
+            for b in c.bitacora
+            if proveedor in (None, b.proveedor)
+            for m in (b.modelo_pedido, b.modelo_efectivo)
+            if m
+        )
+    )
     return usados or ["ninguno"]
 
 
@@ -896,7 +904,30 @@ def _version() -> str:
         return "desconocida"
 
 
-PROVEEDORES = {"anthropic": "Anthropic PBC"}
+PROVEEDORES = {"anthropic": "Anthropic PBC", "jev": "TypeSafe AI"}
+USO_IA = (
+    "Redacción de antecedentes, síntesis de la sentencia impugnada y de la impugnación, "
+    "marco doctrinal de las consideraciones y desarrollo del caso concreto"
+)
+
+
+def _proveedores_usados(c: Any, cfg: Config) -> list[str]:
+    return list(dict.fromkeys(b.proveedor for b in c.bitacora)) or [cfg.llm.proveedor]
+
+
+def _uso_ia(c: Any) -> str:
+    nodos = {b.nodo for b in c.bitacora if b.proveedor == "jev"}
+    fines = []
+    if "roles" in nodos:
+        fines.append("como segunda opinión sobre el rol de cada documento del expediente")
+    if "metadatos" in nodos:
+        fines.append("para verificar el sentido de la decisión de primera instancia y el rol del impugnante")
+    if not fines:
+        return USO_IA
+    return (
+        f"{USO_IA}. Además se consultó a {PROVEEDORES['jev']} (Jev), un modelo de decisión que no genera texto, "
+        f"{' y '.join(fines)}; para ello se le enviaron fragmentos acotados de los documentos del expediente"
+    )
 
 
 def _anexo_prompts(d: "_Docx", c: Any, cfg: Config) -> None:
@@ -910,6 +941,13 @@ def _anexo_prompts(d: "_Docx", c: Any, cfg: Config) -> None:
     vistos: set[str] = set()
     for b in c.bitacora:
         d.parrafo(f"{b.nodo} (intento {b.intento}), prompt {b.prompt_id}", alinear="i", negrita=True, mantener=True, antes=8)
+        if b.proveedor == "jev":
+            d.parrafo(
+                "Modelo de decisión que no genera texto: las preguntas cerradas enviadas constan por su huella sha256 en la bitácora.",
+                alinear="i",
+                tam=9,
+            )
+            continue
         if b.prompt_id in vistos:
             d.parrafo("Instrucciones del sistema: las mismas ya transcritas para este prompt.", alinear="i", tam=9)
         else:
@@ -985,13 +1023,19 @@ def render_declaracion_ia(estado: dict, cfg: Config | dict, ruta: Path, hoy: dat
     )
 
     d.titulo("HERRAMIENTA, PROVEEDOR Y MODELO")
+    proveedores = _proveedores_usados(c, cfg)
+    nombres = [PROVEEDORES.get(p, p) for p in proveedores]
+    modelos = (
+        ", ".join(_modelos_usados(c, cfg))
+        if len(proveedores) == 1
+        else "; ".join(f"{n}: {', '.join(_modelos_usados(c, cfg, p))}" for p, n in zip(proveedores, nombres))
+    )
     d.tabla(
         [
             ["Herramienta", f"tutela2, versión {_version()}"],
-            ["Uso", "Redacción de antecedentes, síntesis de la sentencia impugnada y de la impugnación, "
-                    "marco doctrinal de las consideraciones y desarrollo del caso concreto"],
-            ["Empresa proveedora", PROVEEDORES.get(cfg.llm.proveedor, cfg.llm.proveedor)],
-            ["Modelos usados", ", ".join(_modelos_usados(c, cfg))],
+            ["Uso", _uso_ia(c)],
+            ["Empresa proveedora", "; ".join(nombres)],
+            ["Modelos usados", modelos],
         ],
         [4.5, 11.6],
         etiquetas=True,
@@ -1003,7 +1047,7 @@ def render_declaracion_ia(estado: dict, cfg: Config | dict, ruta: Path, hoy: dat
             [
                 [
                     f"{b.nodo} (intento {b.intento})",
-                    f"{b.proveedor} / {b.modelo_efectivo or b.modelo_pedido}",
+                    f"{b.proveedor} / {b.modelo_efectivo or b.modelo_pedido}" + (f"\nFalló: {b.error}" if b.error else ""),
                     b.fecha,
                     b.prompt_id,
                     b.sha256_instrucciones,

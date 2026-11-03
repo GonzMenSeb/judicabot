@@ -24,6 +24,8 @@ from .clasificar import (
 )
 from .clasificar import plano as _plano
 from .config import Config
+from .jev import JevClient, cliente_jev
+from .jev_roles import aplicar, segunda_opinion
 from .letras import letras_a_numero
 from .models import Doc, Fechas, Ingesta, Metadatos, Pagina, Rol
 from .radicado import Juzgado, juzgado_de_radicado, nombre_juzgado
@@ -646,7 +648,10 @@ def _juzgado_a_quo(docs: list[Doc], cui_1a: str | None, alertas: list[str]) -> d
 
 
 def _derivar(
-    docs: list[Doc], ignorados: list[str], alertas_lectura: list[str]
+    docs: list[Doc],
+    ignorados: list[str],
+    alertas_lectura: list[str],
+    llamadas_jev: list[dict] | None = None,
 ) -> Ingesta:
     derivadas: list[str] = []
     for carpeta in ignorados:
@@ -748,19 +753,35 @@ def _derivar(
         alertas_lectura=alertas_lectura,
         ignorados=ignorados,
         metadatos=metadatos,
+        llamadas_jev=list(llamadas_jev or []),
     )
 
 
 def reaplicar(ing: Ingesta, roles: dict[str, Rol]) -> Ingesta:
     docs = [d.model_copy(deep=True) for d in ing.documentos]
     for d in docs:
-        if d.doc_id in roles and (roles[d.doc_id] != d.rol or d.doc_id in ing.docs_ajenos):
+        if d.doc_id in roles and (
+            roles[d.doc_id] != d.rol or d.doc_id in ing.docs_ajenos or d.rol_origen == "jev"
+        ):
             d.rol, d.rol_origen = roles[d.doc_id], "usuario"
             d.evidencia = "Rol fijado por el usuario."
-    return _derivar(docs, list(ing.ignorados), list(ing.alertas_lectura))
+    return _derivar(docs, list(ing.ignorados), list(ing.alertas_lectura), ing.llamadas_jev)
 
 
-def ingerir(caso_dir: Path, cfg: Config) -> Ingesta:
+def _segunda_opinion_jev(
+    docs: list[Doc], cfg: Config, jev: JevClient | None
+) -> tuple[list[str], list[dict]]:
+    if cfg.jev.modo == "apagado":
+        return [], []
+    cliente = jev if jev is not None else cliente_jev(cfg)
+    if cliente is None:
+        return [], []
+    llamadas: list[dict] = []
+    opiniones, alertas = segunda_opinion(docs, cliente, cfg, llamadas=llamadas)
+    return alertas + aplicar(docs, opiniones, cfg), llamadas
+
+
+def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingesta:
     base = Path(caso_dir) / "insumos"
     if not base.is_dir():
         return Ingesta(
@@ -820,8 +841,16 @@ def ingerir(caso_dir: Path, cfg: Config) -> Ingesta:
 
     for d in docs:
         d.rol, d.evidencia = clasificar(d)
-    resolver_caso(docs, _prefijo_caso(docs))
-    return _derivar(docs, ignorados, alertas_lectura)
+    prefijo = _prefijo_caso(docs)
+    resolver_caso(docs, prefijo)
+    alertas_jev, llamadas_jev = _segunda_opinion_jev(docs, cfg, jev)
+    alertas_lectura += alertas_jev
+    if cfg.jev.modo == "relleno":
+        resolver_caso(docs, prefijo)
+        for d in docs:
+            if d.rol_origen == "jev" and d.rol != d.jev_rol:
+                d.rol_origen = "contenido"
+    return _derivar(docs, ignorados, alertas_lectura, llamadas_jev)
 
 
 def texto_para_llm(

@@ -7,6 +7,8 @@ import re
 import time
 import unicodedata
 import urllib.request
+from collections import Counter
+from difflib import SequenceMatcher
 from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
@@ -459,16 +461,261 @@ def motivo_parentesis(cita: str, texto: str) -> str | None:
     return f"El paréntesis «{g}» no aparece en ese punto de la fuente."
 
 
-def cobertura(cita: str, texto: str, n: int = 6) -> float | None:
-    literal, plano, _, _ = _analizar_cita(_limpiar_cita(cita))
-    if not literal:
+POLARIDAD = frozenset(
+    "no nunca jamas tampoco ni sin solo solamente unicamente salvo excepto siempre nada nadie "
+    "todo toda todos todas ningun ninguna ninguno ningunos ningunas".split()
+)
+TOPE_AGREGADOS = 0.79
+MARGEN_VENTANA = 3
+HOLGURA_DIAGONAL = 150
+ANCHO_BIN = 16
+MAX_POS_ANCLA = 400
+MAX_VENTANAS = 8
+
+
+class _Linea:
+    def __init__(self, tokens: list[str]) -> None:
+        self.tokens = tokens
+        self.posiciones: dict[str, list[int]] = {}
+        for k, t in enumerate(tokens):
+            self.posiciones.setdefault(t, []).append(k)
+
+
+@lru_cache(maxsize=16)
+def _linea_fuente(texto: str, incisos: bool, limpia: bool) -> _Linea:
+    base = _limpiar_marcas(texto) if limpia else texto
+    return _Linea(normalizar_texto(base, incisos).split())
+
+
+def _a_una_edicion(a: str, b: str) -> bool:
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) <= 1
+    corto, largo = sorted((a, b), key=len)
+    return any(largo[:k] + largo[k + 1 :] == corto for k in range(len(largo)))
+
+
+PREFIJOS_NEGACION = ("i", "in", "il", "im", "ir", "des", "no")
+MAX_HUECO_POLARIDAD = 10
+MAX_HUECO_CON_DIGITOS = 6
+ENCABEZADO = frozenset("pagina exp expediente folio sentencia decreto ley".split())
+CONECTORES_NUMERO = frozenset("de del y e".split())
+
+
+def _tiene_digito(t: str) -> bool:
+    return any(c.isdigit() for c in t)
+
+
+def _abreviaturas(tokens: list[str]) -> set[int]:
+    n = len(tokens)
+    res: set[int] = set()
+    for k, t in enumerate(tokens):
+        if t != "no":
+            continue
+        j = k + 1
+        if j < n and len(tokens[j]) == 1 and tokens[j].isalpha() and j + 1 < n and _tiene_digito(tokens[j + 1]):
+            j += 1
+        if j < n and _tiene_digito(tokens[j]):
+            despues = tokens[j + 1] if j + 1 < n else None
+            if despues is None or despues in CONECTORES_NUMERO or _tiene_digito(despues):
+                res.add(k)
+    return res
+
+
+def _polares(tokens: list[str]) -> list[str]:
+    abrev = _abreviaturas(tokens)
+    return [t for k, t in enumerate(tokens) if t in POLARIDAD and k not in abrev]
+
+
+def _difieren_en_prefijo_negativo(a: str, b: str) -> bool:
+    corto, largo = sorted((a, b), key=len)
+    return any(largo == p + corto for p in PREFIJOS_NEGACION)
+
+
+def _casi_igual(t: str, s: str) -> bool:
+    if t == s:
+        return True
+    if _difieren_en_prefijo_negativo(t, s):
+        return False
+    if (t.isdigit() and s in (t + "o", t + "a")) or (s.isdigit() and t in (s + "o", s + "a")):
+        return True
+    if len(t) < 4 or len(s) < 4 or t in POLARIDAD or s in POLARIDAD:
+        return False
+    return _a_una_edicion(t, s)
+
+
+def _sin_explicar(cita: list[str], fuente: list[str]) -> list[str]:
+    if "".join(cita) == "".join(fuente):
+        return []
+    return [t for t in cita if not any(_casi_igual(t, s) for s in fuente)]
+
+
+def _ventanas(seg: list[str], linea: _Linea) -> list[tuple[int, int]]:
+    diagonales: list[int] = []
+    votos: Counter[int] = Counter()
+    peso: Counter[int] = Counter()
+    for i, t in enumerate(seg):
+        pos = linea.posiciones.get(t, ())
+        if len(pos) > MAX_POS_ANCLA:
+            continue
+        for p in pos:
+            diagonales.append(p - i)
+            votos[(p - i) // ANCHO_BIN] += 1
+            peso[(p - i) // ANCHO_BIN] += 1 / len(pos)
+    ventanas: list[tuple[int, int]] = []
+    elegidos: list[int] = []
+    for b in sorted(votos, key=lambda b: (-peso[b], b)):
+        if votos[b] < 2 or len(ventanas) == MAX_VENTANAS:
+            break
+        if any(abs(b - e) <= 1 for e in elegidos):
+            continue
+        elegidos.append(b)
+        centro = b * ANCHO_BIN + ANCHO_BIN // 2
+        cerca = [d for d in diagonales if abs(d - centro) <= HOLGURA_DIAGONAL]
+        lo = max(0, min(cerca) - MARGEN_VENTANA)
+        hi = min(len(linea.tokens), max(cerca) + len(seg) + MARGEN_VENTANA)
+        ventanas.append((lo, hi))
+    return ventanas
+
+
+def _hueco_omitido(ops: list, k: int, fuente: list[str]) -> bool:
+    j1, j2 = ops[k][3:]
+    if j2 - j1 <= 2:
+        return True
+    hueco = fuente[j1:j2]
+    cabecera = any(t in ENCABEZADO for t in hueco)
+    if any(_tiene_digito(t) for t in hueco):
+        if cabecera or j2 - j1 > MAX_HUECO_CON_DIGITOS or not _polares(hueco):
+            return False
+    elif j2 - j1 > MAX_HUECO_CON_DIGITOS and (cabecera or not _polares(hueco)):
+        return False
+    return j2 - j1 <= MAX_HUECO_POLARIDAD and ops[k - 1][0] == "equal" and ops[k + 1][0] == "equal"
+
+
+def _corridas_segmento(seg: list[str], fuente: list[str]) -> tuple[list[list[str]], list[str]]:
+    corridas: list[list[str]] = []
+    omitidas: list[str] = []
+    ops = SequenceMatcher(None, seg, fuente, autojunk=False).get_opcodes()
+    abrev_seg = _abreviaturas(seg)
+    abrev_fuente = _abreviaturas(fuente)
+    iguales = [k for k, op in enumerate(ops) if op[0] == "equal"]
+    interior = range(iguales[0] + 1, iguales[-1]) if iguales else ()
+    for k, (tag, i1, i2, j1, j2) in enumerate(ops):
+        propia = [seg[i] for i in range(i1, i2) if i not in abrev_seg]
+        if tag == "delete":
+            if propia:
+                corridas.append(propia)
+        elif tag == "replace":
+            extra = _sin_explicar(propia, fuente[j1:j2])
+            if extra:
+                corridas.append(extra)
+        if tag in ("insert", "replace") and k in interior and _hueco_omitido(ops, k, fuente):
+            propios = set(seg[i1:i2])
+            omitidas += [
+                fuente[j] for j in range(j1, j2) if fuente[j] in POLARIDAD and j not in abrev_fuente and fuente[j] not in propios
+            ]
+    return corridas, omitidas
+
+
+Agregados = tuple[list[list[str]], list[str]]
+
+
+def _clave_agregados(res: Agregados) -> tuple[int, int]:
+    corridas, omitidas = res
+    return (
+        sum(map(len, corridas)) + len(omitidas),
+        sum(t in POLARIDAD for c in corridas for t in c) + len(omitidas),
+    )
+
+
+def _agregados_en_linea(cita: list[str], cortes: list[int], linea: _Linea) -> Agregados:
+    corridas: list[list[str]] = []
+    omitidas: list[str] = []
+    ini = 0
+    for fin in [*sorted(cortes), len(cita)]:
+        seg, ini = cita[ini:fin], max(ini, fin)
+        if len(seg) < 2:
+            continue
+        mejor: Agregados | None = None
+        for lo, hi in _ventanas(seg, linea):
+            opcion = _corridas_segmento(seg, linea.tokens[lo:hi])
+            if mejor is None or _clave_agregados(opcion) < _clave_agregados(mejor):
+                mejor = opcion
+            if not any(mejor):
+                break
+        if mejor:
+            corridas += mejor[0]
+            omitidas += mejor[1]
+    return corridas, omitidas
+
+
+def _corridas_agregadas(
+    literal: list[str], plano: list[str], grupos: list[tuple[int, int, str]], cortes: list[int], texto: str
+) -> Agregados:
+    cortes_plano = [c - sum(j - i for i, j, _ in grupos if j <= c) for c in cortes]
+    intentos = (
+        (literal, cortes, False, True),
+        (literal, cortes, False, False),
+        (plano, cortes_plano, True, True),
+        (plano, cortes_plano, True, False),
+    )
+    mejor: tuple[tuple[int, int], Agregados] | None = None
+    for tokens, cs, incisos, limpia in intentos:
+        res = _agregados_en_linea(tokens, cs, _linea_fuente(texto, incisos, limpia))
+        if not any(res):
+            return [], []
+        clave = _clave_agregados(res)
+        if mejor is None or clave < mejor[0]:
+            mejor = (clave, res)
+    return mejor[1]
+
+
+def _tiene_polaridad(res: Agregados) -> bool:
+    corridas, omitidas = res
+    return bool(omitidas) or any(t in POLARIDAD for c in corridas for t in c)
+
+
+def motivo_agregados(cita: str, texto: str) -> str | None:
+    literal, plano, grupos, cortes = _analizar_cita(_limpiar_cita(cita))
+    if not literal or _grupo_fallido(cita, texto) is not None:
         return None
-    if _grupo_fallido(cita, texto) is not None:
-        return 0.0
+    corridas, omitidas = _corridas_agregadas(literal, plano, grupos, cortes, texto)
+    motivos = []
+    if corridas:
+        palabras = ", ".join(f"«{' '.join(c)}»" for c in corridas)
+        motivos.append(f"La cita agrega {palabras}, que no está en la fuente.")
+    if omitidas:
+        palabras = ", ".join(f"«{t}»" for t in dict.fromkeys(omitidas))
+        motivos.append(f"La cita omite {palabras}, que sí está en la fuente.")
+    return " ".join(motivos) or None
+
+
+def _puntaje_ngramas(literal: list[str], plano: list[str], texto: str, n: int) -> float:
     puntajes = [_cobertura_modo(literal, texto, n, False)]
     if plano:
         puntajes.append(_cobertura_modo(plano, texto, n, True))
     return max(puntajes)
+
+
+def puntaje_ngramas(cita: str, texto: str, n: int = 6) -> float:
+    literal, plano, _, _ = _analizar_cita(_limpiar_cita(cita))
+    return _puntaje_ngramas(literal, plano, texto, n) if literal else 0.0
+
+
+def cobertura(cita: str, texto: str, n: int = 6) -> float | None:
+    literal, plano, grupos, cortes = _analizar_cita(_limpiar_cita(cita))
+    if not literal:
+        return None
+    if _grupo_fallido(cita, texto) is not None:
+        return 0.0
+    puntaje = _puntaje_ngramas(literal, plano, texto, n)
+    if puntaje == 0.0:
+        return puntaje
+    res = _corridas_agregadas(literal, plano, grupos, cortes, texto)
+    if _tiene_polaridad(res):
+        return 0.0
+    return min(puntaje, TOPE_AGREGADOS) if res[0] else puntaje
 
 
 def _pagina_corresponde(texto_norm: str, tipo: str, numero: int, anio: int) -> bool:
@@ -584,13 +831,20 @@ def _verificar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina) 
                 f"Solo el {cob:.0%} del texto citado aparece literalmente en la sentencia {cv.sentencia_norm}; "
                 f"se exige al menos el {cfg.cobertura_ok:.0%}. Compárelo con la relatoría."
             )
+            agregados = motivo_agregados(c.texto_citado, texto)
+            if agregados:
+                cv.motivos.append(agregados)
         cv.motivos.extend(f"La nota «{n}» no aparece en la fuente; verifíquela." for n in notas)
     else:
         cv.motivos.append(
             f"Solo el {cob:.0%} del texto citado aparece literalmente en la sentencia {cv.sentencia_norm}; "
             "el pasaje no se localizó."
         )
-        detalle = motivo_parentesis(c.texto_citado, texto) if cob == 0.0 else None
+        detalle = None
+        if cob == 0.0:
+            detalle = motivo_parentesis(c.texto_citado, texto)
+            if detalle is None and puntaje_ngramas(c.texto_citado, texto, cfg.ngram) >= cfg.cobertura_alerta:
+                detalle = motivo_agregados(c.texto_citado, texto)
         if detalle:
             cv.motivos.append(detalle)
     return cv

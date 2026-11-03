@@ -10,6 +10,8 @@ from tutela2 import radicado, render, salidas
 from tutela2.config import Config
 from tutela2.documentos import auto as doc_auto
 from tutela2.documentos import correos, formato, oficio
+from tutela2.festivos import siguiente_habil
+from tutela2.letras import _a_fecha
 from tutela2.models import DatosAuto, Decision, Ingesta, Metadatos
 
 _CORREO = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
@@ -27,7 +29,12 @@ def auto_efectivo(caso_dir: Path, md: Metadatos, guardado: DatosAuto | None = No
         if not ruta.exists():
             return base
         guardado = DatosAuto.model_validate_json(ruta.read_text(encoding="utf-8"))
-    return base.model_copy(update={k: v for k, v in guardado.model_dump().items() if v is not None})
+    efectivo = base.model_copy(update={k: v for k, v in guardado.model_dump().items() if v is not None})
+    if guardado.fecha is None and guardado.fecha_reparto:
+        reparto = _a_fecha(guardado.fecha_reparto)
+        if reparto:
+            efectivo.fecha = siguiente_habil(reparto).isoformat()
+    return efectivo
 
 
 def _corto(md: Metadatos) -> str:

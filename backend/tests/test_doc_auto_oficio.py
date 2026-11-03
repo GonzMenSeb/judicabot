@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from docx import Document
+from pydantic import ValidationError
 
 from tutela2.config import Config
 from tutela2.documentos.auto import auto_por_defecto, cuando, render_auto
@@ -47,7 +48,7 @@ def oficio(tmp_path):
 
 def test_auto_por_defecto():
     d = auto_por_defecto(md())
-    assert d == DatosAuto(fecha="2026-09-29", accionante="Ana Prueba Pérez", accionada="Banco Ejemplo, Entidad Dos")
+    assert d == DatosAuto(fecha="2026-09-29", fecha_reparto="2026-09-28", accionante="Ana Prueba Pérez", accionada="Banco Ejemplo, Entidad Dos")
     assert auto_por_defecto(md(fechas=Fechas())).fecha is None
 
 
@@ -166,3 +167,30 @@ def test_oficio_fecha_faltante_resaltada(tmp_path):
     doc = Document(str(render_oficio(md(), None, CFG, tmp_path / "o.docx")))
     assert any(r.text == "⟦FALTA: fecha⟧" and r.font.highlight_color is not None
                for p in doc.paragraphs for r in p.runs)
+
+
+def test_auto_por_defecto_salta_festivo():
+    assert auto_por_defecto(md(fechas=Fechas(reparto_2a="2026-10-09"))).fecha == "2026-10-13"
+
+
+def test_fecha_reparto_de_datos_cuando_falta_el_acta(tmp_path):
+    m = md(fechas=Fechas())
+    assert cuando(m, "2026-10-14") == "⟦FALTA: fecha de reparto⟧"
+    assert cuando(m, "2026-10-14", "2026-10-13") == "el día de ayer"
+    datos = DatosAuto(fecha="2026-10-14", fecha_reparto="2026-10-09", accionante="A", accionada="B")
+    t = textos(Document(str(render_auto(m, datos, CFG, tmp_path / "a.docx"))))
+    assert not any("FALTA: fecha de reparto" in x for x in t)
+    assert any("recibidas el día 9 de octubre del año en curso" in x for x in t)
+
+
+def test_fecha_reparto_invalida_no_pisa_el_acta():
+    m = md(fechas=Fechas(reparto_2a="2026-10-09"))
+    assert cuando(m, "2026-10-14", "no es fecha") == cuando(m, "2026-10-14")
+    assert "FALTA" not in cuando(m, "2026-10-14", "no es fecha")
+
+
+def test_datos_auto_valida_fechas():
+    assert DatosAuto(fecha="", fecha_reparto=" ").fecha_reparto is None
+    for campo in ("fecha", "fecha_reparto"):
+        with pytest.raises(ValidationError):
+            DatosAuto(**{campo: "9/10/2026"})

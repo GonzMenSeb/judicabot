@@ -482,6 +482,18 @@ git commit -m "feat: clave de Jev en memoria, ajustes en la UI y documentación"
 
 ---
 
+## Enmienda (2026-11-03): puntuaciones de confianza visibles en la UI
+
+Objetivo del usuario: en todos los pasos donde interviene una suposición de Jev, la UI muestra su puntuación de confianza. Esta enmienda prevalece sobre lo que contradiga a las Tareas 4 a 6.
+
+- **Roles (Tarea 4).** `aplicar` guarda la opinión de Jev en cada `Doc` aunque no cambie el rol, y también en modo `sombra`: `Doc.jev_rol: Optional[str] = None`, `Doc.jev_confianza: Optional[float] = None`, `Doc.jev_probabilidades: dict[str, float] = {}`. Los tres quedan en `None`/vacío si Jev no opinó (apagado, sin texto, error o etiqueta fuera del catálogo).
+- **Metadatos (Tarea 5).** `verificar_apertura` devuelve además un diccionario serializable `jev_metadatos` con la forma `{"modelo": str, "preguntas": {"sentido_fallo": {"choice": str, "confidence": float}, "sentido_clausula": {...}, "rol_impugnante": {...}}, "coincide": {"sentido": bool | None, "rol_impugnante": bool | None}}`; `None` significa que no se pudo comparar (confianza por debajo del umbral, o sin valor del LLM). Se guarda en el estado del grafo bajo la clave `jev_metadatos` (añadir `jev_metadatos: Optional[dict[str, Any]]` a `Estado` en `models.py` y a `estado_inicial` como `None`). Firma nueva: `verificar_apertura(...) -> tuple[list[str], list[dict], dict | None]`.
+- **API (Tarea 6).** `_doc_resumen` (`api.py`) añade `jev_rol`, `jev_confianza`; `_resumen` añade `jev_metadatos`.
+- **UI (Tarea 6).** (a) En la tabla de documentos, cada fila con `jev_rol` muestra una insignia "Jev: {rol} · {confianza en %}"; si `jev_rol` difiere del rol vigente se resalta como discrepancia, y si `rol_origen == "jev"` la fila dice "Sugerido por Jev · {%}". (b) En Revisión, una tarjeta "Verificación de Jev" con las tres respuestas, su porcentaje de confianza y una insignia "coincide" / "discrepa" / "sin comparar". (c) El porcentaje se pinta con tres tonos según el umbral configurado (`jev.umbral_confianza`) y uno neutro por debajo de él. (d) Sin datos de Jev no aparece nada: ni insignia ni tarjeta.
+- **Pruebas añadidas.** Tarea 4: `test_opinion_de_jev_queda_en_el_documento_aunque_el_rol_no_cambie`; Tarea 5: `test_jev_metadatos_incluye_confianzas_y_coincidencias`; Tarea 6: `test_resumen_expone_jev_rol_y_confianza`, `test_resumen_expone_jev_metadatos` y una verificación en navegador con un caso sintético y `FakeJev`.
+
+- **Ajuste posterior (2026-11-03).** (a) `HttpJev` reintenta **una sola vez** ante cualquier error de Jev (estado HTTP de error, conexión, tiempo agotado o respuesta mal formada); no reintenta los errores locales (clave con caracteres no válidos, tiempo máximo no válido) porque no llegan a salir. Esto sustituye a la política de la Tarea 1 (reintentar solo 429/529, tres veces). (b) La evidencia de un rol asignado por Jev ya no repite la confianza (`EVIDENCIA_JEV`), porque la UI la muestra una sola vez.
+
 ## Autorrevisión
 
 - **Cobertura:** roles (Tareas 2 y 4), metadatos (Tarea 5), medición y decisión sobre `relleno` (Tarea 3), apagado por defecto y clave en memoria (Tareas 1 y 6), bitácora para el art. 10 (Tareas 1, 4 y 5). Los cuatro descartes están en "Fuera de alcance, con razón".

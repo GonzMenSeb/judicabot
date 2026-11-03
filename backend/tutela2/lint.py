@@ -351,22 +351,62 @@ _NO_PRECEDE = r"(?<![a-zñáéíóú0-9])"
 _NEGADOR_PREVIO = re.compile(
     r"\b(?:no|tampoco|ni|nunca|jam[aá]s|en\s+modo\s+alguno)(?:\s+(?:se|le|les|lo|la))*\s*$"
 )
-_CONDICIONAL_PREVIO = re.compile(r"\b(?:solo\s+|sólo\s+)?si\b(?!\s+bien)[^.;]{0,80}$")
+_CONDICIONAL_PREVIO = re.compile(
+    r"(?:^|[,;:(«\"“—–-]\s*|[.!?]\s+|\b(?:y|e|o|pero|pues|porque|que|aun|aún|incluso|máxime|como"
+    r"|es\s+decir)\s+)(?:solo\s+|sólo\s+)?si\b(?!\s+bien)[^.;]{0,80}$"
+)
+
+
+_CONDICIONAL_EXCEPTO = re.compile(
+    r"\b(?:salvo(?:\s+que|\s+si)?|excepto(?:\s+que|\s+si)?|siempre\s+y\s+cuando|a\s+menos\s+que|con\s+tal\s+de\s+que"
+    r"|(?:[uú]nicamente|solamente|s[oó]lo|solo)\s+(?:si|cuando|en\s+caso)"
+    r"|caso\s+en\s+el\s+cual|en\s+cuyo\s+caso|en\s+tal\s+caso|en\s+ese\s+caso)\b[^.;!?]{0,80}$"
+)
+_HIPOTETICO_PREVIO = re.compile(
+    r"(?<!dicho )(?<!expresado )(?<!decirlo )"
+    r"\b(?:de\s+lo\s+contrario|en\s+caso\s+contrario|de\s+otro\s+modo|so\s+pena)\b[^.!?;]{0,60}$"
+)
+_SI_POSTERIOR = re.compile(
+    r"[^.;!?]{0,60}?\b(?:(?:solo|s[oó]lo|[uú]nicamente|solamente)\s+si|siempre\s+(?:que|y\s+cuando)"
+    r"|a\s+condici[oó]n\s+de\s+que|en\s+caso\s+de\s+que)\b"
+)
+_MARCA_PARCIAL = re.compile(r"\b(?:dem[aá]s|restantes)\b")
+_CONCESION_FUTURA = re.compile(
+    r"\b(?:ampar|tutel)(?:ar[aá]n?|ar[ií]an?)\b|\bconceder[aá]n?\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo)\b"
+)
+
+
+def _negacion_parcial(texto: str, m: re.Match[str]) -> bool:
+    if not any(
+        not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end())
+        for g in _CONCESION_FUTURA.finditer(texto)
+    ):
+        return False
+    ini = max(texto.rfind(c, 0, m.start()) for c in ".;!?") + 1
+    fins = [k for k in (texto.find(c, m.end()) for c in ".;!?") if k != -1]
+    fin = min(fins) if fins else len(texto)
+    return bool(_MARCA_PARCIAL.search(texto[max(ini, m.start() - 80) : min(fin, m.end() + 80)]))
 
 
 def _excusada(texto: str, inicio: int) -> bool:
+    previo = texto[:inicio]
     return bool(
-        _NEGADOR_PREVIO.search(texto[:inicio][-40:]) or _CONDICIONAL_PREVIO.search(texto[:inicio][-90:])
+        _NEGADOR_PREVIO.search(previo[-40:])
+        or _HIPOTETICO_PREVIO.search(previo)
+        or _CONDICIONAL_PREVIO.search(previo)
+        or _CONDICIONAL_EXCEPTO.search(previo)
     )
-_CARENCIA = r"declar(?:ará|aría)\s+la\s+carencia[^.;]{0,60}?"
+
+
+_CARENCIA = r"declarar(?:á|án|ía|ían)\s+la\s+carencia[^.;]{0,60}?"
 _FUTURO_RESULTADO = {
-    "CONFIRMAR": r"confirm(?:ará|aría)\b",
-    "REVOCAR": r"revoc(?:ará|aría)\b",
+    "CONFIRMAR": r"confirmar(?:á|án|ía|ían)\b",
+    "REVOCAR": r"revocar(?:á|án|ía|ían)\b",
 }
 _FUTURO_SUSTITUTIVA = {
-    "AMPARAR": r"(?:(?:ampar|tutel)(?:ará|aría)\b|concederá\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo))",
-    "NEGAR": r"(?:neg|deneg)(?:ará|aría)\b",
-    "IMPROCEDENTE": r"declar(?:ará|aría)\s+(?:la\s+)?(?:acci[oó]n\s+(?:de\s+tutela\s+)?)?improcedente",
+    "AMPARAR": r"(?:(?:ampar|tutel)ar(?:á|án|ía|ían)\b|conceder(?:á|án)\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo))",
+    "NEGAR": r"(?:neg|deneg)ar(?:á|án|ía|ían)\b",
+    "IMPROCEDENTE": r"declarar(?:á|án|ía|ían)\s+(?:la\s+)?(?:acci[oó]n\s+(?:de\s+tutela\s+)?)?improcedente",
     "CARENCIA_HECHO_SUPERADO": _CARENCIA + r"hecho\s+superado",
     "CARENCIA_DANO_CONSUMADO": _CARENCIA + r"da[ñn]o\s+consumado",
     "CARENCIA_SOBREVINIENTE": _CARENCIA + r"sobrevinient",
@@ -385,7 +425,8 @@ def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
             continue
         for otro, patron in patrones.items():
             if otro != decidido and any(
-                not _excusada(texto, m.start()) for m in re.finditer(_NO_PRECEDE + patron, texto)
+                not _excusada(texto, m.start()) and not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m))
+                for m in re.finditer(_NO_PRECEDE + patron, texto)
             ):
                 msgs.append(
                     f"{BLOQUEA}La conclusión anuncia {otro} como {nombre}, pero el juez decidió {decidido}; "

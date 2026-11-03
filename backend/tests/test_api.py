@@ -5,9 +5,11 @@ import json
 import pytest
 from test_graph import AUTO, DECISION, FALLO_DOCX, Verificador, ingesta_sintetica
 
-from tutela2 import api, fallos, ingest, llm
+from tutela2 import api, fallos, graph, ingest, llm
 from tutela2 import citas as citas_real
-from tutela2.config import Config, LLMConfig
+from tutela2 import config as cfgmod
+from tutela2.config import Config, JevConfig, LLMConfig
+from tutela2.jev import FakeJev
 from tutela2.llm import ErrorLLM
 from tutela2.models import Ingesta
 
@@ -36,7 +38,11 @@ def test_flujo_nuevo_revisar_iniciar_decidir(caso):
     resumen = r["resumen"]
     doc = next(d for d in resumen["documentos"] if d["doc_id"] == "1a-003")
     assert doc["rol"] == "contestacion" and doc["rol_origen"] == "contenido"
-    assert set(doc) == {"doc_id", "ruta", "nombre", "rol", "rol_origen", "evidencia", "paginas", "paginas_sin_texto", "ruido", "ajeno"}
+    assert set(doc) == {
+        "doc_id", "ruta", "nombre", "rol", "rol_origen", "evidencia", "paginas", "paginas_sin_texto", "ruido", "ajeno",
+        "jev_rol", "jev_confianza", "jev_umbral",
+    }
+    assert doc["jev_rol"] is None and doc["jev_confianza"] is None and doc["jev_umbral"] is None
     assert resumen["auto"]["accionante"] == "Marta Ejemplo" and resumen["auto"]["fecha"] == "2026-10-06"
     assert "esperados_faltantes" in resumen and "alertas" in resumen and resumen["metadatos"]["accionante"] == "Marta Ejemplo"
 
@@ -212,3 +218,89 @@ def test_fallos_consecutivos_no_depende_del_reloj(tmp_path):
     fallos.registrar(tmp_path, {"nodo": "apertura", "fecha": fecha, "exitos": 0})
     fallos.registrar(tmp_path, {"nodo": "apertura", "fecha": fecha, "exitos": 1})
     assert len(api._fallos_consecutivos("apertura", bitacora, tmp_path)) == 1
+
+
+def test_fecha_reparto_se_persiste_y_propone_fecha_habil(caso):
+    api.nuevo(caso)
+    r = api.revisar(caso, {}, {"fecha_reparto": "2026-10-09"})
+    assert r["ok"], r["error"]
+    assert r["resumen"]["auto"]["fecha_reparto"] == "2026-10-09"
+    assert r["resumen"]["auto"]["fecha"] == "2026-10-13"
+    assert json.loads((caso / "auto.json").read_text(encoding="utf-8"))["fecha_reparto"] == "2026-10-09"
+    r = api.revisar(caso, {}, {"fecha": "2026-10-14"})
+    assert r["resumen"]["auto"]["fecha"] == "2026-10-14" and r["resumen"]["auto"]["fecha_reparto"] == "2026-10-09"
+
+
+def _ingesta_con_opinion_de_jev() -> Ingesta:
+    ing = ingesta_sintetica()
+    ing.documentos[2].jev_rol, ing.documentos[2].jev_confianza, ing.documentos[2].jev_umbral = "escrito_tutela", 0.93, 0.9
+    ing.documentos[3].rol_origen = "jev"
+    ing.documentos[3].jev_rol, ing.documentos[3].jev_confianza, ing.documentos[3].jev_umbral = ing.documentos[3].rol, 0.97, 0.85
+    return ing
+
+
+def test_resumen_expone_jev_rol_y_confianza(caso, monkeypatch):
+    monkeypatch.setattr(ingest, "ingerir", lambda d, c: _ingesta_con_opinion_de_jev(), raising=False)
+    r = api.nuevo(caso)
+    docs = {d["doc_id"]: d for d in r["resumen"]["documentos"]}
+    assert (docs["1a-003"]["jev_rol"], docs["1a-003"]["jev_confianza"]) == ("escrito_tutela", 0.93)
+    assert (docs["1a-004"]["jev_rol"], docs["1a-004"]["jev_confianza"], docs["1a-004"]["rol_origen"]) == ("fallo_a_quo", 0.97, "jev")
+    assert (docs["1a-003"]["jev_umbral"], docs["1a-004"]["jev_umbral"]) == (0.9, 0.85)
+    assert all(
+        docs[i]["jev_rol"] is None and docs[i]["jev_confianza"] is None and docs[i]["jev_umbral"] is None
+        for i in ("1a-001", "1a-002", "1a-005")
+    )
+
+    r = api.revisar(caso, {"1a-003": "anexo"}, None)
+    doc = next(d for d in r["resumen"]["documentos"] if d["doc_id"] == "1a-003")
+    assert (doc["rol"], doc["rol_origen"]) == ("anexo", "usuario")
+    assert (doc["jev_rol"], doc["jev_confianza"], doc["jev_umbral"]) == ("escrito_tutela", 0.93, 0.9)
+    assert api.estado(caso)["resumen"]["documentos"][2]["jev_rol"] == "escrito_tutela"
+
+
+def _jev_que_responde(sentido: str, rol: str, confianza: float = 0.97) -> FakeJev:
+    def responder(estado, preguntas):
+        return {
+            id_: {"type": "choice", "choice": rol if id_ == "rol_impugnante" else sentido, "confidence": confianza, "probabilities": {}}
+            for id_ in preguntas
+        }
+
+    return FakeJev(responder)
+
+
+def test_resumen_expone_jev_metadatos(caso, monkeypatch):
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="fake"), verificar_relatoria=False, jev=JevConfig(modo="sombra")))
+    jev = _jev_que_responde("niega", "accionante")
+    monkeypatch.setattr(graph, "cliente_jev", lambda cfg: jev)
+    api.nuevo(caso)
+    r = api.iniciar(caso)
+    assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
+    assert jev.llamadas
+    md = r["resumen"]["jev_metadatos"]
+    assert set(md) == {"modelo", "umbral", "preguntas", "coincide"} and md["modelo"] == "jev-fake" and md["umbral"] == 0.9
+    assert md["preguntas"]["rol_impugnante"] == {"choice": "accionante", "confidence": 0.97}
+    assert md["preguntas"]["sentido_fallo"] == {"choice": "niega", "confidence": 0.97}
+    assert set(md["coincide"]) == {"sentido", "rol_impugnante"}
+    assert api.estado(caso)["resumen"]["jev_metadatos"] == md
+    assert any(b.get("proveedor") == "jev" for b in r["resumen"]["bitacora"])
+
+
+@pytest.mark.parametrize("clave", ["SECRETO-JEV\nx", "SECRETO-JEV\u2013x"])
+def test_clave_de_jev_no_valida_no_detiene_la_redaccion_ni_se_filtra(caso, monkeypatch, clave):
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="fake"), verificar_relatoria=False, jev=JevConfig(modo="sombra")))
+    monkeypatch.setenv("JEV_API_KEY", clave)
+    r = api.nuevo(caso)
+    assert r["ok"], r["error"]
+    r = api.iniciar(caso)
+    assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
+    assert any("Jev" in a for a in r["resumen"]["alertas"]["apertura"])
+    assert r["resumen"]["jev_metadatos"] is None
+    assert "SECRETO" not in json.dumps(r, default=str)
+    assert not any(b"SECRETO-JEV" in p.read_bytes() for p in caso.rglob("*") if p.is_file())
+
+
+def test_resumen_sin_jev_no_trae_metadatos_de_jev(caso):
+    api.nuevo(caso)
+    r = api.iniciar(caso)
+    assert r["ok"], r["error"]
+    assert r["resumen"]["jev_metadatos"] is None

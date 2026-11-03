@@ -57,6 +57,13 @@ const ETIQUETAS = {
   'llm.fallbacks_default': ['Usar fallbacks del servidor', ''],
   'llm.modelo_por_nodo': ['Modelo por nodo (JSON)', 'Vacío: todos los nodos usan el modelo elegido arriba a la derecha. Ejemplo: {"apertura": "claude-haiku-5-5"}'],
   'llm.effort_por_nodo': ['Esfuerzo por nodo (JSON)', 'Ejemplo: {"caso_concreto": "max"}'],
+  jev: ['Jev (segunda opinión)', ''],
+  'jev.modo': ['Modo', 'Apagado: no sale ninguna petición. Sombra: Jev opina y solo deja alertas. Relleno: además asigna el rol a los documentos que el código no pudo clasificar. En sombra y en relleno se envían fragmentos del expediente a un tercero.'],
+  'jev.umbral_confianza': ['Umbral de confianza', 'Entre 0 y 1 (0,9, no 90). Solo se actúa con opiniones de Jev iguales o superiores a este valor; también define los colores de los porcentajes. Lo ya calculado conserva el umbral con el que se calculó.'],
+  'jev.timeout_s': ['Tiempo máximo por petición (s)', 'Mayor que 0. Es la espera máxima de la respuesta de Jev. Si la petición falla por cualquier motivo (error de Jev, de conexión o tiempo agotado) se reintenta una sola vez, así que la espera total puede llegar al doble.'],
+  'jev.max_chars_cabecera': ['Caracteres de cabecera por documento', 'Fragmento inicial del documento que se envía a Jev para opinar sobre su rol y sobre el impugnante.'],
+  'jev.max_chars_sentido': ['Caracteres finales del fallo de 1.ª instancia', 'Cola del fallo que se envía a Jev para verificar el sentido de la decisión.'],
+  'jev.concurrencia': ['Peticiones simultáneas', ''],
   max_intentos: ['Intentos máximos por nodo', ''],
   ocr: ['Aplicar OCR a páginas sin texto', ''],
   verificar_relatoria: ['Verificar citas contra la relatoría', ''],
@@ -77,6 +84,7 @@ const OPCIONES = {
   plantilla_gen: [['A', 'Generación A'], ['B', 'Generación B']],
   'llm.proveedor': [['anthropic', 'Anthropic'], ['fake', 'Simulado (fake)']],
   'llm.effort': ['low', 'medium', 'high', 'xhigh', 'max'],
+  'jev.modo': [['apagado', 'Apagado'], ['sombra', 'Sombra (solo alertas)'], ['relleno', 'Relleno (asigna roles sin rasgos)']],
 };
 const NOMBRES_MODELO = {
   'claude-sonnet-5-5': 'Sonnet 5.5',
@@ -125,6 +133,15 @@ const ROLES = [
 ];
 const ETIQUETA_ROL = Object.fromEntries(ROLES);
 
+const ETIQUETA_SENTIDO = { ampara: 'Ampara', niega: 'Niega', improcedente: 'Improcedente', carencia_actual_de_objeto: 'Carencia actual de objeto', otro: 'Otro' };
+const ETIQUETA_IMPUGNANTE = { accionante: 'Accionante', accionada: 'Accionada', vinculada: 'Vinculada', otro: 'Otro' };
+const PREGUNTAS_JEV = [
+  ['sentido_fallo', 'Sentido del fallo, según su parte resolutiva', 'sentido', ETIQUETA_SENTIDO],
+  ['sentido_clausula', 'Sentido, según la cláusula decision_a_quo', 'sentido', ETIQUETA_SENTIDO],
+  ['rol_impugnante', 'Calidad de quien impugna', 'rol_impugnante', ETIQUETA_IMPUGNANTE],
+];
+const NODOS_JEV = { roles: 'roles de los documentos', metadatos: 'verificación de metadatos' };
+
 const NUMERALES_FIJOS = {
   resultado: 'Resultado',
   sustitutiva: 'Decisión sustitutiva',
@@ -156,7 +173,7 @@ const GRUPOS_SALIDA = [
   ['trabajo', 'Documentos de trabajo'],
 ];
 
-const S = { caso: null, vista: 'casos', estado: null, job: null, timer: null, token: 0, paneles: new Set(), apiKey: false };
+const S = { caso: null, vista: 'casos', estado: null, job: null, timer: null, token: 0, paneles: new Set(), apiKey: false, jevKey: false };
 
 function h(tag, attrs, ...hijos) {
   const el = document.createElement(tag);
@@ -551,6 +568,64 @@ function campo(id, etiqueta, control, ayuda, clase = '') {
     id ? h('label', { for: id }, etiqueta) : h('span', { class: 'etiqueta' }, etiqueta), control, ayuda ? parrafo(ayuda, 'ayuda') : null);
 }
 
+/* ---------- Jev ---------- */
+
+function tonoConfianza(c, umbral) {
+  if (typeof c !== 'number' || typeof umbral !== 'number' || c < umbral) return 'conf-0';
+  const tercio = (1 - umbral) / 3;
+  if (c >= umbral + 2 * tercio) return 'conf-3';
+  return c >= umbral + tercio ? 'conf-2' : 'conf-1';
+}
+
+function pctJev(c, umbral) {
+  const detalle = typeof c === 'number'
+    ? `Confianza de Jev: ${c.toFixed(3)}.${typeof umbral === 'number' ? ` Umbral aplicado: ${umbral}.` : ''}`
+    : null;
+  return h('span', { class: `conf ${tonoConfianza(c, umbral)}`, title: detalle }, porcentaje(c));
+}
+
+function leyendaConfianza(umbral) {
+  const base = 'Los porcentajes son la confianza de Jev.';
+  if (typeof umbral !== 'number') return parrafo(base, 'ayuda');
+  return parrafo(`${base} Desde el umbral aplicado (${Number((umbral * 100).toFixed(1))} %) se pintan en tres tonos de verde, más intensos cuanto mayor es la confianza; por debajo van en gris y Jev no actúa.`, 'ayuda');
+}
+
+function insigniaJev(rol, confianza, umbral, discrepa) {
+  return h('div', { class: `ayuda jev-linea${discrepa ? ' jev-discrepa' : ''}` },
+    `Jev: ${ETIQUETA_ROL[rol] || rol} · `, pctJev(confianza, umbral),
+    discrepa ? h('span', { class: 'chip chip-alerta', title: 'Jev propone un rol distinto del vigente.' }, 'Discrepa') : null);
+}
+
+function comparacionJev(coincide) {
+  if (coincide === true) return chip('ok', 'coincide');
+  if (coincide === false) return chip('alerta', 'discrepa');
+  return h('span', { class: 'chip chip-neutro', title: 'No se pudo comparar: la confianza de Jev quedó por debajo del umbral o falta el valor del modelo.' }, 'sin comparar');
+}
+
+function tarjetaJev(jm) {
+  if (!esObjeto(jm)) return null;
+  const umbral = jm.umbral;
+  const preguntas = esObjeto(jm.preguntas) ? jm.preguntas : {};
+  const coincide = esObjeto(jm.coincide) ? jm.coincide : {};
+  const filas = PREGUNTAS_JEV.filter(([id]) => esObjeto(preguntas[id])).map(([id, texto, clave, etiquetas]) => {
+    const { choice, confidence } = preguntas[id];
+    return h('tr', null,
+      h('td', null, texto),
+      h('td', null, h('strong', null, Object.hasOwn(etiquetas, choice) ? etiquetas[choice] : String(choice))),
+      h('td', { class: 'num' }, pctJev(confidence, umbral)),
+      h('td', null, comparacionJev(coincide[clave])));
+  });
+  if (!filas.length) return null;
+  return h('div', { class: 'pila-chica' },
+    parrafo('Jev contesta preguntas cerradas sobre las mismas fuentes y se compara su respuesta con lo que escribió el modelo en la apertura. Solo genera alertas: no cambia el fallo.', 'ayuda'),
+    leyendaConfianza(umbral),
+    h('div', { class: 'tabla-scroll' }, h('table', { class: 'tabla' },
+      h('caption', { class: 'solo-lectores' }, 'Respuestas de Jev sobre los metadatos de la apertura'),
+      h('thead', null, h('tr', null, ['Pregunta', 'Respuesta de Jev', 'Confianza', 'Comparación'].map((t, i) => h('th', { scope: 'col', class: i === 2 ? 'num' : '' }, t)))),
+      h('tbody', null, filas))),
+    jm.modelo ? parrafo(`Modelo de Jev: ${jm.modelo}`, 'ayuda') : null);
+}
+
 /* ---------- Documentos ---------- */
 
 const cuentaPaginas = (v) => (Array.isArray(v) ? v.length : Number(v) || 0);
@@ -590,7 +665,13 @@ function tablaDocumentos(documentos, cambios, alCambiar, editable) {
     const ciegas = cuentaPaginas(d.paginas_sin_texto);
     return h('tr', null,
       h('td', null, h('strong', null, d.nombre), d.ruta && d.ruta !== d.nombre ? h('div', { class: 'ayuda ruta' }, d.ruta) : null, h('div', { class: 'ayuda' }, d.doc_id)),
-      h('td', null, selector, d.rol_origen === 'usuario' ? h('div', { class: 'ayuda' }, 'Asignado por usted') : null, conservar),
+      h('td', null, selector,
+        d.rol_origen === 'usuario' ? h('div', { class: 'ayuda' }, 'Asignado por usted') : null,
+        d.rol_origen === 'jev'
+          ? h('div', { class: 'ayuda' }, typeof d.jev_confianza === 'number' ? ['Sugerido por Jev · ', pctJev(d.jev_confianza, d.jev_umbral)] : 'Sugerido por Jev')
+          : null,
+        d.jev_rol && d.rol_origen !== 'jev' ? insigniaJev(d.jev_rol, d.jev_confianza, d.jev_umbral, d.jev_rol !== d.rol) : null,
+        conservar),
       h('td', { class: 'evidencia' }, d.evidencia || '—'),
       h('td', { class: 'num' }, String(cuentaPaginas(d.paginas))),
       h('td', null, ciegas ? h('span', { class: 'chip chip-alerta' }, `${ciegas}${listaPaginas(d.paginas_sin_texto) ? `: ${listaPaginas(d.paginas_sin_texto)}` : ''}`) : '—'),
@@ -626,8 +707,9 @@ async function vistaDocumentos() {
   }
 
   const cambios = {};
-  const autoInicial = { fecha: resumen.auto?.fecha || '', accionante: resumen.auto?.accionante || '', accionada: resumen.auto?.accionada || '' };
+  const autoInicial = { fecha: resumen.auto?.fecha || '', fecha_reparto: resumen.auto?.fecha_reparto || '', accionante: resumen.auto?.accionante || '', accionada: resumen.auto?.accionada || '' };
   const fecha = h('input', { type: 'date', id: 'auto-fecha', value: autoInicial.fecha });
+  const fechaReparto = h('input', { type: 'date', id: 'auto-fecha-reparto', value: autoInicial.fecha_reparto });
   const accionante = h('input', { type: 'text', id: 'auto-accionante', value: autoInicial.accionante });
   const accionada = h('input', { type: 'text', id: 'auto-accionada', value: autoInicial.accionada });
   const guardar = h('button', { type: 'button', class: 'btn btn-primario', disabled: true }, 'Guardar cambios');
@@ -637,7 +719,7 @@ async function vistaDocumentos() {
 
   const cambiosAuto = () => {
     const c = {};
-    for (const [k, el] of [['fecha', fecha], ['accionante', accionante], ['accionada', accionada]]) {
+    for (const [k, el] of [['fecha', fecha], ['fecha_reparto', fechaReparto], ['accionante', accionante], ['accionada', accionada]]) {
       const v = el.value.trim();
       if (v !== autoInicial[k]) c[k] = v || null;
     }
@@ -649,7 +731,7 @@ async function vistaDocumentos() {
     iniciarBtn.disabled = !editable || estado.estado !== 'revision' || sinClave || sucio();
     nota.textContent = sucio() ? 'Hay cambios sin guardar. Guárdelos antes de iniciar la redacción.' : '';
   };
-  for (const el of [fecha, accionante, accionada]) {
+  for (const el of [fecha, fechaReparto, accionante, accionada]) {
     el.disabled = !editable;
     el.addEventListener('input', refrescar);
   }
@@ -690,6 +772,7 @@ async function vistaDocumentos() {
   const esperados = Array.isArray(resumen.esperados_faltantes) ? resumen.esperados_faltantes : [];
   const alertas = Array.isArray(resumen.alertas) ? resumen.alertas : [];
   const nombreRol = (r) => ETIQUETA_ROL[r] || r;
+  const umbralJev = documentos.find((d) => typeof d.jev_umbral === 'number')?.jev_umbral;
 
   contenido.append(
     tarjeta('Estado de la revisión',
@@ -705,12 +788,15 @@ async function vistaDocumentos() {
         : null),
     tarjeta('Documentos',
       editable ? null : parrafo('La redacción ya inició; la clasificación no se puede cambiar.', 'ayuda'),
+      documentos.some((d) => d.jev_rol) ? leyendaConfianza(umbralJev) : null,
       tablaDocumentos(documentos, cambios, refrescar, editable)),
     tarjeta('Auto que asume el conocimiento',
       h('div', { class: 'rejilla' },
+        campo('auto-fecha-reparto', 'Fecha de reparto (segunda instancia)', fechaReparto),
         campo('auto-fecha', 'Fecha del auto', fecha),
         campo('auto-accionante', 'Accionante', accionante),
         campo('auto-accionada', 'Accionada', accionada)),
+      parrafo('Si deja vacía la fecha del auto, se propone el siguiente día hábil después del reparto (sin fines de semana ni festivos) al guardar.', 'ayuda'),
       enlacesAuto(estado).length ? h('div', { class: 'acciones' }, enlacesAuto(estado)) : null),
     errores,
     ...(sinClave ? [h('div', { class: 'errores', role: 'alert' }, 'No hay API key configurada y el proveedor del caso es Anthropic. Ingrésela arriba o cambie el proveedor a Simulado en la configuración para iniciar la redacción.')] : []),
@@ -757,16 +843,42 @@ function controlConfig(ruta, defecto, valor, registro) {
   return { el, tipo };
 }
 
+function panelClaveJev() {
+  const estado = h('span', { role: 'status' });
+  const pintar = () => {
+    estado.className = `chip chip-${S.jevKey ? 'ok' : 'alerta'}`;
+    estado.textContent = S.jevKey ? 'Clave de Jev configurada' : 'Sin clave de Jev';
+  };
+  const entrada = h('input', { type: 'password', id: 'jev-key', placeholder: 'Clave de Jev', autocomplete: 'off' });
+  pintar();
+  return h('form', { class: 'clave-jev', autocomplete: 'off', onsubmit: async (ev) => {
+    ev.preventDefault();
+    const key = entrada.value.trim();
+    if (!key) return;
+    try {
+      const r = await api('/api/jev-key', { metodo: 'POST', cuerpo: { key } });
+      S.jevKey = r.jev_key;
+      entrada.value = '';
+      pintar();
+      aviso('Clave de Jev guardada solo en la memoria del servidor.', 'ok');
+    } catch (e) {
+      aviso(e.message, 'error');
+    }
+  } },
+  campo('jev-key', 'Clave de Jev', entrada, 'Se guarda solo en la memoria del proceso: no se escribe a disco y se pierde al reiniciar el servidor. Sin clave no sale ninguna petición, aunque el modo no sea Apagado.'),
+  h('div', { class: 'acciones' }, h('button', { type: 'submit', class: 'btn btn-sec' }, 'Usar'), estado));
+}
+
 function camposConfig(defecto, actual, ruta, registro) {
   const nodos = [];
   for (const [clave, valorDef] of Object.entries(defecto)) {
     const r = [...ruta, clave];
     const id = r.join('.');
-    if (id === 'prompts_override' || id === 'llm.modelo') continue;
+    if (id === 'prompts_override' || id === 'llm.modelo' || id === 'jev.modelo') continue;
     const valor = actual?.[clave] ?? valorDef;
     const [etiqueta, ayuda] = ETIQUETAS[id] || [humanizar(clave), ''];
     if (esObjeto(valorDef) && !esDict(valorDef)) {
-      nodos.push(h('fieldset', { class: 'grupo' }, h('legend', null, etiqueta), camposConfig(valorDef, valor, r, registro)));
+      nodos.push(h('fieldset', { class: 'grupo' }, h('legend', null, etiqueta), id === 'jev' ? panelClaveJev() : null, camposConfig(valorDef, valor, r, registro)));
       continue;
     }
     const { el, tipo } = controlConfig(r, valorDef, valor, registro);
@@ -976,8 +1088,9 @@ function tablaCitas(citas) {
 }
 
 function tablaBitacora(entradas) {
+  const nodo = (e) => (e.proveedor === 'jev' ? `Jev: ${NODOS_JEV[e.nodo] || humanizar(e.nodo || '')}` : etiquetaNodo(e.nodo || ''));
   const filas = entradas.map((e) => h('tr', null,
-    h('td', null, etiquetaNodo(e.nodo || '')),
+    h('td', null, nodo(e)),
     h('td', { class: 'num' }, String(e.intento ?? '')),
     h('td', null, e.modelo_efectivo || e.modelo_pedido || '—'),
     h('td', { class: 'num' }, e.tokens_entrada ?? '—'),
@@ -1000,6 +1113,7 @@ function buscarCitas(estado) {
 
 const SECCIONES = {
   apertura: 'Apertura',
+  jev_metadatos: 'Verificación de Jev',
   consideraciones: 'Consideraciones',
   citas: 'Citas verificadas',
   caso_concreto: 'Caso concreto',
@@ -1010,7 +1124,7 @@ const SECCIONES = {
   bitacora: 'Bitácora de llamadas a la IA',
 };
 const CLAVES_CITAS = ['citas', 'citas_verificadas', 'informe_citas'];
-const ORDEN_RESUMEN = ['apertura', 'consideraciones', 'citas', 'caso_concreto', 'decision', 'errores', 'alertas'];
+const ORDEN_RESUMEN = ['apertura', 'jev_metadatos', 'consideraciones', 'citas', 'caso_concreto', 'decision', 'errores', 'alertas'];
 const RESUMEN_APARTE = ['metadatos', 'bitacora', 'salidas', ...CLAVES_CITAS];
 
 async function vistaRevision() {
@@ -1019,7 +1133,13 @@ async function vistaRevision() {
   const citas = buscarCitas(estado)?.citas;
   const bitacora = resumen.bitacora;
   const piezas = [
-    ...ORDEN_RESUMEN.map((k) => [SECCIONES[k], k === 'citas' ? (citas?.length ? tablaCitas(citas) : null) : renderValor(resumen[k]), true]),
+    ...ORDEN_RESUMEN.map((k) => [
+      SECCIONES[k],
+      k === 'citas' ? (citas?.length ? tablaCitas(citas) : null)
+        : k === 'jev_metadatos' ? tarjetaJev(resumen.jev_metadatos)
+          : renderValor(resumen[k]),
+      true,
+    ]),
     ...Object.keys(resumen)
       .filter((k) => !ORDEN_RESUMEN.includes(k) && !RESUMEN_APARTE.includes(k))
       .map((k) => [humanizar(k), renderValor(resumen[k]), true]),
@@ -1510,13 +1630,14 @@ async function iniciar() {
     }
   });
   const selector = $('#modelo');
-  let servidor = { api_key: false, modelo: '', modelos: [] };
+  let servidor = { api_key: false, jev_key: false, modelo: '', modelos: [] };
   try {
     servidor = await api('/api/estado-servidor');
   } catch {
     selector.disabled = true;
   }
   S.apiKey = servidor.api_key;
+  S.jevKey = !!servidor.jev_key;
   for (const m of servidor.modelos) selector.append(h('option', { value: m }, NOMBRES_MODELO[m] || m));
   selector.value = servidor.modelo;
   let modeloVigente = servidor.modelo;

@@ -1090,3 +1090,337 @@ def test_verificar_nota_con_marcador_al_pie_ausente_en_la_fuente_es_alerta(cfg):
     (cv,) = _verificar(cfg, _p("T-200/22", f"{TEXTO_BASE[:60]} {nota} {TEXTO_BASE[60:]}"))
     assert cv.estado == "alerta"
     assert cv.motivos == ["La nota «(Sentencia T-999 de 2015)» no aparece en la fuente; verifíquela."]
+
+
+FUENTE_AGREGADOS = (
+    "Antecedentes del asunto. La Sala advierte que la entidad accionada debe garantizar la continuidad del tratamiento "
+    "ordenado por el médico tratante, pues la interrupción injustificada de los servicios de salud vulnera el derecho "
+    "fundamental a la vida digna de los pacientes con enfermedades graves (artículo 49 de la Constitución) y "
+    "compromete la estabilidad de su condición clínica. En consecuencia, las barreras administrativas no pueden "
+    "trasladarse al usuario, quien tampoco está obligado a soportar demoras en la autorización de procedimientos "
+    "prescritos. Finalmente, la Corte Constitucional ha reiterado que constitucional-\n"
+    "mente corresponde al juez de tutela proteger de manera inmediata los derechos amenazados por la omisión estatal."
+)
+CITA_AGREGADOS = (
+    "la entidad accionada debe garantizar la continuidad del tratamiento ordenado por el médico tratante, pues la "
+    "interrupción injustificada de los servicios de salud vulnera el derecho fundamental a la vida digna de los "
+    "pacientes con enfermedades graves"
+)
+
+
+def _con(cita: str, palabra: str, tras: str) -> str:
+    assert tras in cita
+    return cita.replace(tras, f"{tras} {palabra}", 1)
+
+
+def test_cobertura_agregados_cita_textual_no_se_penaliza():
+    assert len(CITA_AGREGADOS.split()) >= 35
+    assert citas.cobertura(CITA_AGREGADOS, FUENTE_AGREGADOS) == 1.0
+    assert citas.motivo_agregados(CITA_AGREGADOS, FUENTE_AGREGADOS) is None
+
+
+@pytest.mark.parametrize("palabra", ["no", "nunca", "solo", "tampoco", "sin", "jamás", "salvo", "ninguna", "No"])
+def test_cobertura_palabra_de_polaridad_suelta_en_cita_larga_da_cero(palabra):
+    cita = _con(CITA_AGREGADOS, palabra, "debe garantizar")
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) == 0.0
+
+
+@pytest.mark.parametrize(
+    "marca", ["{no}", "（no）", "⟨no⟩", "(no", "no)", "«no»", "— no —", "[no", "no]"]
+)
+def test_cobertura_polaridad_con_delimitadores_raros_da_cero(marca):
+    cita = _con(CITA_AGREGADOS, marca, "debe garantizar")
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) == 0.0
+
+
+def test_cobertura_polaridad_al_inicio_o_al_final_da_cero():
+    assert citas.cobertura(f"no {CITA_AGREGADOS}", FUENTE_AGREGADOS) == 0.0
+    assert citas.cobertura(f"{CITA_AGREGADOS} nunca", FUENTE_AGREGADOS) == 0.0
+
+
+def test_cobertura_polaridad_tras_omision_da_cero():
+    cita = "la entidad accionada debe garantizar la continuidad (...) pues no la interrupción injustificada de los servicios de salud vulnera el derecho"
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) == 0.0
+
+
+@pytest.mark.parametrize("palabra", ["claramente", "evidentemente grave"])
+def test_cobertura_palabra_neutra_agregada_queda_bajo_el_umbral(palabra):
+    cita = _con(CITA_AGREGADOS, palabra, "debe garantizar")
+    assert 0.0 < citas.cobertura(cita, FUENTE_AGREGADOS) < 0.8
+
+
+def test_motivo_agregados_nombra_las_palabras():
+    cita = _con(CITA_AGREGADOS, "no", "debe garantizar")
+    assert citas.motivo_agregados(cita, FUENTE_AGREGADOS) == "La cita agrega «no», que no está en la fuente."
+    cita = _con(CITA_AGREGADOS, "claramente", "debe garantizar")
+    assert "«claramente»" in citas.motivo_agregados(cita, FUENTE_AGREGADOS)
+
+
+def test_verificar_polaridad_agregada_se_bloquea_con_motivo(cfg):
+    cuerpo = f"<p>{FUENTE_AGREGADOS}</p>"
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", cuerpo))
+    (cv,) = _verificar(cfg, _p("T-200/22", _con(CITA_AGREGADOS, "no", "debe garantizar")))
+    assert cv.estado != "ok" and cv.cobertura == 0.0
+    assert "La cita agrega «no», que no está en la fuente." in cv.motivos
+
+
+def test_verificar_palabra_neutra_agregada_es_alerta_con_motivo(cfg):
+    cuerpo = f"<p>{FUENTE_AGREGADOS}</p>"
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", cuerpo))
+    (cv,) = _verificar(cfg, _p("T-200/22", _con(CITA_AGREGADOS, "claramente", "debe garantizar")))
+    assert cv.estado == "alerta"
+    assert "La cita agrega «claramente», que no está en la fuente." in cv.motivos
+
+
+@pytest.mark.parametrize(
+    "cita",
+    [
+        CITA_AGREGADOS.replace("la entidad", "[L]a entidad").replace("la continuidad", "[l]a continuidad"),
+        CITA_AGREGADOS.upper(),
+        CITA_AGREGADOS.replace("médico", "medico").replace("injustificada", "injustificáda"),
+        CITA_AGREGADOS.replace("derecho fundamental", "derecho (sic) fundamental"),
+        CITA_AGREGADOS.replace("tratante,", "tratante [1],"),
+        CITA_AGREGADOS.replace("tratamiento", "tratamiento (...)"),
+        CITA_AGREGADOS.replace("tratante, pues la", "tratante (...) pues la"),
+        CITA_AGREGADOS.replace("la continuidad del tratamiento ordenado por el médico tratante,", "… el médico tratante,"),
+        CITA_AGREGADOS.replace("graves", "graves (Se subraya)"),
+        CITA_AGREGADOS.replace("graves", "graves (Sentencia T-100 de 2020)"),
+    ],
+)
+def test_cobertura_variantes_legitimas_conservan_el_puntaje(cita):
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) >= 0.8
+    assert citas.motivo_agregados(cita, FUENTE_AGREGADOS) is None
+
+
+def test_cobertura_conserva_o_quita_incisos_de_la_fuente():
+    con = CITA_AGREGADOS.replace("graves", "graves (artículo 49 de la Constitución) y compromete")
+    sin = CITA_AGREGADOS.replace("graves", "graves y compromete")
+    assert citas.cobertura(con, FUENTE_AGREGADOS) >= 0.8
+    assert citas.cobertura(sin, FUENTE_AGREGADOS) >= 0.8
+
+
+def test_cobertura_ya_presente_en_la_fuente_no_es_agregado():
+    cita = (
+        "los pacientes con enfermedades graves (artículo 49 de la Constitución) y compromete la estabilidad de su "
+        "condición clínica. En consecuencia, las barreras administrativas no pueden trasladarse al usuario, quien "
+        "tampoco está obligado a soportar demoras en la autorización"
+    )
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) >= 0.8
+
+
+def test_cobertura_particion_por_guion_no_cuenta_como_agregado():
+    unida = CITA_AGREGADOS.replace("continuidad", "continui- dad")
+    cita = "la Corte Constitucional ha reiterado que constitucionalmente corresponde al juez de tutela proteger de manera inmediata"
+    assert citas.motivo_agregados(unida, FUENTE_AGREGADOS) is None
+    assert citas.motivo_agregados(cita, FUENTE_AGREGADOS) is None
+    assert citas.cobertura(cita, FUENTE_AGREGADOS) == citas._cobertura_modo(cita.lower().split(), FUENTE_AGREGADOS, 6, False)
+
+
+FUENTE_OMISION = (
+    "Consideraciones previas del despacho. En el presente asunto la Sala advierte que en el caso concreto no procede "
+    "la acción de tutela contra providencias judiciales cuando el accionante dispone de otros medios de defensa "
+    "judicial idóneos y eficaces, razón por la cual la solicitud de amparo debe ser negada por improcedente. "
+    "Adicionalmente, el juez nunca puede sustituir al funcionario competente, ni actuar sin que medie una orden "
+    "previa, y tampoco le corresponde ampliar el objeto del debate más allá de lo pedido por las partes. "
+    "Concluido el estudio correspondiente se dispondrá lo pertinente."
+)
+CITA_OMISION = (
+    "en el presente asunto la Sala advierte que en el caso concreto no procede la acción de tutela contra "
+    "providencias judiciales cuando el accionante dispone de otros medios de defensa judicial idóneos y eficaces, "
+    "razón por la cual la solicitud de amparo debe ser negada por improcedente"
+)
+CITA_OMISION_2 = (
+    "el juez nunca puede sustituir al funcionario competente, ni actuar sin que medie una "
+    "orden previa, y tampoco le corresponde ampliar el objeto del debate más allá de lo pedido por las partes"
+)
+
+
+def test_cobertura_cita_omision_textual_sin_cambios():
+    assert len(CITA_OMISION.split()) >= 40
+    assert citas.cobertura(CITA_OMISION, FUENTE_OMISION) == 1.0
+    assert citas.cobertura(CITA_OMISION_2, FUENTE_OMISION) == 1.0
+    assert citas.motivo_agregados(CITA_OMISION, FUENTE_OMISION) is None
+
+
+@pytest.mark.parametrize(
+    "cita,palabra",
+    [
+        (CITA_OMISION, "no"),
+        (CITA_OMISION_2, "nunca"),
+        (CITA_OMISION_2, "sin"),
+        (CITA_OMISION_2, "tampoco"),
+    ],
+)
+def test_cobertura_polaridad_omitida_da_cero(cita, palabra):
+    mutilada = cita.replace(f" {palabra} ", " ", 1)
+    assert mutilada != cita
+    assert citas.cobertura(mutilada, FUENTE_OMISION) == 0.0
+    assert citas.motivo_agregados(mutilada, FUENTE_OMISION) == f"La cita omite «{palabra}», que sí está en la fuente."
+
+
+def test_cobertura_polaridad_omitida_entre_parentesis_de_omision_no_se_penaliza():
+    cita = (
+        "en el presente asunto la Sala advierte que en el caso concreto (...) la acción de tutela contra "
+        "providencias judiciales cuando el accionante dispone de otros medios de defensa judicial idóneos y eficaces"
+    )
+    assert citas.cobertura(cita, FUENTE_OMISION) >= 0.8
+    assert citas.motivo_agregados(cita, FUENTE_OMISION) is None
+
+
+def test_cobertura_polaridad_fuera_del_tramo_alineado_no_se_penaliza():
+    cita = "procede la acción de tutela contra providencias judiciales cuando el accionante dispone de otros medios"
+    assert citas.cobertura(cita, FUENTE_OMISION) == 1.0
+
+
+def test_cobertura_palabra_neutra_omitida_conserva_el_puntaje_ngramas():
+    mutilada = CITA_OMISION.replace("judicial idóneos", "idóneos", 1)
+    assert 0.0 < citas.cobertura(mutilada, FUENTE_OMISION) < 1.0
+    assert citas.motivo_agregados(mutilada, FUENTE_OMISION) is None
+
+
+def test_verificar_polaridad_omitida_se_bloquea_con_motivo(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", f"<p>{FUENTE_OMISION}</p>"))
+    mutilada = CITA_OMISION.replace(" no procede", " procede", 1)
+    (cv,) = _verificar(cfg, _p("T-200/22", mutilada))
+    assert cv.estado != "ok" and cv.cobertura == 0.0
+    assert "La cita omite «no», que sí está en la fuente." in cv.motivos
+
+
+def test_verificar_pasaje_inventado_no_lista_agregados(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", f"<p>{FUENTE_OMISION}</p>"))
+    inventada = (
+        "la garantía de los derechos sociales prestacionales requiere una intervención decidida del legislador "
+        "para asegurar la progresividad presupuestal de las políticas públicas destinadas a poblaciones vulnerables"
+    )
+    assert len(inventada.split()) >= 25
+    (cv,) = _verificar(cfg, _p("T-200/22", inventada))
+    assert cv.cobertura == 0.0 and cv.estado != "ok"
+    assert any("no se localizó" in m for m in cv.motivos)
+    assert not any("agrega" in m or "omite" in m for m in cv.motivos)
+
+
+_RELLENO_NEG = " ".join(f"palabra{i} texto{i} relleno{i}." for i in range(60))
+_BASE_NEG = (
+    "La Corte ha reiterado que la accion de tutela resulta procedente para proteger los derechos "
+    "fundamentales de las personas cuando la actuacion de la administracion fue ilegal y vulnero "
+    "de manera grave el debido proceso del ciudadano que acudio ante la jurisdiccion constitucional "
+    "en busca de amparo inmediato y efectivo frente a la amenaza alegada en el escrito de tutela."
+)
+_GAP_NEG = (
+    "Esta Corporacion ha sostenido que nunca y bajo ninguna circunstancia procede la tutela contra "
+    "las decisiones adoptadas por los jueces dentro de un proceso ordinario debidamente tramitado y "
+    "concluido conforme a las reglas procesales vigentes en el ordenamiento juridico colombiano actual."
+)
+_FUENTE_NEG = f"{_RELLENO_NEG} {_BASE_NEG} {_RELLENO_NEG} {_GAP_NEG} {_RELLENO_NEG}"
+
+
+@pytest.mark.parametrize(
+    "viejo,nuevo",
+    [("ilegal", "legal"), ("ilegal y", "ilicito y"), ("procedente", "improcedente")],
+)
+def test_cobertura_prefijo_negativo_no_es_errata(viejo, nuevo):
+    cita = _BASE_NEG.replace(viejo, nuevo)
+    puntaje = citas.cobertura(cita, _FUENTE_NEG)
+    assert puntaje is not None and puntaje <= citas.TOPE_AGREGADOS
+    assert "agrega" in citas.motivo_agregados(cita, _FUENTE_NEG)
+
+
+def test_cobertura_errata_de_una_letra_sigue_tolerada():
+    cita = _BASE_NEG.replace("ciudadano", "ciudadnao".replace("nao", "ano"))
+    assert citas.cobertura(cita, _FUENTE_NEG) >= 0.8
+    assert citas.cobertura(_BASE_NEG.replace("grave", "grabe"), _FUENTE_NEG) >= 0.8
+
+
+def test_cobertura_negacion_omitida_en_medio_de_la_cita():
+    cita = _GAP_NEG.replace("que nunca y bajo ninguna circunstancia procede", "que procede")
+    assert citas.cobertura(cita, _FUENTE_NEG) == 0.0
+    assert "omite" in citas.motivo_agregados(cita, _FUENTE_NEG)
+
+
+@pytest.mark.parametrize(
+    "encabezado",
+    [
+        "Expediente No. T-8.123.456 Sentencia T-123 de 2020",
+        "Exp. Nº 8123",
+        "Página 5 de 12 sin título",
+    ],
+)
+def test_cobertura_encabezado_de_pagina_no_es_negacion_omitida(encabezado):
+    mitad = len(_GAP_NEG) // 2
+    corte = _GAP_NEG.index(" ", mitad)
+    fuente = f"{_RELLENO_NEG} {_GAP_NEG[:corte]} {encabezado} {_GAP_NEG[corte + 1:]} {_RELLENO_NEG}"
+    assert citas.cobertura(_GAP_NEG, fuente) >= 0.8
+
+
+_RELLENO_AB = " ".join(f"palabra{i} texto{i} relleno{i}." for i in range(60))
+_TRAMO_AB = (
+    "En virtud de lo dispuesto en el {a} de 2020 las audiencias se realizarán de manera virtual por regla "
+    "general en todos los despachos judiciales del pais segun lo previsto."
+)
+
+
+@pytest.mark.parametrize(
+    ("fuente", "cita"),
+    [
+        ("Decreto 806", "Decreto No. 806"),
+        ("Decreto No. 806", "Decreto 806"),
+        ("Resolucion numero 4521", "Resolucion No. 4521"),
+        ("Sentencia Nº 8123", "Sentencia 8123"),
+        ("Proceso No. T-8.123.456", "Proceso T-8.123.456"),
+        ("Decreto 806", "Decreto No 806"),
+    ],
+)
+def test_cobertura_abreviatura_no_numero_no_es_negacion(fuente, cita):
+    f = f"{_RELLENO_AB} {_TRAMO_AB.format(a=fuente)} {_RELLENO_AB}"
+    q = _TRAMO_AB.format(a=cita)
+    assert citas.cobertura(q, f) > 0.7
+    assert citas.motivo_agregados(q, f) is None
+
+
+def test_cobertura_no_genuino_sigue_siendo_negacion():
+    f = f"{_RELLENO_AB} {_TRAMO_AB.format(a='caso')} {_RELLENO_AB}"
+    assert citas.cobertura(_TRAMO_AB.format(a="caso no procede"), f) == 0.0
+    assert citas.cobertura(_TRAMO_AB.format(a="no 806 personas"), f) == 0.0
+    f2 = f"{_RELLENO_AB} {_TRAMO_AB.format(a='caso no procede')} {_RELLENO_AB}"
+    assert citas.cobertura(_TRAMO_AB.format(a="caso"), f2) == 0.0
+
+
+_TRAMO_TUTELA = (
+    "ha sostenido esta corporacion de manera reiterada que la accion de tutela{neg} procede contra providencias "
+    "judiciales salvo que se acredite el cumplimiento de los requisitos generales y especificos de procedibilidad "
+    "establecidos por la jurisprudencia constitucional para proteger los derechos fundamentales de las partes"
+)
+
+
+def test_cobertura_no_tras_tipo_de_documento_sin_numero_es_negacion():
+    sin, con = _TRAMO_TUTELA.format(neg=""), _TRAMO_TUTELA.format(neg=" no")
+    assert len(con.split()) >= 40
+    assert citas.cobertura(con, sin) == 0.0
+    assert citas.motivo_agregados(con, sin) is not None
+    assert citas.cobertura(sin, con) == 0.0
+
+
+@pytest.mark.parametrize("tipo", ["sentencia", "ley", "auto", "fallo", "sala", "proceso"])
+def test_cobertura_tipo_de_documento_seguido_de_no_y_palabras_es_polaridad(tipo):
+    base = f"{_RELLENO_AB} {_TRAMO_AB.format(a=f'el {tipo} aplica')} {_RELLENO_AB}"
+    q = _TRAMO_AB.format(a=f"el {tipo} no aplica")
+    assert citas.cobertura(q, base) == 0.0
+    assert citas.cobertura(_TRAMO_AB.format(a=f"el {tipo} aplica"), base.replace("aplica", "no aplica")) == 0.0
+
+
+def test_cobertura_digito_junto_a_negacion_no_excusa_la_omision():
+    cita = _GAP_NEG.replace("que nunca y bajo ninguna circunstancia procede", "que procede")
+    fuente = _FUENTE_NEG.replace("nunca y bajo", "nunca 15 y bajo")
+    assert citas.cobertura(cita, fuente) == 0.0
+
+
+def test_cobertura_negacion_omitida_en_hueco_largo():
+    cita = _GAP_NEG.replace("que nunca y bajo ninguna circunstancia procede", "que procede")
+    fuente = _FUENTE_NEG.replace("nunca y bajo ninguna", "en ningun caso y bajo ninguna")
+    assert citas.cobertura(cita, fuente) == 0.0
+
+
+@pytest.mark.parametrize("marca", ["(...)", "…"])
+def test_cobertura_omision_marcada_no_se_penaliza(marca):
+    cita = _GAP_NEG.replace("nunca y bajo ninguna circunstancia", marca)
+    assert citas.cobertura(cita, _FUENTE_NEG) >= 0.8

@@ -41,7 +41,7 @@ Estados de un caso:
 | `terminado` | Con la decisión, se redactó el caso concreto y se generaron los documentos finales |
 | `error` | Falló un paso; `continuar` lo reanuda |
 
-La pantalla **Documentos** muestra cada archivo con su rol (editable), la evidencia de la clasificación, las páginas sin texto y los documentos ajenos o ruido, además de los faltantes y los campos del auto. Los cambios se guardan antes de iniciar; una vez iniciada la redacción ya no se pueden cambiar los roles.
+La pantalla **Documentos** muestra cada archivo con su rol (editable), la evidencia de la clasificación, la opinión de Jev con su confianza cuando la hay, las páginas sin texto y los documentos ajenos o ruido, además de los faltantes y los campos del auto. Los cambios se guardan antes de iniciar; una vez iniciada la redacción ya no se pueden cambiar los roles.
 
 ## Clave de la API de Anthropic
 
@@ -49,6 +49,41 @@ Por defecto el proveedor es `anthropic`, con `claude-sonnet-5-5` y `effort` en `
 
 1. Variable de entorno antes de arrancar: `export ANTHROPIC_API_KEY=sk-ant-...`.
 2. Campo "API key" de la cabecera de la UI. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor.
+
+## Jev (segunda opinión, opcional)
+
+Jev (TypeSafe AI) es un modelo de decisión que no genera texto: contesta preguntas cerradas con una etiqueta y una confianza. Aquí se usa como segunda opinión en dos puntos que hoy no tienen verificación independiente: el rol de cada documento al ingerir y los metadatos que el modelo escribe en la apertura (sentido de la decisión de primera instancia, `decision_a_quo`, y rol de quien impugna, `impugnante_rol`). Jev nunca bloquea, nunca reintenta un nodo y nunca decide el sentido del fallo: solo deja alertas y, en modo `relleno`, asigna un rol que el código no pudo asignar. **Arranca apagado** (`jev.modo = "apagado"`).
+
+| Modo | Qué hace |
+|---|---|
+| `apagado` (por defecto) | No sale ninguna petición, aunque haya clave. |
+| `sombra` | Jev opina sobre el rol de cada documento con texto y verifica con tres preguntas cerradas el sentido del fallo, el sentido de `decision_a_quo` y el rol del impugnante. Las opiniones se guardan y se muestran con su confianza en **Documentos** y en **Revisión** (tarjeta "Verificación de Jev"); si discrepan con una confianza igual o superior a `jev.umbral_confianza`, dejan una alerta. No cambia ningún rol. |
+| `relleno` | Lo mismo que `sombra` y, además, asigna el rol a un documento que el código dejó como `otro` por no hallar rasgos de ningún rol, si la confianza de Jev llega al umbral (la fila dice "Sugerido por Jev"). Nunca pisa un rol decidido por el código ni uno fijado por usted, y no asigna `fallo_a_quo` ni `acta_reparto_2a` si otro documento ya tiene ese rol (en ese caso deja una alerta). |
+
+Un documento sin texto (escaneado sin OCR) no genera ninguna petición. Si Jev falla (sin clave válida, tiempo agotado, servicio saturado), la ingesta y la apertura terminan igual y queda una alerta.
+
+Los porcentajes de confianza se pintan según el umbral con el que se calcularon, que se guarda junto a cada opinión (`jev.umbral_confianza`, 0,9 por defecto, un valor inicial a calibrar; cambiarlo después no repinta lo ya calculado): desde el umbral hasta 1 el intervalo se divide en tres tercios, que se muestran en tres tonos de verde cada vez más intensos; por debajo del umbral van en gris y Jev no actúa. Si el rol propuesto por Jev difiere del vigente, la fila se resalta como discrepancia.
+
+La clave solo vive en la variable de entorno `JEV_API_KEY`; nunca en `config.json`, en el repositorio ni en la bitácora. Dos formas de entregarla:
+
+1. Archivo `.local.env` en la raíz del repo (está en `.gitignore`, con una línea `JEV_API_KEY=...`) y arrancar con `cd backend && uv run --env-file ../.local.env tutela2-ui`.
+2. Campo "Clave de Jev" del grupo Jev en **Configuración**. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor. Solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.
+
+Sin clave no sale ninguna petición, aunque el modo no sea `apagado`. El modo y los demás ajustes (`jev.*`) se cambian en la pestaña Parámetros de **Configuración**.
+
+**Privacidad (Acuerdo PCSJA24-12243, art. 8.6).** En los modos `sombra` y `relleno` se envían datos del expediente a un tercero (TypeSafe AI). Para los roles, el nombre del archivo y un fragmento inicial de cada documento con texto, acotado por `jev.max_chars_cabecera` (1500 caracteres por defecto). Para los metadatos, la cola del fallo de primera instancia (`jev.max_chars_sentido`, 2500), la cláusula `decision_a_quo`, la cabecera del escrito de impugnación y los nombres de las partes. Nunca se envía el expediente completo. Antes de usarlo con expedientes reales, el despacho debe confirmar que los términos de TypeSafe AI cumplen el art. 8.6 (sin apropiación, uso para reentrenar ni reenvío de los datos).
+
+Cada petición queda en la bitácora del caso como una llamada con `proveedor` `jev` (modelo, tokens y huellas sha256 del estado, las preguntas y las respuestas; no guarda el texto enviado), y alimenta la declaración del art. 10, que nombra a TypeSafe AI como proveedor. También quedan, con su error, las peticiones que fallaron después de enviarse (error del servicio o tiempo agotado) y las respuestas que se descartaron por estar fuera del catálogo.
+
+Para medir si `relleno` merece activarse hay un benchmark contra la verdad de referencia (expedientes reales en `referencia/`, que no se versiona):
+
+```bash
+cd backend
+uv run --env-file ../.local.env tutela2 jev-bench --referencia ../referencia --salida /ruta/fuera/del/repo/jev-roles.md
+uv run --env-file ../.local.env tutela2 jev-bench --referencia ../referencia --invertir --salida /ruta/fuera/del/repo/jev-roles-invertido.md
+```
+
+`--invertir` repite la corrida con las opciones en orden inverso para medir el sesgo hacia la primera opción. El informe contiene datos de los casos: `--salida` no puede apuntar dentro del repositorio; sin `--salida` se imprime en stdout. Las pruebas (`uv run pytest`) usan un doble de Jev y no necesitan red ni clave.
 
 ## Modo `fake` (probar sin clave)
 
@@ -67,6 +102,11 @@ Se edita desde la UI. Los valores por defecto están en `backend/tutela2/config.
 | `llm.modelo_por_nodo`, `llm.effort_por_nodo` | Ajustes por nodo: `apertura`, `consideraciones`, `caso_concreto` |
 | `llm.max_tokens`, `llm.timeout_s` | Tope de tokens de salida por llamada (64000) y tiempo máximo (1200 s) |
 | `llm.fallbacks_default` | Solo actúa cuando el filtro de seguridad del modelo rechaza la solicitud (`stop_reason: refusal`). Con Sonnet y Opus pide a la API que repita la llamada en el modelo de respaldo; si la API no acepta el parámetro se reintenta sin él. El respaldo del servidor no reintenta todas las categorías de rechazo: con Sonnet 5.5 solo reintenta `cyber` y `frontier_llm` (no `bio`, `reasoning_extraction` ni `general_harms`) y con Opus 5.5 no reintenta `reasoning_extraction`. Haiku 5.5 no tiene respaldo en el servidor: ante un rechazo, la aplicación repite la llamada con Sonnet 5.5 |
+| `jev.modo` | `apagado` (por defecto), `sombra` o `relleno`; ver la sección Jev |
+| `jev.umbral_confianza` | Confianza mínima, entre 0 y 1 (0,9 por defecto) para que una opinión de Jev genere alerta o asigne un rol; también fija los tonos de los porcentajes en la UI |
+| `jev.timeout_s`, `jev.concurrencia` | Espera máxima de la respuesta de cada petición, mayor que 0 (60 s; ante cualquier error de Jev, de conexión o de tiempo agotado la petición se reintenta una sola vez, así que la espera puede llegar al doble) y peticiones simultáneas (6) |
+| `jev.max_chars_cabecera`, `jev.max_chars_sentido` | Caracteres que se envían a Jev: inicio de cada documento y de la impugnación (1500) y cola del fallo de primera instancia (2500) |
+| `jev.modelo` | Modelo de Jev (`jev-latest`); no se muestra en la UI |
 | `max_intentos` | Reintentos por nodo cuando el validador encuentra errores bloqueantes (3) |
 | `ocr` | Usar OCR si está disponible |
 | `verificar_relatoria`, `cobertura_ok`, `cobertura_alerta`, `ngram`, `exigir_mp` | Verificación de citas: texto contra la relatoría, umbrales y exigencia de magistrado ponente |
