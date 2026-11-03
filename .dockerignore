@@ -1,0 +1,6 @@
+*
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/tutela2/
+**/__pycache__/
+**/*.py[cod]

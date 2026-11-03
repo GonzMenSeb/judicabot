@@ -1,0 +1,197 @@
+pipeline {
+    agent any
+
+    parameters {
+        booleanParam(
+            name: 'FORCE_DEPLOY',
+            defaultValue: false,
+            description: 'Build and deploy even when no image-bearing path changed.'
+        )
+    }
+
+    environment {
+        IMAGE       = "${env.REGISTRY}/judicabot/judicabot"
+        VPS_APP_DIR = '/opt/judicabot'
+    }
+
+    options {
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    stages {
+        stage('Scope') {
+            steps {
+                script {
+                    env.GIT_SHA = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+
+                    def head = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    def mainRef = sh(returnStdout: true,
+                        script: 'git rev-parse --verify -q refs/remotes/origin/main || true').trim()
+                    env.ON_MAIN = (mainRef && head == mainRef) ? 'true' : 'false'
+
+                    def base = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
+                    def known = base && sh(returnStatus: true, script: "git cat-file -e ${base}^{commit}") == 0
+                    def changed = known
+                        ? sh(returnStdout: true, script: "git diff --name-only ${base} ${env.GIT_COMMIT}").trim().split('\n') as List
+                        : null
+
+                    def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|Dockerfile$)/
+                    def testPaths  = ~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/)/
+
+                    if (changed == null) {
+                        env.RUN_TESTS = 'true'
+                        env.RUN_IMAGE = 'true'
+                    } else {
+                        def hitImage = changed.findAll { it =~ imagePaths }
+                        def hitTest = changed.findAll { it =~ testPaths }
+                        env.RUN_IMAGE = hitImage ? 'true' : 'false'
+                        env.RUN_TESTS = (hitImage || hitTest) ? 'true' : 'false'
+                        echo "Changed since ${base}:\n  ${changed.join('\n  ')}"
+                    }
+
+                    if (params.FORCE_DEPLOY) {
+                        env.RUN_TESTS = 'true'
+                        env.RUN_IMAGE = 'true'
+                    }
+
+                    echo "sha=${env.GIT_SHA} onMain=${env.ON_MAIN} tests=${env.RUN_TESTS} image=${env.RUN_IMAGE}"
+                    currentBuild.description = (env.RUN_TESTS == 'false' && env.RUN_IMAGE == 'false')
+                        ? "${env.GIT_SHA} - docs only, nothing to do"
+                        : env.GIT_SHA
+                }
+            }
+        }
+
+        stage('Test') {
+            when { expression { env.RUN_TESTS == 'true' } }
+            agent {
+                docker {
+                    image 'python:3.12-slim'
+                    reuseNode true
+                    args '-e HOME=${WORKSPACE}/.home'
+                }
+            }
+            steps {
+                sh '''
+                    mkdir -p "$HOME"
+                    export PATH="$HOME/.local/bin:$PATH"
+                    pip install --quiet --user uv
+                    cd backend
+                    uv run --extra ocr pytest --junitxml=test-results.xml
+                '''
+            }
+        }
+
+        stage('Build & Push') {
+            when {
+                allOf {
+                    expression { env.ON_MAIN == 'true' }
+                    expression { env.RUN_IMAGE == 'true' }
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'zot-registry-creds',
+                    usernameVariable: 'REG_USER',
+                    passwordVariable: 'REG_PASS'
+                )]) {
+                    sh '''
+                        echo "$REG_PASS" | docker login $REGISTRY -u "$REG_USER" --password-stdin
+                        docker buildx inspect judicabot-builder >/dev/null 2>&1 \
+                          || docker buildx create --name judicabot-builder --driver docker-container --bootstrap
+
+                        docker buildx build --builder judicabot-builder \
+                            --provenance=false --sbom=false \
+                            --label org.opencontainers.image.revision=$GIT_SHA \
+                            --label org.opencontainers.image.source=https://github.com/GonzMenSeb/judicabot \
+                            --cache-from type=registry,ref=$IMAGE:buildcache \
+                            --cache-to type=registry,ref=$IMAGE:buildcache,mode=max,oci-mediatypes=true,ignore-error=true \
+                            --output type=image,\\"name=$IMAGE:$GIT_SHA,$IMAGE:latest\\",oci-mediatypes=true,push=true \
+                            .
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                allOf {
+                    expression { env.ON_MAIN == 'true' }
+                    expression { env.RUN_IMAGE == 'true' }
+                }
+            }
+            steps {
+                sshagent(credentials: ['vps-ssh-key']) {
+                    script {
+                        env.PREV_SHA = sh(
+                            returnStdout: true,
+                            script: '''
+                                ssh -o StrictHostKeyChecking=no $VPS_HOST \
+                                  "docker inspect --format '{{index .Config.Labels \\"org.opencontainers.image.revision\\"}}' $IMAGE:latest 2>/dev/null || true"
+                            '''
+                        ).trim()
+                        echo "Currently live: ${env.PREV_SHA ?: 'none'}"
+
+                        sh '''
+                            ssh -o StrictHostKeyChecking=no $VPS_HOST \
+                              "cd $VPS_APP_DIR && docker compose pull && docker compose up -d"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Health') {
+            when {
+                allOf {
+                    expression { env.ON_MAIN == 'true' }
+                    expression { env.RUN_IMAGE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def healthy
+                    sshagent(credentials: ['vps-ssh-key']) {
+                        healthy = sh(returnStatus: true, script: '''
+                            ssh -o StrictHostKeyChecking=no $VPS_HOST '
+                                for i in $(seq 1 30); do
+                                    s=$(docker inspect --format "{{.State.Health.Status}}" judicabot 2>/dev/null || true)
+                                    [ "$s" = "healthy" ] && exit 0
+                                    sleep 3
+                                done
+                                echo "judicabot never became healthy (last: $s)"
+                                exit 1
+                            '
+                        ''') == 0
+                    }
+
+                    if (healthy) {
+                        echo "Live: ${env.GIT_SHA}"
+                        return
+                    }
+                    if (!env.PREV_SHA) {
+                        error 'Health check failed and there is no labelled previous revision to roll back to.'
+                    }
+                    echo "Health check failed - rolling back to ${env.PREV_SHA}"
+                    sshagent(credentials: ['vps-ssh-key']) {
+                        sh '''
+                            ssh -o StrictHostKeyChecking=no $VPS_HOST \
+                              "docker pull $IMAGE:$PREV_SHA \
+                               && docker tag $IMAGE:$PREV_SHA $IMAGE:latest \
+                               && cd $VPS_APP_DIR && docker compose up -d"
+                        '''
+                    }
+                    error "Health check failed after deploying ${env.GIT_SHA}. Rolled back to ${env.PREV_SHA}."
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: '**/test-results.xml'
+            sh 'docker logout $REGISTRY || true'
+        }
+    }
+}
