@@ -64,8 +64,9 @@ _RESULTADO = {
     "REVOCAR": ["revoc"],
     "MODIFICAR": ["modific"],
 }
+_ETIQUETA_RAIZ = {r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)": "conceder la tutela/protección"}
 _SUSTITUTIVA = {
-    "AMPARAR": ["ampar", r"tutel(?!as?\b)"],
+    "AMPARAR": ["ampar", r"tutel(?!as?\b)", r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)"],
     "NEGAR": [r"neg(?:ar|ara|aria|o|ando|aron)\b", "nieg", "deneg"],
     "IMPROCEDENTE": ["improceden"],
     "CARENCIA_HECHO_SUPERADO": ["carencia", "hecho superado"],
@@ -222,18 +223,8 @@ def _fecha_valida(f: tuple[int, int, int]) -> bool:
     return True
 
 
-def _texto_visible(ing: Ingesta) -> str:
-    return "\n\n".join(
-        p.texto
-        for d in ing.documentos
-        if not (d.ruido or d.doc_id in ing.docs_ajenos or d.rol == "producto_despacho")
-        for p in d.paginas
-        if not p.ruido
-    )
-
-
 def datos_ajenos(texto: str, ing: Ingesta) -> list[str]:
-    cuis_doc, nums_doc, fechas_doc = _identificadores(_texto_visible(ing))
+    cuis_doc, nums_doc, fechas_doc = _identificadores("\n\n".join(ing.textos_visibles()))
     meta = ing.metadatos
     cuis_doc |= {re.sub(r"\D", "", c) for c in (meta.cui_1a, meta.cui_2a) if c}
     fechas_doc |= {
@@ -356,14 +347,24 @@ def _contiene_raiz(norm: str, patron: str) -> bool:
     return re.search(rf"(?<![a-zñ0-9]){patron}", norm) is not None
 
 
-_NO_PRECEDE = r"(?<!\bno )(?<!\bno se )(?<![a-zñáéíóú0-9])"
+_NO_PRECEDE = r"(?<![a-zñáéíóú0-9])"
+_NEGADOR_PREVIO = re.compile(
+    r"\b(?:no|tampoco|ni|nunca|jam[aá]s|en\s+modo\s+alguno)(?:\s+(?:se|le|les|lo|la))*\s*$"
+)
+_CONDICIONAL_PREVIO = re.compile(r"\b(?:solo\s+|sólo\s+)?si\b(?!\s+bien)[^.;]{0,80}$")
+
+
+def _excusada(texto: str, inicio: int) -> bool:
+    return bool(
+        _NEGADOR_PREVIO.search(texto[:inicio][-40:]) or _CONDICIONAL_PREVIO.search(texto[:inicio][-90:])
+    )
 _CARENCIA = r"declar(?:ará|aría)\s+la\s+carencia[^.;]{0,60}?"
 _FUTURO_RESULTADO = {
     "CONFIRMAR": r"confirm(?:ará|aría)\b",
     "REVOCAR": r"revoc(?:ará|aría)\b",
 }
 _FUTURO_SUSTITUTIVA = {
-    "AMPARAR": r"(?:ampar|tutel)(?:ará|aría)\b",
+    "AMPARAR": r"(?:(?:ampar|tutel)(?:ará|aría)\b|concederá\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo))",
     "NEGAR": r"(?:neg|deneg)(?:ará|aría)\b",
     "IMPROCEDENTE": r"declar(?:ará|aría)\s+(?:la\s+)?(?:acci[oó]n\s+(?:de\s+tutela\s+)?)?improcedente",
     "CARENCIA_HECHO_SUPERADO": _CARENCIA + r"hecho\s+superado",
@@ -383,7 +384,9 @@ def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
         if not decidido:
             continue
         for otro, patron in patrones.items():
-            if otro != decidido and re.search(_NO_PRECEDE + patron, texto):
+            if otro != decidido and any(
+                not _excusada(texto, m.start()) for m in re.finditer(_NO_PRECEDE + patron, texto)
+            ):
                 msgs.append(
                     f"{BLOQUEA}La conclusión anuncia {otro} como {nombre}, pero el juez decidió {decidido}; "
                     "lo que hizo el a quo se menciona en pasado."
@@ -391,43 +394,22 @@ def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
     return msgs
 
 
-_ANUNCIO = r"(?:ar|ara|aria)\b"
-_ANUNCIO_ESTRICTO = {
-    "CONFIRMAR": [r"confirm" + _ANUNCIO],
-    "REVOCAR": [r"revoc" + _ANUNCIO],
-    "MODIFICAR": [r"modific" + _ANUNCIO],
-    "AMPARAR": [r"(?:ampar|tutel)" + _ANUNCIO],
-    "NEGAR": [r"(?:neg|deneg)" + _ANUNCIO],
-    "IMPROCEDENTE": [r"declar" + _ANUNCIO + r"\s+(?:la\s+)?(?:accion\s+(?:de\s+tutela\s+)?)?improcede"],
-    "CARENCIA_HECHO_SUPERADO": [r"declar" + _ANUNCIO + r"\s+(?:la\s+carencia|(?:el\s+)?hecho\s+superado)"],
-    "CARENCIA_DANO_CONSUMADO": [r"declar" + _ANUNCIO + r"\s+(?:la\s+carencia|(?:el\s+)?daño\s+consumado)"],
-    "CARENCIA_SOBREVINIENTE": [r"declar" + _ANUNCIO + r"\s+(?:la\s+carencia|(?:la\s+)?(?:situacion\s+)?sobrevinient)"],
-}
-
-
-def _anuncia(clave: str, raices: list[str], fuera: str, todo: str) -> bool:
-    if any(_contiene_raiz(fuera, r) for r in raices):
-        return True
-    return any(re.search(rf"(?<![a-zñ0-9]){p}", todo) for p in _ANUNCIO_ESTRICTO[clave])
-
-
 def coherencia_decision(caso: CasoConcretoLLM, decision: Decision) -> list[str]:
     if decision.accion != "decidir":
         return []
-    fuera = normalizar_texto(caso.conclusion)
-    todo = normalizar_texto(caso.conclusion, False)
+    norm = normalizar_texto(caso.conclusion, False)
     msgs: list[str] = _contradicciones(caso.conclusion, decision)
     if decision.resultado:
         raices = _RESULTADO[decision.resultado]
-        if not _anuncia(decision.resultado, raices, fuera, todo):
+        if not any(_contiene_raiz(norm, r) for r in raices):
             msgs.append(
                 f"{BLOQUEA}La conclusión no anuncia el resultado decidido ({decision.resultado}); "
                 f"debe contener una expresión como «{raices[0]}…»."
             )
     if decision.sustitutiva:
         raices = _SUSTITUTIVA[decision.sustitutiva]
-        if not _anuncia(decision.sustitutiva, raices, fuera, todo):
-            esperadas = ", ".join(f"«{r.partition('(')[0]}…»" for r in raices)
+        if not any(_contiene_raiz(norm, r) for r in raices):
+            esperadas = ", ".join(f"«{_ETIQUETA_RAIZ.get(r, r.partition('(')[0])}…»" for r in raices)
             msgs.append(
                 f"{BLOQUEA}La conclusión no anuncia la decisión sustitutiva ({decision.sustitutiva}); "
                 f"debe contener alguna de estas expresiones: {esperadas}."

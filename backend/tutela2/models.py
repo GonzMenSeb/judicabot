@@ -112,6 +112,15 @@ class Ingesta(BaseModel):
     def completo(self) -> bool:
         return not self.faltantes
 
+    def textos_visibles(self) -> list[str]:
+        return [
+            p.texto
+            for d in self.documentos
+            if not (d.ruido or d.doc_id in self.docs_ajenos or d.rol == "producto_despacho")
+            for p in d.paginas
+            if not p.ruido
+        ]
+
 
 class Evento(BaseModel):
     fecha: Optional[str] = Field(None, description="Fecha ISO AAAA-MM-DD si consta")

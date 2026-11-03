@@ -408,6 +408,11 @@ def test_competencia_2_plural():
         ("identificado con cédula 1000000001", "identificado con cédula 1.000.000.001"),
         ("C.C.1000000001", "C.C.1.000.000.001"),
         ("CC 900123456-1", "CC 900123456-1"),
+        ("C.C. N.º 1000000001", "C.C. N.º 1.000.000.001"),
+        ("cédula de ciudadanía N.º 1000000001", "cédula de ciudadanía N.º 1.000.000.001"),
+        ("CC: 1000000001", "CC: 1.000.000.001"),
+        ("cédula de ciudadanía número: 1000000001", "cédula de ciudadanía número: 1.000.000.001"),
+        ("NIT: 900123456", "NIT: 900123456"),
         ("la sociedad con NIT 900123456 y C.C. 1000000001", "la sociedad con NIT 900123456 y C.C. 1.000.000.001"),
     ],
 )

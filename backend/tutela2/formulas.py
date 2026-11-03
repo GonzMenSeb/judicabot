@@ -74,7 +74,7 @@ def _o(valor: str | None, nombre: str) -> str:
 
 _CEDULA = re.compile(
     r"(\b(?:C\.\s?C\.?|CC\.?|c[ée]dula(?:\s+de\s+ciudadan[ií]a)?)"
-    r"(?:\s*(?:No\.?|N[°º.]|Nro\.?|n\.°|n[úu]mero))?\s*)(\d{6,10})\b(?![.,]\d|-\d)",
+    r"(?:\s*:)?(?:\s*(?:No\.?|N\.[°º]|N[°º.]|Nro\.?|n[úu]mero)(?:\s*:)?)?\s*)(\d{6,10})\b(?![.,]\d|-\d)",
     re.IGNORECASE,
 )
 

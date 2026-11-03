@@ -225,10 +225,69 @@ def normalizar_texto(s: str, incisos: bool = True) -> str:
     return _NO_ALFANUM.sub(" ", _MARCAS.sub("", s)).strip()
 
 
+_ENFASIS = (
+    r"(?:subrayad[oa]s?|subrayas?|negrill[oa]s?|negrit[oa]s?|resaltad[oa]s?|resalta|destacad[oa]s?|destaca"
+    r"|[eé]nfasis|cursivas?)"
+)
+_AUTOR_ENFASIS = (
+    r"(?:(?:de|del|por)\s+)?(?:(?:el|la)\s+)?(?:despacho|juzgado|sala|suscrit[oa]|tribunal|ponente)"
+)
+_COLA_ENFASIS = (
+    r"(?:(?:por\s+)?fuera\s+(?:de|del)\s+(?:el\s+)?texto(?:\s+original)?|a[ñn]adid[oa]s?|agregad[oa]s?"
+    r"|propi[oa]s?|nuestr[oa]s?|intencional(?:es)?|del\s+texto\s+original|en\s+el\s+original"
+    rf"|{_AUTOR_ENFASIS})"
+)
+_REF_SENTENCIA = rf"(?:sentencias?\s+)?{RE_SENTENCIA.pattern}"
+_NOMBRE_PONENTE = r"[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+"
+_PONENTE = (
+    r"(?:M\.?\s?P\.?|magistrad[oa]s?\s+ponentes?)\s*:?\s*(?:Dra?\.?\s+)?"
+    rf"(?-i:{_NOMBRE_PONENTE}(?:\s+(?:(?:de|del|la|los|las|y|e)\s+)*{_NOMBRE_PONENTE}){{0,8}})"
+)
+_OMISION = r"[(\[]\s*(?:\.{3}|…|\.\s\.\s\.)\s*[)\]]"
+_NOTA_SENTENCIA = (
+    r"[(\[]\s*(?:(?:cfr|ver)\.?\s*:?\s*)?(?:corte\s+constitucional\s*,?\s*)?"
+    rf"{_REF_SENTENCIA}(?:\s*(?:,|;|y|e)\s*{_REF_SENTENCIA})*"
+    rf"(?:\s*[,;.]\s*{_PONENTE}|\s+{_PONENTE})?\s*[)\]]"
+)
+_MARCAS_CITANTE = re.compile(
+    rf"{_OMISION}"
+    r"|[(\[]\s*sic\s*[)\]]"
+    r"|[(\[]\s*citas?\s+internas?\s+omitid[oa]s?\s*[)\]]"
+    rf"|[(\[]\s*(?:se\s+)?{_ENFASIS}(?:\s*(?:,|y|e)\s*{_ENFASIS})*(?:\s+{_COLA_ENFASIS})?\s*[)\]]"
+    r"|\[\s*\d{1,3}\s*\]"
+    rf"|{_NOTA_SENTENCIA}",
+    re.IGNORECASE,
+)
+_NOTA_SENTENCIA_RX = re.compile(_NOTA_SENTENCIA, re.IGNORECASE)
+_MARCA_NOTA_AL_PIE = re.compile(r"\[\s*\d{1,3}\s*\]")
+_OMISION_RX = re.compile(rf"{_OMISION}|…|\.{{3}}")
+_CORTE = "\ue000"
+_EDICION_LETRA = re.compile(r"\[\s*([^\W\d_])\s*\]")
+_CIERRE = {"(": ")", "[": "]"}
+
+
+def _limpiar_marcas(s: str) -> str:
+    return _quitar_marcas(_EDICION_LETRA.sub(r"\1", _INVISIBLES.sub("", s)))
+
+
+def _limpiar_cita(s: str) -> str:
+    return _limpiar_marcas(_OMISION_RX.sub(f" {_CORTE} ", _INVISIBLES.sub("", s)))
+
+
+def _quitar_marcas(s: str) -> str:
+    while True:
+        s, n = _MARCAS_CITANTE.subn(" ", s)
+        if not n:
+            return s
+
+
 @lru_cache(maxsize=8)
 def _ngramas_fuente(texto: str, n: int, incisos: bool) -> frozenset[tuple[str, ...]]:
-    t = normalizar_texto(texto, incisos).split()
-    return frozenset(zip(*(t[i:] for i in range(n))))
+    grams: set[tuple[str, ...]] = set()
+    for base in (_limpiar_marcas(texto), texto):
+        t = normalizar_texto(base, incisos).split()
+        grams.update(zip(*(t[i:] for i in range(n))))
+    return frozenset(grams)
 
 
 def _cobertura_modo(cita: list[str], texto: str, n: int, incisos: bool) -> float:
@@ -238,22 +297,178 @@ def _cobertura_modo(cita: list[str], texto: str, n: int, incisos: bool) -> float
     return sum(g in fuente for g in grams) / len(grams)
 
 
-_ENFASIS = r"(?:subrayad[oa]s?|negrill[oa]s?|subrayas?|resaltad[oa]s?|[eé]nfasis|cursivas?)"
-_MARCAS_CITANTE = re.compile(
-    r"[(\[]\s*(?:\.{3}|…)\s*[)\]]"
-    r"|[(\[]\s*sic\s*[)\]]"
-    rf"|[(\[]\s*{_ENFASIS}(?:\s*(?:,|y|e)\s*{_ENFASIS})*\s+fuera\s+(?:de|del)\s+(?:el\s+)?texto(?:\s+original)?\s*[)\]]"
-    r"|\[\s*\d{1,3}\s*\]"
-    rf"|\(\s*(?:sentencias?\s+)?{RE_SENTENCIA.pattern}\s*\)",
-    re.IGNORECASE,
-)
+def _pares(s: str) -> list[tuple[int, int]]:
+    pila: list[tuple[str, int]] = []
+    cerrados: list[tuple[int, int]] = []
+    for i, c in enumerate(s):
+        if c in _CIERRE:
+            pila.append((c, i))
+        elif c in ")]" and pila and _CIERRE[pila[-1][0]] == c:
+            cerrados.append((pila.pop()[1], i + 1))
+    return cerrados
+
+
+def _grupos(s: str) -> list[tuple[int, int]]:
+    cerrados = _pares(s)
+    externos: list[tuple[int, int]] = []
+    fin = -1
+    for a, b in sorted(cerrados):
+        if a >= fin:
+            externos.append((a, b))
+            fin = b
+    return externos
+
+
+def _analizar_cita(
+    cita: str,
+) -> tuple[list[str], list[str], list[tuple[int, int, str]], list[int]]:
+    literal: list[str] = []
+    plano: list[str] = []
+    grupos: list[tuple[int, int, str]] = []
+    cortes: list[int] = []
+    pos = 0
+    for a, b in [*_grupos(cita), (len(cita), len(cita))]:
+        for k, trozo in enumerate(cita[pos:a].split(_CORTE)):
+            if k:
+                cortes.append(len(literal))
+            t = normalizar_texto(trozo, False).split()
+            literal += t
+            plano += t
+        g = normalizar_texto(cita[a:b], False).split()
+        if g:
+            grupos.append((len(literal), len(literal) + len(g), _ESPACIOS.sub(" ", cita[a:b]).strip()))
+            literal += g
+        pos = b
+    return literal, plano, grupos, cortes
+
+
+CONTEXTO_GRUPO = 4
+MAX_CHARS_INCISO_FUENTE = 300
+
+
+class _IndiceFuente:
+    def __init__(self, texto: str) -> None:
+        pares = [(a, b) for a, b in _pares(texto) if b - a <= MAX_CHARS_INCISO_FUENTE]
+        cortes = sorted({x for par in pares for x in par})
+        self.tokens: list[str] = []
+        en: dict[int, int] = {}
+        pos = 0
+        for c in [*cortes, len(texto)]:
+            self.tokens += normalizar_texto(texto[pos:c], False).split()
+            en[c] = len(self.tokens)
+            pos = c
+        self.por_inicio: dict[int, int] = {}
+        self.por_fin: dict[int, int] = {}
+        for a, b in pares:
+            i, j = en[a], en[b]
+            if j > i:
+                self.por_inicio[i] = max(j, self.por_inicio.get(i, j))
+                self.por_fin[j] = min(i, self.por_fin.get(j, i))
+        self.posiciones: dict[str, list[int]] = {}
+        for k, t in enumerate(self.tokens):
+            self.posiciones.setdefault(t, []).append(k)
+
+
+@lru_cache(maxsize=8)
+def _indices_fuente(texto: str) -> tuple[_IndiceFuente, ...]:
+    return (_IndiceFuente(_limpiar_marcas(texto)), _IndiceFuente(texto))
+
+
+def _contexto_coincide(ctx: list[str], idx: _IndiceFuente, pos: int, paso: int, saltos: int | None = None) -> bool:
+    if not ctx:
+        return True
+    if saltos is None:
+        saltos = len(ctx)
+    tokens = idx.tokens
+    k = pos if paso > 0 else pos - 1
+    if 0 <= k < len(tokens) and tokens[k] == ctx[0]:
+        if _contexto_coincide(ctx[1:], idx, pos + paso, paso, saltos):
+            return True
+    if saltos <= 0:
+        return False
+    if paso > 0:
+        destino = idx.por_inicio.get(pos)
+    else:
+        destino = idx.por_fin.get(pos)
+    return destino is not None and _contexto_coincide(ctx, idx, destino, paso, saltos - 1)
+
+
+def _grupo_en_indice(g: list[str], izq: list[str], der: list[str], idx: _IndiceFuente) -> bool:
+    for p in idx.posiciones.get(g[0], ()):
+        q = p + len(g)
+        if idx.tokens[p:q] != g:
+            continue
+        if _contexto_coincide(izq[::-1], idx, p, -1) and _contexto_coincide(der, idx, q, 1):
+            return True
+    return False
+
+
+def _grupo_en_fuente(
+    literal: list[str], grupo: tuple[int, int, str], cortes: list[int], texto: str
+) -> bool:
+    i, j, _ = grupo
+    desde = max([0, i - CONTEXTO_GRUPO, *(c for c in cortes if c <= i)])
+    hasta = min([len(literal), j + CONTEXTO_GRUPO, *(c for c in cortes if c >= j)])
+    izqs = {False: literal[max(0, i - CONTEXTO_GRUPO) : i], True: literal[desde:i]}
+    ders = {False: literal[j : j + CONTEXTO_GRUPO], True: literal[j:hasta]}
+    vistos = set()
+    for ti in (False, True):
+        for td in (False, True):
+            izq, der = izqs[ti], ders[td]
+            clave = (tuple(izq), tuple(der))
+            if clave in vistos or (not izq and not der):
+                continue
+            vistos.add(clave)
+            recortado = (ti and izq != izqs[False]) or (td and der != ders[False])
+            if recortado and len(izq) + len(der) < CONTEXTO_GRUPO:
+                continue
+            if any(_grupo_en_indice(literal[i:j], izq, der, idx) for idx in _indices_fuente(texto)):
+                return True
+    return False
+
+
+def _grupo_fallido(cita: str, texto: str) -> str | None:
+    literal, _, grupos, cortes = _analizar_cita(_limpiar_cita(cita))
+    for g in grupos:
+        if not _grupo_en_fuente(literal, g, cortes, texto):
+            return g[2]
+    return None
+
+
+@lru_cache(maxsize=8)
+def _fuente_plana(texto: str) -> str:
+    return f" {normalizar_texto(texto, False)} "
+
+
+def notas_ausentes(cita: str, texto: str, propia: str | None = None) -> list[str]:
+    fuente = _fuente_plana(texto)
+    ausentes: list[str] = []
+    for m in _NOTA_SENTENCIA_RX.finditer(_MARCA_NOTA_AL_PIE.sub("", _INVISIBLES.sub("", cita))):
+        nota = _ESPACIOS.sub(" ", m.group()).strip()
+        if propia and sentencias_en_texto(nota) == {propia}:
+            continue
+        if f" {normalizar_texto(nota, False)} " not in fuente and nota not in ausentes:
+            ausentes.append(nota)
+    return ausentes
+
+
+def motivo_parentesis(cita: str, texto: str) -> str | None:
+    g = _grupo_fallido(cita, texto)
+    if g is None:
+        return None
+    return f"El paréntesis «{g}» no aparece en ese punto de la fuente."
 
 
 def cobertura(cita: str, texto: str, n: int = 6) -> float | None:
-    limpia = normalizar_texto(_quitar(_MARCAS_CITANTE, _INVISIBLES.sub("", cita)), False).split()
-    if not limpia:
+    literal, plano, _, _ = _analizar_cita(_limpiar_cita(cita))
+    if not literal:
         return None
-    return max(_cobertura_modo(limpia, texto, n, incisos) for incisos in (False, True))
+    if _grupo_fallido(cita, texto) is not None:
+        return 0.0
+    puntajes = [_cobertura_modo(literal, texto, n, False)]
+    if plano:
+        puntajes.append(_cobertura_modo(plano, texto, n, True))
+    return max(puntajes)
 
 
 def _pagina_corresponde(texto_norm: str, tipo: str, numero: int, anio: int) -> bool:
@@ -359,19 +574,25 @@ def _verificar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina) 
         cv.motivos.append("La cita no tiene texto que se pueda verificar.")
         return cv
     cv.cobertura = round(cob, 4)
-    if cob >= cfg.cobertura_ok:
+    notas = notas_ausentes(c.texto_citado, texto, cv.sentencia_norm) if cob >= cfg.cobertura_alerta else []
+    if cob >= cfg.cobertura_ok and not notas:
         cv.estado = "ok"
     elif cob >= cfg.cobertura_alerta:
         cv.estado = "alerta"
-        cv.motivos.append(
-            f"Solo el {cob:.0%} del texto citado aparece literalmente en la sentencia {cv.sentencia_norm}; "
-            f"se exige al menos el {cfg.cobertura_ok:.0%}. Compárelo con la relatoría."
-        )
+        if cob < cfg.cobertura_ok:
+            cv.motivos.append(
+                f"Solo el {cob:.0%} del texto citado aparece literalmente en la sentencia {cv.sentencia_norm}; "
+                f"se exige al menos el {cfg.cobertura_ok:.0%}. Compárelo con la relatoría."
+            )
+        cv.motivos.extend(f"La nota «{n}» no aparece en la fuente; verifíquela." for n in notas)
     else:
         cv.motivos.append(
             f"Solo el {cob:.0%} del texto citado aparece literalmente en la sentencia {cv.sentencia_norm}; "
             "el pasaje no se localizó."
         )
+        detalle = motivo_parentesis(c.texto_citado, texto) if cob == 0.0 else None
+        if detalle:
+            cv.motivos.append(detalle)
     return cv
 
 

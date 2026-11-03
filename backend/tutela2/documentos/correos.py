@@ -101,21 +101,11 @@ def _ultima_notificacion(ing: Ingesta):
     return sorted(docs, key=lambda d: d.ruta)[-1] if docs else None
 
 
-def _textos_visibles(ing: Ingesta) -> list[str]:
-    return [
-        p.texto
-        for d in ing.documentos
-        if not (d.ruido or d.doc_id in ing.docs_ajenos or d.rol == "producto_despacho")
-        for p in d.paginas
-        if not p.ruido
-    ]
-
-
 def destinatarios_propuestos(ing: Ingesta) -> list[str]:
     doc = _ultima_notificacion(ing)
     if not doc:
         return []
-    completos = [c for t in _textos_visibles(ing) for c in _CORREO.findall(t)]
+    completos = [c for t in ing.textos_visibles() for c in _CORREO.findall(t)]
     return _unicos(_correos_encabezado(doc.texto(), completos))
 
 

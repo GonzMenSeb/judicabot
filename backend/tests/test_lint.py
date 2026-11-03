@@ -434,11 +434,26 @@ def test_coherencia_decision_anuncio_dentro_de_parentesis_no_bloquea():
     assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
 
 
-def test_coherencia_decision_pasado_dentro_de_parentesis_no_cuenta_como_anuncio():
-    conclusion = "Se revocará la sentencia (en la que el a quo negó el amparo)."
-    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "NEGAR"))
-    assert msgs and all(m.startswith("BLOQUEA: ") for m in msgs)
-    assert any("NEGAR" in m for m in msgs)
+@pytest.mark.parametrize(
+    "resultado,sustitutiva,conclusion",
+    [
+        ("CONFIRMAR", "NEGAR", "Se confirmará la sentencia (que negó el amparo)."),
+        ("REVOCAR", "AMPARAR", "Se revocará la sentencia (en su lugar se concede el amparo)."),
+        ("REVOCAR", "IMPROCEDENTE", "Se revocará la sentencia (la acción es improcedente)."),
+        ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "Se revocará la sentencia (hay carencia actual de objeto por hecho superado)."),
+        ("REVOCAR", "AMPARAR", "Se revocará la sentencia y, en su lugar, se concederá la tutela."),
+        ("REVOCAR", "AMPARAR", "Se revocará la sentencia y se concederá la protección del derecho."),
+    ],
+)
+def test_coherencia_decision_trata_igual_dentro_y_fuera_de_parentesis(resultado, sustitutiva, conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva)) == []
+
+
+def test_coherencia_decision_conceder_tutela_contradice_negar():
+    msgs = lint.coherencia_decision(
+        _caso(conclusion="Se confirmará la sentencia y se concederá la tutela."), _decision("CONFIRMAR", "NEGAR")
+    )
+    assert any("AMPARAR" in m and m.startswith("BLOQUEA: ") for m in msgs)
 
 
 def test_coherencia_decision_parentesis_sin_cerrar_no_oculta_anuncio():
@@ -588,3 +603,65 @@ def test_residuos_detecta_restos_de_borrador(parrafo):
 def test_residuos_infinitivo_en_parrafo_largo_no_alerta():
     largo = "Agregar " + "palabra " * 45
     assert lint.residuos(largo) == []
+
+
+def test_coherencia_decision_mensaje_usa_etiqueta_legible_para_conceder():
+    msgs = lint.coherencia_decision(
+        _caso(conclusion="Se revocará la sentencia y se dispondrá otra cosa."), _decision("REVOCAR", "AMPARAR")
+    )
+    texto = " ".join(msgs)
+    assert "«conceder la tutela/protección…»" in texto
+    assert "\\" not in texto and "(?" not in texto
+
+
+def test_coherencia_decision_condicional_concederia_del_a_quo_no_bloquea():
+    conclusion = "Se revocará la decisión, ya que el a quo concedería la tutela sin pruebas, y se negará el amparo."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "NEGAR")) == []
+
+
+@pytest.mark.parametrize("resultado", ["NEGAR", "IMPROCEDENTE"])
+@pytest.mark.parametrize("giro", ["se concederá el amparo del derecho a la salud", "se concederá la protección del derecho"])
+def test_coherencia_decision_conceder_amparo_contradice_negar_e_improcedente(resultado, giro):
+    conclusion = f"Se confirmará la sentencia que negó la tutela y {giro}."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", resultado))
+    assert any("AMPARAR" in m and m.startswith("BLOQUEA: ") for m in msgs)
+
+
+def test_coherencia_decision_concederia_amparo_sigue_excusado():
+    conclusion = "Se confirmará la sentencia, ya que el a quo concedería el amparo sin pruebas, y se negará la tutela."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "NEGAR")) == []
+
+
+@pytest.mark.parametrize(
+    "resultado,sustitutiva,conclusion",
+    [
+        ("CONFIRMAR", "NEGAR", "Se confirmará la sentencia y, por las mismas razones, tampoco se concederá el amparo frente a la EPS."),
+        ("CONFIRMAR", "NEGAR", "Se confirmará, porque a la accionante no se le concederá el amparo sin prueba del perjuicio."),
+        ("CONFIRMAR", "NEGAR", "Se confirmará el fallo; ni se concederá el amparo ni se ordenará el pago."),
+        ("CONFIRMAR", "NEGAR", "Se confirmará, pues en modo alguno se concederá el amparo de un derecho no vulnerado."),
+        ("CONFIRMAR", "IMPROCEDENTE", "Se confirmará, pues solo si se acredita un perjuicio irremediable se concederá el amparo transitorio."),
+        ("CONFIRMAR", "NEGAR", "Se confirmará, y si se probara el perjuicio, se concederá el amparo, lo cual no ocurre; se negará la tutela."),
+        ("REVOCAR", "NEGAR", "Se revocará la sentencia; nunca se amparará el derecho y se negará la tutela."),
+        ("REVOCAR", "AMPARAR", "Se revocará la sentencia y no se negará el amparo, por lo que se concederá la tutela."),
+    ],
+)
+def test_coherencia_decision_negador_o_condicional_previo_excusa_el_anuncio(resultado, sustitutiva, conclusion):
+    assert lint._contradicciones(conclusion, _decision(resultado, sustitutiva)) == []
+
+
+def test_coherencia_decision_negador_lejano_no_excusa_conceder_amparo():
+    conclusion = "Se confirmará la sentencia que no negó la tutela por error; se concederá el amparo del derecho."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "NEGAR"))
+    assert any("AMPARAR" in m and m.startswith("BLOQUEA: ") for m in msgs)
+
+
+def test_coherencia_decision_conceder_amparo_sin_negador_bajo_negar_bloquea():
+    conclusion = "Se confirmará la sentencia y se concederá el amparo."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "NEGAR"))
+    assert any("AMPARAR" in m and m.startswith("BLOQUEA: ") for m in msgs)
+
+
+def test_coherencia_decision_si_bien_no_es_condicional():
+    conclusion = "Si bien hubo dudas, se confirmará la sentencia y se concederá el amparo."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "NEGAR"))
+    assert any("AMPARAR" in m for m in msgs)

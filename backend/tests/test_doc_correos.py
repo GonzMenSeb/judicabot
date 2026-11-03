@@ -217,3 +217,10 @@ def test_destinatario_truncado_ignora_documentos_ajenos_ruido_y_producto():
     c.paginas[0].ruido = True
     ing = Ingesta(documentos=[doc("n.pdf", "notificacion", NOTIF_CORTADA), c])
     assert "persona.apellido@ejemplo.gov.co" not in correos.destinatarios_propuestos(ing)
+
+
+def test_destinatario_truncado_ignora_documento_con_ruido():
+    c = doc("c.pdf", "contestacion", "persona.apellido@ejemplo.gov.co")
+    c.ruido = True
+    ing = Ingesta(documentos=[doc("n.pdf", "notificacion", NOTIF_CORTADA), c])
+    assert "persona.apellido@ejemplo.gov.co" not in correos.destinatarios_propuestos(ing)

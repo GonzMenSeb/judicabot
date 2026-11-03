@@ -38,8 +38,7 @@ _CODIGO = re.compile(rf"(?<!\w)(?P<cod>{_ALTERNATIVAS})(?!\w)", re.I)
 _NORMA = rf"(?:{_LEY.pattern}|(?<!\w)(?:{_ALTERNATIVAS})(?!\w))"
 _NUM = r"\d+(?:\.\d+)*(?:-?(?-i:[A-Z])(?![A-Za-z0-9]))?[º°]?"
 _ARTS = rf"{_NUM}(?:\s*(?:,|y|e|al|a|hasta\s+el)\s*{_NUM})*"
-_SUPERIOR = r"(?:superior(?:es)?|constitucional(?:es)?|C\.\s?P\.?|C\.\s?N\.?)(?!\w)"
-_CORTE_SUPERIOR = re.compile(r"\b(?:superior(?:es)?|constitucional(?:es)?)\b|(?<!\w)C\.\s?[PN]\b", re.I)
+_SUPERIOR = r"(?:superior(?:es)?|constitucional(?:es)?|C\.\s?[PN](?:\.(?!\s?[A-Za-z]\.)|(?![\w.])))(?!\w)"
 _CONSTITUCION = "Constitución Política"
 _ARTICULO_PRIMERO = re.compile(
     rf"\bart(?:[ií]culos?|s?\.)\s*(?P<arts>{_ARTS})\s*,?\s*"
@@ -54,7 +53,31 @@ _ARTICULO_SUPERIOR = re.compile(
     rf"\bart(?:[ií]culos?|s?\.)\s*(?P<arts>{_ARTS})\s*,?\s*{_SUPERIOR}",
     re.I,
 )
+_CORTE_SUPERIOR = re.compile(
+    rf"\bart(?:[ií]culos?|s?\.)\s*{_ARTS}\s*,?\s*{_SUPERIOR}"
+    r"|\b(?P<adj>constitucional(?:es)?|superior(?:es)?)\b[^.;]{0,40}?"
+    r"(?P<del>\b(?:del|de\s+el|contenido\s+en\s+el|consagrado\s+en\s+el|previsto\s+en\s+el|establecido\s+en\s+el)\s+art(?:[ií]culos?|s?\.))",
+    re.I,
+)
+_PARTE_DE_ARTICULO = re.compile(r"\b(?:inciso|numeral|literal|par[aá]grafo)\b[^.;]{0,20}$", re.I)
+_CONECTOR_PARTE = re.compile(
+    r"\s*(?:del|de\s+el|(?:contenido|consagrado|previsto|establecido)\s+en\s+el)\s+"
+    r"(?:inciso|numeral|literal|par[aá]grafo)\b",
+    re.I,
+)
+_FIN_LISTA = re.compile(r";|\.(?!\d)")
 _VENTANA = 80
+_HOLGURA = 40
+
+
+def _inicio_tope(ventana: str) -> int | None:
+    for m in _CORTE_SUPERIOR.finditer(ventana):
+        if m["del"] is None:
+            return m.start()
+        previo = ventana[: m.start("del")]
+        if not _PARTE_DE_ARTICULO.search(previo) or _CONECTOR_PARTE.match(previo, m.end("adj")):
+            return m.start()
+    return None
 _CONTEXTO = 70
 
 
@@ -126,20 +149,30 @@ def extraer_normas(texto: str) -> list[CitaNorma]:
     menciones = [(m.start(), m.end(), _canon_norma(m[0])) for m in _LEY.finditer(texto) if libre(*m.span())]
     menciones += [(m.start(), m.end(), _canon_norma(m[0])) for m in _CODIGO.finditer(texto) if libre(*m.span())]
     for ini, fin, norma in sorted(menciones):
-        ventana = texto[fin : fin + _VENTANA]
+        ventana = texto[fin : fin + _VENTANA + _HOLGURA]
+        tope = _inicio_tope(ventana)
+        if tope is not None:
+            ventana = ventana[:tope]
         corte = re.search(r"[.;]", ventana)
         ventana = ventana[: corte.start()] if corte else ventana
-        tope = _CORTE_SUPERIOR.search(ventana)
-        if tope:
-            ventana = ventana[: tope.start()]
         sig = _LEY.search(ventana) or _CODIGO.search(ventana)
         if sig:
             ventana = ventana[: sig.start()]
         suelto = _ARTICULO_SUELTO.search(ventana)
-        if suelto and libre(fin + suelto.start(), fin + suelto.end()):
-            ocupado.append((fin + suelto.start(), fin + suelto.end()))
-            for art in _articulos(suelto["arts"]):
-                brutas.append((ini, art, norma, ini, fin + suelto.end()))
+        if suelto and suelto.start() < _VENTANA and libre(fin + suelto.start(), fin + suelto.end()):
+            ini_arts = fin + suelto.start("arts")
+            limite = fin + tope if tope is not None else len(texto)
+            resto = texto[ini_arts:limite]
+            for patron_corte in (_FIN_LISTA, _LEY, _CODIGO):
+                corte_resto = patron_corte.search(resto)
+                if corte_resto:
+                    resto = resto[: corte_resto.start()]
+            ampliado = _ARTICULO_SUELTO.match(texto[fin + suelto.start() : ini_arts] + resto)
+            fin_art = fin + ampliado.end() if ampliado else fin + suelto.end()
+            arts = ampliado["arts"] if ampliado else suelto["arts"]
+            ocupado.append((fin + suelto.start(), fin_art))
+            for art in _articulos(arts):
+                brutas.append((ini, art, norma, ini, fin_art))
         elif norma != _CONSTITUCION:
             brutas.append((ini, None, norma, ini, fin))
 
