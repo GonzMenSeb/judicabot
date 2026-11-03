@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from tutela2 import acceso
 from tutela2 import config as cfgmod
 from tutela2.config import Config
 
@@ -36,6 +37,7 @@ _JOB_ACTUAL: ContextVar[str | None] = ContextVar("job_actual", default=None)
 app = FastAPI(title="Tutela 2ª instancia")
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+app.middleware("http")(acceso.compuerta)
 
 
 class RunBody(BaseModel):
@@ -434,7 +436,10 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))
+    host = os.environ.get("HOST", "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost", "::1") and not acceso.password():
+        raise SystemExit("JUDICABOT_PASSWORD es obligatoria cuando HOST no es local")
+    uvicorn.run(app, host=host, port=int(os.environ.get("PORT", "8000")))
 
 
 if __name__ == "__main__":

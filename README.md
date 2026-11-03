@@ -27,7 +27,7 @@ uv sync
 uv run tutela2-ui
 ```
 
-Abra http://127.0.0.1:8000. Variables de entorno opcionales: `PORT` (por defecto 8000), `HOST` (por defecto `127.0.0.1`), `CASOS_DIR` (por defecto `casos/` en la raíz del repo) y `ALLOWED_HOSTS` (lista separada por comas, por defecto `127.0.0.1,localhost`; cualquier otro nombre recibe un 400). La interfaz no tiene autenticación: si se expone fuera de localhost, póngala detrás de un proxy con login.
+Abra http://127.0.0.1:8000. Variables de entorno opcionales: `PORT` (por defecto 8000), `HOST` (por defecto `127.0.0.1`), `CASOS_DIR` (por defecto `casos/` en la raíz del repo) y `ALLOWED_HOSTS` (lista separada por comas, por defecto `127.0.0.1,localhost`; cualquier otro nombre recibe un 400). `JUDICABOT_PASSWORD` activa una pantalla de contraseña (sin usuario) y es obligatoria si `HOST` no es local; sin ella en localhost no hay autenticación. `/healthz` queda exento.
 
 Uso: **Casos** (arrastrar `01PrimeraInstancia` o la carpeta del caso; también hay botón de carpeta) → **Documentos** → **Configuración** → **Ejecutar** → **Revisión** (apertura, consideraciones, tabla de citas y alertas) → **Decisión** → **Resultado** (árbol de salidas con descargas y `.zip`).
 
