@@ -1,5 +1,5 @@
-casos/
-referencia/
+/casos/
+/referencia/
 .venv/
 __pycache__/
 *.pyc
