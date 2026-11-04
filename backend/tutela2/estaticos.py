@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import mimetypes
+
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -14,7 +16,11 @@ SIN_GZIP = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "image/x-icon",
     "image/vnd.microsoft.icon",
+    "font/woff2",
 )
+
+for _tipo, _extension in (("font/woff2", ".woff2"), ("application/manifest+json", ".webmanifest")):
+    mimetypes.add_type(_tipo, _extension)
 
 
 class CabecerasEstaticas:
