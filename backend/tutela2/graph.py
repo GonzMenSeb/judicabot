@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, ValidationError
 
-from tutela2 import citas, expediente, fallos, ingest, lint, prompts
+from tutela2 import citas, eventos, expediente, fallos, ingest, lint, prompts
 from tutela2.config import Config
 from tutela2.jev import JevClient, cliente_jev
 from tutela2.jev_metadatos import verificar_apertura
@@ -120,9 +120,23 @@ def _llamar(
     intentos = dict(state.get("intentos") or {})
     intento = intentos.get(nodo, 0) + 1
     log.info("%s: llamada al modelo, intento %d", nodo, intento)
+    modelo = cfg.modelo_para(nodo)
+    eventos.emitir(
+        nodo,
+        "lee",
+        f"Llamada al modelo {modelo}{'' if cfg.llm.proveedor == 'anthropic' else f' (proveedor {cfg.llm.proveedor})'}, "
+        f"intento {intento}: {len(user)} caracteres de entrada.",
+        {"nodo": nodo, "intento": intento, "modelo": modelo, "proveedor": cfg.llm.proveedor, "caracteres_entrada": len(user)},
+    )
     try:
         salida, meta = cliente.estructurado(nodo, system, user, schema, cfg)
     except Exception as e:
+        eventos.emitir(
+            nodo,
+            "error",
+            f"La llamada al modelo falló en el intento {intento}: {type(e).__name__}: {e}",
+            {"nodo": nodo, "intento": intento, "tipo_error": type(e).__name__},
+        )
         try:
             fallos.registrar(
                 Path(state["caso_dir"]),
@@ -142,6 +156,18 @@ def _llamar(
             log.exception("%s: no se pudo registrar la llamada fallida", nodo)
         raise
     log.info("%s: respuesta recibida (%s tokens de salida)", nodo, meta.get("tokens_salida") or "?")
+    eventos.emitir(
+        nodo,
+        "escribe",
+        f"Respuesta del modelo recibida: {meta.get('tokens_salida') or '?'} tokens de salida.",
+        {
+            "nodo": nodo,
+            "intento": intento,
+            "modelo_efectivo": meta.get("modelo_efectivo"),
+            "tokens_entrada": meta.get("tokens_entrada"),
+            "tokens_salida": meta.get("tokens_salida"),
+        },
+    )
     llamada = LlamadaIA(
         nodo=nodo,
         intento=intento,
@@ -169,6 +195,9 @@ def _fusionar_metadatos(codigo: Metadatos, modelo: MetadatosLLM) -> Metadatos:
     return Metadatos.model_validate(datos)
 
 
+_ETAPA_VALIDACION = {"consideraciones": "verificacion"}
+
+
 def _cierre_validacion(state: Estado, cfg: Config, nodo: str, mensajes: list[str]) -> dict:
     mensajes = _unicos(mensajes)
     bloqueantes = _bloqueantes(mensajes)
@@ -183,6 +212,20 @@ def _cierre_validacion(state: Estado, cfg: Config, nodo: str, mensajes: list[str
         mensajes.append(
             f"ALERTA: Se agotaron los {cfg.max_intentos} intentos de {nodo} sin resolver los errores bloqueantes; revise manualmente."
         )
+    intento = state.get("intentos", {}).get(nodo, 0)
+    n_alertas = sum(1 for m in mensajes if m.startswith("ALERTA:"))
+    if not bloqueantes:
+        texto = f"Validación sin errores bloqueantes: {n_alertas} alerta{'' if n_alertas == 1 else 's'} para revisar."
+    elif agotados:
+        texto = f"Se agotaron los {cfg.max_intentos} intentos con {len(bloqueantes)} errores bloqueantes sin resolver; queda para revisión manual."
+    else:
+        texto = f"{len(bloqueantes)} errores bloqueantes; se repite la llamada (intento {intento + 1} de {cfg.max_intentos})."
+    eventos.emitir(
+        _ETAPA_VALIDACION.get(nodo, nodo),
+        "verifica",
+        texto,
+        {"nodo": nodo, "intento": intento, "bloqueantes": [e[:240] for e in bloqueantes[:3]], "n_bloqueantes": len(bloqueantes), "n_alertas": n_alertas},
+    )
     return {"errores": bloqueantes, "alertas": {**(state.get("alertas") or {}), nodo: mensajes}}
 
 
@@ -305,6 +348,13 @@ def nodo_verificar_consideraciones(state: Estado, cfg: Config) -> dict:
     md = Metadatos.model_validate(state["metadatos"])
 
     verificadas = citas.verificar_citas(cons.citas, cfg, citas.cargar_dataset(cfg))
+    por_estado = {e: sum(1 for cv in verificadas if cv.estado == e) for e in ("ok", "alerta", "rechazada")}
+    eventos.emitir(
+        "verificacion",
+        "verifica",
+        f"Informe de citas: {por_estado['ok']} verificadas, {por_estado['alerta']} para revisar, {por_estado['rechazada']} rechazadas.",
+        por_estado,
+    )
     mensajes: list[str] = []
     for cv in verificadas:
         detalle = "; ".join(cv.motivos) or "sin detalle"
@@ -546,7 +596,16 @@ def nodo_validar_caso(state: Estado, cfg: Config) -> dict:
 
 
 def nodo_ensamblar(state: Estado, cfg: Config) -> dict:
-    return {"salidas": expediente.generar_final(Path(state["caso_dir"]), dict(state), cfg)}
+    eventos.emitir(
+        "documentos",
+        "escribe",
+        f"Generación del fallo con la plantilla {cfg.plantilla_gen} y de los documentos del expediente.",
+        {"plantilla_gen": cfg.plantilla_gen},
+    )
+    salidas = expediente.generar_final(Path(state["caso_dir"]), dict(state), cfg)
+    for archivo, sha in salidas.items():
+        eventos.emitir("documentos", "escribe", f"Documento generado: {archivo}.", {"archivo": archivo, "sha256": sha})
+    return {"salidas": salidas}
 
 
 def construir(cfg: Config, llm: LLMClient, checkpointer: Any, jev: JevClient | None = None):

@@ -4,3 +4,9 @@
 !backend/tutela2/
 **/__pycache__/
 **/*.py[cod]
+!frontend/
+**/node_modules/
+frontend/e2e/
+frontend/playwright-report/
+frontend/test-results/
+backend/tutela2/static/dist/

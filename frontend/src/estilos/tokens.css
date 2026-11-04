@@ -1,0 +1,35 @@
+:root {
+  --fondo: #e6ebec;
+  --fondo-2: #dce3e5;
+  --papel: #fdfcf9;
+  --tinta: #1d2a33;
+  --suave: #4a5760;
+  --tenue: #55646e;
+  --tenue-deco: #748188;
+  --linea: #c8d1d5;
+  --linea-papel: #e2ddd1;
+  --acento: #1e5a6e;
+  --acento-2: #174757;
+  --acento-fondo: #d6e6eb;
+  --sello: #7a2634;
+  --sello-2: #611c28;
+  --sello-fondo: #f1dde0;
+  --ok: #2c6a4b;
+  --ok-fondo: #d9ebe1;
+  --alerta: #8f5a00;
+  --alerta-fondo: #f6e8c8;
+  --mal: #a8281f;
+  --mal-fondo: #f5dcd9;
+  --foco: #2a7fa0;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Bookman Old Style", "URW Bookman", Bookman, "Palatino Linotype", Georgia, serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { font-size: 16px; }
+body { margin: 0; background: var(--fondo); color: var(--tinta); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+a { color: var(--acento); }

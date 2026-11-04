@@ -14,7 +14,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
 from tutela2 import config as cfgmod
-from tutela2 import expediente, fallos, graph, ingest, llm, prompts, render, salidas
+from tutela2 import expediente, fallos, graph, ingest, llm, prompts, render, resumen_caso, salidas
 from tutela2.config import Config
 from tutela2.models import DatosAuto, Ingesta, Rol
 
@@ -180,6 +180,7 @@ def _generar_previos(caso_dir: Path, ing: Ingesta, cfg: Config, auto: DatosAuto 
         render.render_requerimiento(ing, cfg, requerimiento)
 
 
+@resumen_caso.tras_transicion
 def nuevo(caso_dir: str | Path) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
@@ -204,6 +205,7 @@ def nuevo(caso_dir: str | Path) -> dict:
         return _fallo(caso_dir, e)
 
 
+@resumen_caso.tras_transicion
 def revisar(caso_dir: str | Path, roles: dict[str, str] | None = None, auto: dict | None = None) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
@@ -244,6 +246,7 @@ def revisar(caso_dir: str | Path, roles: dict[str, str] | None = None, auto: dic
         return _fallo(caso_dir, e)
 
 
+@resumen_caso.tras_transicion
 def iniciar(caso_dir: str | Path) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
@@ -297,6 +300,7 @@ def estado(caso_dir: str | Path) -> dict:
         return _fallo(caso_dir, e)
 
 
+@resumen_caso.tras_transicion
 def decidir(caso_dir: str | Path, decision: dict) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
@@ -340,6 +344,7 @@ def _fallos_consecutivos(nodo: str, bitacora: list[dict], caso_dir: Path) -> lis
     ]
 
 
+@resumen_caso.tras_transicion
 def continuar(caso_dir: str | Path, forzar: bool = False) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:

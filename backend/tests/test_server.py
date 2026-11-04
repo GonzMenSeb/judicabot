@@ -165,7 +165,7 @@ def test_subida_rechaza_rutas_peligrosas(cliente, tmp_path, malo):
 
 
 def test_subida_valida_nombre_y_archivos(cliente):
-    assert _subir(cliente, "   ", {"a.pdf": b"1"}).status_code == 422
+    assert _subir(cliente, "   ", {"a.pdf": b"1"}).status_code == 200
     assert _subir(cliente, "x", {".DS_Store": b"1"}).status_code == 400
     assert cliente.post("/api/casos", data={"nombre": "x"}).status_code == 422
 
@@ -176,7 +176,8 @@ def test_nombre_repetido_agrega_sufijo(cliente):
 
 
 def test_listar_casos(cliente, caso):
-    assert cliente.get("/api/casos").json() == [{"id": caso, "estado": "sin_iniciar", "n_insumos": 1}]
+    (fila,) = cliente.get("/api/casos").json()
+    assert (fila["id"], fila["estado"], fila["n_insumos"], fila["nombre"]) == (caso, "sin_iniciar", 1, "Caso Uno")
 
 
 def test_listar_casos_sin_carpeta(cliente):
@@ -281,11 +282,12 @@ def test_decidir_pasa_la_decision_intacta_a_api(cliente, caso, api):
     assert api.llamadas[0][2] == decision
 
 
-def test_estado_incluye_job_activo_y_falla_con_mensaje(cliente, caso, api):
+def test_estado_incluye_job_activo_y_falla_con_mensaje(cliente, caso, api, tmp_path):
     api.modulo.estado = lambda caso_dir: (_ for _ in ()).throw(RuntimeError("sqlite roto"))
     r = cliente.get(f"/api/casos/{caso}/estado")
     assert r.status_code == 500
     assert "sqlite roto" in r.json()["detail"]
+    (tmp_path / "casos" / caso / ".resumen.json").unlink()
     assert cliente.get("/api/casos").json()[0]["estado"] == "error"
 
 
@@ -368,6 +370,18 @@ def test_arbol_de_salidas(cliente, caso, con_salidas):
     assert archivos == sorted(archivos)
     assert not any(a.startswith(("/", "..")) or "SECRETO" in a for a in archivos)
     assert cliente.get("/api/casos/nada/salidas").status_code == 404
+
+
+def test_arbol_de_salidas_oculta_las_vistas_y_sus_temporales(cliente, caso, con_salidas):
+    for rel in ["trabajo/previo.docx", "trabajo/previo.vista.json", "trabajo/.previo.vista.json.tmp"]:
+        destino = con_salidas / "salidas" / rel
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(b"x")
+    archivos = cliente.get(f"/api/casos/{caso}/salidas").json()["archivos"]
+    assert "trabajo/previo.docx" in archivos
+    assert not any(".vista.json" in a for a in archivos)
+    with zipfile.ZipFile(io.BytesIO(cliente.get(f"/api/casos/{caso}/zip").content)) as z:
+        assert not any(".vista.json" in n for n in z.namelist())
 
 
 def test_zip_con_rutas_relativas(cliente, caso, con_salidas):
@@ -473,12 +487,15 @@ def test_modelo_global_se_elige_persiste_y_aplica(cliente, tmp_path, monkeypatch
     assert [c["id"] for c in cliente.get("/api/casos").json()] == ["c1"]
 
 
-def test_sirve_la_interfaz(cliente):
+def test_sirve_la_interfaz_compilada(cliente, tmp_path, monkeypatch):
+    static = tmp_path / "static"
+    (static / "dist").mkdir(parents=True)
+    (static / "dist" / "index.html").write_text("<!doctype html><title>Judicabot</title>", encoding="utf-8")
+    monkeypatch.setattr(server, "STATIC", static)
     r = cliente.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
-    assert cliente.get("/static/app.js").status_code == 200
-    assert cliente.get("/static/styles.css").status_code == 200
+    assert "Judicabot" in r.text
 
 
 def test_rechaza_hosts_externos(cliente):

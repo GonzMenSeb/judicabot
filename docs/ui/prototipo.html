@@ -1,0 +1,1631 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Judicabot</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d2a33'/%3E%3Cpath d='M8 5h11l5 5v17H8z' fill='%23fdfcf9'/%3E%3Cpath d='M19 5v5h5' fill='%23c8d1d5'/%3E%3Crect x='11' y='14' width='9' height='2' rx='1' fill='%239fb2bb'/%3E%3Ccircle cx='22.5' cy='23.5' r='6.5' fill='%231d2a33'/%3E%3Ccircle cx='22.5' cy='23.5' r='5' fill='%237a2634'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --fondo: #e6ebec;
+  --fondo-2: #dce3e5;
+  --papel: #fdfcf9;
+  --tinta: #1d2a33;
+  --suave: #5a6a75;
+  --tenue: #8a99a2;
+  --linea: #c8d1d5;
+  --linea-papel: #e2ddd1;
+  --acento: #1e5a6e;
+  --acento-2: #174757;
+  --acento-fondo: #d6e6eb;
+  --sello: #7a2634;
+  --sello-2: #611c28;
+  --sello-fondo: #f1dde0;
+  --ok: #2c6a4b;
+  --ok-fondo: #d9ebe1;
+  --alerta: #8f5a00;
+  --alerta-fondo: #f6e8c8;
+  --mal: #a8281f;
+  --mal-fondo: #f5dcd9;
+  --foco: #2a7fa0;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Bookman Old Style", "URW Bookman", Bookman, "Palatino Linotype", Georgia, serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { font-size: 16px; }
+body { margin: 0; background: var(--fondo); color: var(--tinta); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+a { color: var(--acento); }
+
+.barra { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 0.75rem; padding: 0 1.5rem; height: 3.5rem; background: var(--tinta); color: #e8eef0; }
+.marca { display: flex; align-items: center; gap: 0.6rem; background: none; border: 0; color: inherit; padding: 0; }
+.marca svg { width: 1.9rem; height: 1.9rem; }
+.marca b { font-weight: 600; font-size: 1.08rem; letter-spacing: 0.01em; }
+.barra .relleno { flex: 1; }
+.enlace-barra { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; border: 0; border-radius: 6px; background: transparent; color: #c9d6db; font-size: 0.9rem; }
+.enlace-barra:hover { background: #26363f; color: #fff; }
+.enlace-barra[aria-current=page] { background: #2b3d47; color: #fff; }
+.punto { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #6fcf9b; }
+.punto.mal { background: #e8bb62; }
+
+.lienzo { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 7rem; }
+.migas { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; font-size: 0.9rem; color: var(--suave); list-style: none; padding: 0; }
+.migas li + li::before { content: "/"; margin-right: 0.4rem; color: var(--tenue); }
+.migas button { padding: 0; border: 0; background: none; color: var(--acento); }
+.migas button:hover { text-decoration: underline; }
+.titulo { font-size: 1.6rem; font-weight: 600; line-height: 1.25; }
+.sub { color: var(--suave); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.55rem 1.1rem; border: 1px solid var(--linea); border-radius: 6px; background: #fff; font-weight: 500; text-decoration: none; color: var(--tinta); white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--acento); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+.btn.primario:hover:not(:disabled) { background: var(--acento-2); }
+.btn.sello { background: var(--sello); border-color: var(--sello); color: #fff; }
+.btn.sello:hover:not(:disabled) { background: var(--sello-2); }
+.btn.grande { padding: 0.75rem 1.5rem; font-size: 1.02rem; }
+.btn.liviano { border-color: transparent; background: transparent; color: var(--acento); padding: 0.3rem 0.6rem; }
+.btn.liviano:hover { background: var(--acento-fondo); }
+
+.chip { display: inline-block; padding: 0.05rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 500; white-space: nowrap; background: var(--fondo-2); color: var(--suave); }
+.chip.ok { background: var(--ok-fondo); color: var(--ok); }
+.chip.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.chip.mal { background: var(--mal-fondo); color: var(--mal); }
+.chip.info { background: var(--acento-fondo); color: var(--acento); }
+.chip.sello { background: var(--sello-fondo); color: var(--sello); }
+
+input[type=text], input[type=password], input[type=date], input[type=number], input[type=search], select, textarea { width: 100%; padding: 0.5rem 0.65rem; background: #fff; border: 1px solid var(--linea); border-radius: 6px; }
+textarea { resize: vertical; min-height: 4.5rem; line-height: 1.45; }
+.campo { display: grid; gap: 0.3rem; align-content: start; }
+.campo > label { font-size: 0.88rem; font-weight: 500; }
+.campo small { color: var(--suave); font-size: 0.83rem; }
+
+/* Inicio */
+.bienvenida { max-width: 960px; margin: 2.5rem auto 0; }
+.bienvenida .despacho { color: var(--suave); }
+.bienvenida h1 { font-size: 2.3rem; font-weight: 600; line-height: 1.15; margin: 0.3rem 0 2rem; letter-spacing: -0.01em; }
+.procesos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.proceso-t { position: relative; display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 0.4rem 1.1rem; align-content: start; min-height: 10.5rem; padding: 1.4rem 1.5rem; text-align: left; border: 1px solid var(--linea); border-radius: 14px; background: #fff; }
+.proceso-t .ico { grid-row: 1 / span 3; width: 3.5rem; height: 3.5rem; border-radius: 12px; display: grid; place-items: center; background: var(--acento-fondo); color: var(--acento); }
+.proceso-t h2 { font-size: 1.15rem; font-weight: 600; line-height: 1.3; }
+.proceso-t p { color: var(--suave); font-size: 0.93rem; }
+.proceso-t .pie-t { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; margin-top: 0.8rem; font-size: 0.9rem; }
+.proceso-t .pie-t .abrir { margin-left: auto; color: var(--acento); font-weight: 500; }
+.proceso-t.activo { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.proceso-t.activo:hover { border-color: var(--acento); box-shadow: 0 10px 26px -18px rgba(30, 90, 110, 0.8); }
+.proceso-t.inactivo { background: transparent; border-style: dashed; cursor: default; color: var(--tenue); }
+.proceso-t.inactivo .ico { background: var(--fondo-2); color: var(--tenue); }
+.proceso-t.inactivo h2 { color: var(--suave); font-weight: 500; }
+.punto-sello { display: inline-block; width: 0.5rem; height: 0.5rem; margin-right: 0.35rem; border-radius: 50%; background: var(--sello); vertical-align: 0.05rem; }
+
+/* Casos */
+.cabeza-proceso { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2rem 1rem; align-items: center; margin-bottom: 1.75rem; }
+.cabeza-proceso .ico { grid-row: 1 / span 2; width: 3.2rem; height: 3.2rem; border-radius: 12px; display: grid; place-items: center; background: var(--acento-fondo); color: var(--acento); }
+.nuevo-caso { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); border: 1px solid var(--linea); border-radius: 14px; background: #fff; overflow: hidden; margin-bottom: 2.5rem; }
+.nuevo-caso .texto { padding: 2rem 2.2rem; display: grid; gap: 0.6rem; align-content: center; }
+.nuevo-caso h2 { font-size: 1.3rem; font-weight: 600; line-height: 1.3; }
+.nuevo-caso .acciones { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; margin-top: 0.6rem; }
+.nuevo-caso .ilus { padding: 1.8rem 2rem; background: radial-gradient(rgba(30, 90, 110, 0.13) 1px, transparent 1.2px) 0 0 / 16px 16px, #f1f5f6; border-left: 1px solid var(--linea); display: grid; align-content: center; }
+.nuevo-caso.activa { border-color: var(--acento); box-shadow: 0 0 0 3px var(--acento-fondo); }
+.arbol { list-style: none; margin: 0; padding: 0; font-size: 0.93rem; }
+.arbol ul { list-style: none; margin: 0; padding-left: 1.3rem; border-left: 1.5px solid var(--linea); margin-left: 0.6rem; }
+.arbol li { padding: 0.18rem 0; }
+.arbol .n { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0.55rem; border-radius: 6px; }
+.arbol .n svg { flex: none; }
+.arbol .objetivo > .n { background: #fff; border: 1.5px solid var(--acento); font-weight: 600; color: var(--acento); box-shadow: 0 4px 14px -8px rgba(30, 90, 110, 0.6); }
+.arbol .objetivo > .n .etq { margin-left: 0.4rem; padding: 0 0.45rem; border-radius: 999px; background: var(--acento); color: #fff; font-size: 0.75rem; font-weight: 500; }
+.arbol .ignorada > .n { color: var(--tenue); text-decoration: line-through; text-decoration-color: rgba(138, 153, 162, 0.6); }
+.arbol .ignorada small { color: var(--tenue); display: inline-block; margin-left: 0.4rem; }
+.arbol .archivos { color: var(--suave); }
+.detectado { display: grid; gap: 1rem; padding: 2rem 2.2rem; }
+.detectado .resumen { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; color: var(--suave); }
+.soltar-global { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(30, 90, 110, 0.88); color: #fff; pointer-events: none; }
+.soltar-global div { padding: 2.5rem 3rem; border: 2.5px dashed rgba(255,255,255,0.75); border-radius: 18px; text-align: center; }
+.soltar-global h2 { font-size: 1.6rem; font-weight: 600; }
+
+.herramientas { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; margin-bottom: 1.2rem; }
+.herramientas h2 { font-size: 1.25rem; font-weight: 600; }
+.buscar { position: relative; width: min(22rem, 100%); }
+.buscar svg { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); color: var(--tenue); }
+.buscar input { padding-left: 2.2rem; }
+.grupo-casos { margin-bottom: 2rem; }
+.grupo-casos > h3 { display: flex; align-items: baseline; gap: 0.6rem; font-size: 0.98rem; font-weight: 600; margin-bottom: 0.6rem; color: var(--suave); }
+.grupo-casos > h3 span { font-weight: 400; color: var(--tenue); font-variant-numeric: tabular-nums; }
+.fichas { display: grid; gap: 0.6rem; }
+.ficha { display: grid; grid-template-columns: minmax(0, 1fr) 15rem 11.5rem; gap: 1.75rem; align-items: center; padding: 1rem 1.25rem 1rem 1.4rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; position: relative; }
+.ficha::before { content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 4px; border-radius: 0 3px 3px 0; background: var(--acento); }
+.ficha.sello::before { background: var(--sello); }
+.ficha.alerta::before { background: #d19a2c; }
+.ficha.ok::before { background: var(--ok); }
+.ficha h4 { margin: 0; font-size: 1.02rem; font-weight: 600; }
+.ficha .meta { display: flex; gap: 1.2rem; margin-top: 0.15rem; font-size: 0.88rem; color: var(--suave); min-width: 0; }
+.ficha .meta span { white-space: nowrap; }
+.ficha .meta span:last-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.continuar { margin-top: 2.5rem; }
+.continuar h2 { font-size: 0.98rem; font-weight: 600; color: var(--suave); margin-bottom: 0.6rem; }
+.avance { display: grid; gap: 0.35rem; }
+.avance .seg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.avance .seg4 i { height: 5px; border-radius: 3px; background: var(--fondo-2); }
+.avance .seg4 i.h { background: var(--acento); }
+.avance .seg4 i.a { background: var(--acento); opacity: 0.45; }
+.ficha.sello .seg4 i.a { background: var(--sello); opacity: 1; }
+.ficha.alerta .seg4 i.a { background: #d19a2c; opacity: 1; }
+.ficha.trabajando .seg4 i.a { background: linear-gradient(90deg, var(--acento-fondo), var(--acento), var(--acento-fondo)); background-size: 200% 100%; opacity: 1; animation: barrido 1.6s linear infinite; }
+@keyframes barrido { from { background-position: 200% 0; } to { background-position: 0 0; } }
+.avance small { font-size: 0.86rem; color: var(--suave); }
+.ficha.sello .avance small { color: var(--sello); font-weight: 500; }
+.ficha.alerta .avance small { color: var(--alerta); font-weight: 500; }
+.ficha .accion { display: grid; justify-items: end; gap: 0.25rem; }
+.ficha .accion small { color: var(--tenue); font-size: 0.82rem; }
+.ficha.compacta { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+.vacio-busqueda { padding: 2rem; text-align: center; color: var(--suave); border: 1px dashed var(--linea); border-radius: 12px; }
+
+/* Caso */
+.cabeza { margin-bottom: 1.5rem; }
+.cabeza .meta { display: flex; flex-wrap: wrap; gap: 0.2rem 1.75rem; margin-top: 0.35rem; color: var(--suave); font-size: 0.93rem; }
+.pasos { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 2rem; padding: 0; list-style: none; }
+.paso { position: relative; padding-top: 1.7rem; }
+.paso::before { content: ""; position: absolute; top: 0.62rem; left: 0; right: 0; height: 2px; background: var(--linea); }
+.paso.hecho::before { background: var(--acento); }
+.paso.actual::before { background: linear-gradient(90deg, var(--acento) 0 18%, var(--linea) 18%); }
+.paso.decide.actual::before { background: linear-gradient(90deg, var(--sello) 0 18%, var(--linea) 18%); }
+.paso button { all: unset; display: block; cursor: pointer; }
+.paso[aria-disabled=true] button { cursor: default; }
+.paso .marca-paso { position: absolute; top: 0; left: 0; width: 1.3rem; height: 1.3rem; border-radius: 50%; background: var(--fondo); border: 2px solid var(--linea); display: grid; place-items: center; font-size: 0.72rem; font-weight: 600; color: var(--suave); }
+.paso.hecho .marca-paso { background: var(--acento); border-color: var(--acento); color: #fff; }
+.paso.actual .marca-paso { border-color: var(--acento); color: var(--acento); background: #fff; }
+.paso.decide.actual .marca-paso { border-color: var(--sello); color: var(--sello); }
+.paso b { display: block; font-weight: 600; padding-right: 1rem; }
+.paso small { color: var(--suave); font-size: 0.86rem; }
+.paso[aria-disabled=true] b { color: var(--suave); font-weight: 500; }
+
+.faltantes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; padding: 0.8rem 1rem; border-radius: 8px; background: var(--ok-fondo); color: var(--ok); margin-bottom: 1.5rem; }
+.faltantes.mal { background: var(--alerta-fondo); color: var(--alerta); }
+.faltantes .piezas { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.9rem; }
+.docs { background: #fff; border: 1px solid var(--linea); border-radius: 10px; overflow: hidden; }
+.doc { border-top: 1px solid var(--linea); }
+.doc:first-child { border-top: 0; }
+.doc-fila { display: grid; grid-template-columns: 2rem minmax(5rem, 1fr) 17rem 17rem 5.5rem; gap: 0.9rem; align-items: center; padding: 0.7rem 1rem; }
+.doc-fila .nombre b { display: block; font-weight: 500; }
+.doc-fila .nombre small { color: var(--suave); }
+.icono-pdf { width: 1.5rem; height: 1.9rem; }
+.rol { padding: 0.35rem 0.5rem; border-color: transparent; background: var(--fondo); font-weight: 500; }
+.rol:hover { border-color: var(--linea); }
+.rol.cambiado { background: var(--acento-fondo); }
+.jev { font-size: 0.85rem; color: var(--suave); }
+.jev .pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+.jev.alto .pct { color: var(--ok); }
+.jev.discrepa { color: var(--alerta); }
+.expandir { all: unset; display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.3rem; height: 1.8rem; padding: 0 0.4rem; cursor: pointer; border-radius: 4px; color: var(--tenue); font-size: 0.82rem; }
+.expandir:hover { color: var(--acento); }
+.expandir:hover { background: var(--fondo); }
+.expandir svg { transition: transform 0.15s; }
+.doc.abierto .expandir svg { transform: rotate(90deg); }
+.doc-detalle { padding: 0 1rem 1rem 3.9rem; color: var(--suave); font-size: 0.92rem; }
+.doc-detalle q { display: block; padding: 0.6rem 0.9rem; border-left: 3px solid var(--linea); background: var(--fondo); quotes: none; font-style: italic; }
+.doc-detalle .alerta-doc { margin-top: 0.5rem; color: var(--alerta); }
+.bloque { margin-top: 2rem; }
+.bloque > h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.2rem; }
+.bloque > .sub { margin-bottom: 0.9rem; font-size: 0.92rem; }
+.rejilla-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
+.salidas-previas { display: grid; gap: 0.5rem; }
+.fila-archivo { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) auto; gap: 0.8rem; align-items: center; padding: 0.55rem 0.8rem; background: #fff; border: 1px solid var(--linea); border-radius: 8px; }
+.fila-archivo small { display: block; color: var(--suave); }
+.accion-fija { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; background: rgba(230, 235, 236, 0.94); border-top: 1px solid var(--linea); backdrop-filter: blur(6px); }
+.accion-fija > div { max-width: 1180px; margin: 0 auto; padding: 0.8rem 1.5rem; display: flex; align-items: center; gap: 1rem; }
+.accion-fija .relleno { flex: 1; color: var(--suave); font-size: 0.92rem; }
+.accion-fija .relleno b { color: var(--tinta); font-weight: 500; }
+
+.proceso { max-width: 640px; margin: 1rem auto 0; }
+.proceso h2 { font-size: 1.35rem; font-weight: 600; }
+.etapas { list-style: none; margin: 1.5rem 0; padding: 0; display: grid; }
+.etapa { display: grid; grid-template-columns: 1.8rem 1fr auto; gap: 0.9rem; align-items: start; padding: 0.9rem 0; border-top: 1px solid var(--linea); }
+.etapa:last-child { border-bottom: 1px solid var(--linea); }
+.etapa b { font-weight: 500; }
+.etapa small { display: block; color: var(--suave); }
+.etapa.espera { color: var(--suave); }
+.giro { width: 1.25rem; height: 1.25rem; border-radius: 50%; border: 2px solid var(--acento-fondo); border-top-color: var(--acento); animation: gira 0.9s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+.hecho-ico { width: 1.25rem; height: 1.25rem; border-radius: 50%; background: var(--ok); display: grid; place-items: center; }
+.espera-ico { width: 1.25rem; height: 1.25rem; border-radius: 50%; border: 2px solid var(--linea); }
+
+.dos { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 2rem; align-items: start; }
+.dos.ancha { grid-template-columns: minmax(0, 1fr) 27rem; }
+.dos.fmt { grid-template-columns: minmax(0, 1fr) 30rem; gap: 2.5rem; }
+.hoja { background: var(--papel); border: 1px solid var(--linea-papel); border-radius: 3px; box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 10px 30px -18px rgba(29, 42, 51, 0.35); padding: 3rem 3.4rem; font-family: var(--serif); font-size: 1.02rem; line-height: 1.75; hyphens: auto; }
+.hoja .sello-borrador { display: inline-block; margin-bottom: 1.6rem; padding: 0.1rem 0.7rem; border: 1.5px solid var(--sello); border-radius: 3px; color: var(--sello); font-family: var(--sans); font-size: 0.82rem; font-weight: 600; transform: rotate(-1.2deg); }
+.hoja h3 { margin: 2rem 0 0.7rem; font-size: 1.02rem; font-weight: 700; }
+.hoja h3:first-of-type { margin-top: 0; }
+.hoja p { margin-bottom: 0.9rem; text-align: justify; }
+.hoja .nota-edit { font-family: var(--sans); font-size: 0.85rem; color: var(--suave); }
+.cita { padding: 0 0.15rem; border: 0; border-bottom: 2px solid; border-radius: 2px 2px 0 0; background: none; font: inherit; line-height: inherit; color: inherit; }
+.cita.ok { border-color: #5fa882; background: rgba(44, 106, 75, 0.09); }
+.cita.alerta { border-color: #d19a2c; background: rgba(143, 90, 0, 0.12); }
+.cita.rechazada { border-color: var(--mal); background: rgba(168, 40, 31, 0.12); }
+.cita:hover, .cita.sel { background: var(--acento-fondo); }
+.riel { position: sticky; top: 4.8rem; display: grid; gap: 1.5rem; max-height: calc(100vh - 6.5rem); overflow: auto; padding-right: 0.2rem; }
+.riel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
+.riel section { padding-bottom: 1.25rem; border-bottom: 1px solid var(--linea); }
+.riel section:last-child { border-bottom: 0; }
+.lista-rev { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+.lista-rev li { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; font-size: 0.92rem; }
+.lista-rev .chip { align-self: start; margin-top: 0.1rem; }
+.conteo { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.jev-fila { display: grid; gap: 0.2rem; margin-bottom: 0.7rem; font-size: 0.9rem; }
+.jev-fila .barra-conf { height: 0.35rem; border-radius: 3px; background: var(--fondo-2); overflow: hidden; }
+.jev-fila .barra-conf i { display: block; height: 100%; background: var(--ok); }
+.jev-fila.bajo .barra-conf i { background: #98a6ae; }
+.detalle-cita { padding: 1rem; background: #fff; border: 1px solid var(--linea); border-radius: 8px; display: grid; gap: 0.6rem; font-size: 0.92rem; }
+.detalle-cita h3 { font-size: 1.02rem; font-weight: 600; }
+.detalle-cita q { display: block; padding: 0.5rem 0.8rem; border-left: 3px solid var(--linea); font-style: italic; quotes: none; color: var(--suave); }
+.detalle-cita dl { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.9rem; margin: 0; }
+.detalle-cita dt { color: var(--suave); }
+.detalle-cita dd { margin: 0; }
+.rehacer { display: grid; gap: 0.6rem; }
+
+.contexto { display: flex; flex-wrap: wrap; gap: 0.3rem 2.5rem; margin-bottom: 1.75rem; padding: 0.9rem 1.1rem; border-left: 4px solid var(--sello); background: #fff; border-radius: 0 8px 8px 0; font-size: 0.93rem; }
+.contexto b { display: block; font-weight: 500; color: var(--suave); font-size: 0.85rem; }
+.form-dec { display: grid; gap: 2.2rem; }
+.sec-dec h2 { font-size: 1.12rem; font-weight: 600; margin-bottom: 0.25rem; }
+.sec-dec > .sub { font-size: 0.92rem; margin-bottom: 0.9rem; }
+.seg { display: inline-flex; border: 1px solid var(--linea); border-radius: 8px; background: #fff; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { padding: 0.5rem 1.1rem; border: 0; border-radius: 6px; background: transparent; font-weight: 500; color: var(--suave); }
+.seg button:hover { color: var(--tinta); background: var(--fondo); }
+.seg button[aria-pressed=true] { background: var(--sello); color: #fff; }
+.opciones { display: grid; gap: 0.5rem; }
+.opcion { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.9rem; border: 1px solid var(--linea); border-radius: 8px; background: #fff; text-align: left; }
+.opcion:hover { border-color: var(--acento); }
+.opcion[aria-pressed=true] { border-color: var(--sello); background: var(--sello-fondo); }
+.opcion .rad { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--linea); flex: none; }
+.opcion[aria-pressed=true] .rad { border-color: var(--sello); background: radial-gradient(var(--sello) 45%, transparent 50%); }
+.hijo { margin-top: 1.1rem; }
+.reparo { display: grid; grid-template-columns: minmax(0, 1fr) 11rem; gap: 0.4rem 1rem; align-items: start; padding: 0.8rem 0; border-top: 1px solid var(--linea); }
+.reparo:first-of-type { border-top: 0; }
+.reparo .quien { font-weight: 500; }
+.reparo .que { color: var(--suave); font-size: 0.92rem; }
+.reparo input[type=text] { grid-column: 1 / -1; }
+.orden-card { display: grid; gap: 0.8rem; padding: 1rem; margin-bottom: 0.8rem; background: #fff; border: 1px solid var(--linea); border-radius: 10px; }
+.orden-card .fila { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 9rem; gap: 0.8rem; }
+.orden-card .pie { display: flex; justify-content: space-between; align-items: center; }
+.interr { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; }
+.interr input[type=checkbox] { width: 1.15rem; height: 1.15rem; accent-color: var(--sello); }
+.interr small { color: var(--suave); }
+.fila-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+.hoja-resuelve { position: sticky; top: 4.8rem; max-height: calc(100vh - 6rem); overflow: auto; padding: 2rem 1.8rem 1.4rem; font-size: 0.9rem; line-height: 1.6; }
+.hoja-resuelve > h3 { margin: 0 0 1rem; text-align: center; font-size: 1.02rem; letter-spacing: 0.04em; }
+.hoja-resuelve .vacio-hoja { font-family: var(--sans); color: var(--suave); text-align: center; padding: 2rem 0; font-size: 0.92rem; }
+.numeral { position: relative; padding: 0.15rem 2rem 0.15rem 0; margin-bottom: 0.8rem; text-align: left; }
+.numeral .mover { position: absolute; top: 0; right: -0.4rem; display: grid; opacity: 0; transition: opacity 0.12s; }
+.numeral:hover .mover, .numeral:focus-within .mover { opacity: 1; }
+.mover button { all: unset; cursor: pointer; width: 1.5rem; height: 1.3rem; display: grid; place-items: center; color: var(--suave); border-radius: 3px; }
+.mover button:hover { background: var(--fondo-2); color: var(--tinta); }
+.numeral .falta { background: var(--alerta-fondo); color: var(--alerta); border-radius: 3px; padding: 0 0.25rem; font-family: var(--sans); font-size: 0.85em; }
+.hoja-resuelve .pie-hoja { margin-top: 1.2rem; padding-top: 0.8rem; border-top: 1px solid var(--linea-papel); font-family: var(--sans); font-size: 0.8rem; color: var(--suave); }
+.nuevo { animation: entra 0.35s ease-out; }
+@keyframes entra { from { background: var(--sello-fondo); } to { background: transparent; } }
+
+.hero-fallo { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 2.2rem; align-items: center; padding: 1.8rem 2rem; border: 1px solid var(--linea); border-radius: 12px; background: #fff; }
+.miniatura { aspect-ratio: 21.1 / 34.1; background: var(--papel); border: 1px solid var(--linea-papel); box-shadow: 0 10px 24px -14px rgba(29, 42, 51, 0.5); padding: 0.8rem 0.7rem; display: grid; align-content: start; gap: 0.32rem; transform: rotate(-1.5deg); }
+.miniatura i { display: block; height: 0.28rem; background: #cfcabb; border-radius: 1px; }
+.miniatura i.t { width: 60%; margin: 0 auto 0.3rem; background: #9d9783; }
+.miniatura i.c { width: 80%; }
+.hero-fallo h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.3rem; }
+.hero-fallo .acciones { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 1.2rem; }
+.antes-firmar { margin: 1.5rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.antes-firmar li { display: grid; grid-template-columns: auto 1fr; gap: 0.7rem; font-size: 0.93rem; align-items: start; }
+.antes-firmar .chip { align-self: start; }
+.grupo-salida { margin-top: 2rem; }
+.grupo-salida h2 { font-size: 1.02rem; font-weight: 600; margin-bottom: 0.2rem; }
+.grupo-salida > .sub { font-size: 0.88rem; margin-bottom: 0.6rem; }
+
+/* Formato */
+.form-fmt { display: grid; gap: 2.4rem; }
+.sec-fmt h2 { font-size: 1.15rem; font-weight: 600; }
+.sec-fmt > .sub { font-size: 0.92rem; margin: 0.15rem 0 1rem; }
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem 1rem; }
+.campos .ancho { grid-column: 1 / -1; }
+.campo-fmt { display: grid; gap: 0.3rem; align-content: start; padding: 0.6rem 0.7rem 0.7rem; margin: -0.6rem -0.7rem -0.7rem; border-radius: 8px; transition: background 0.12s; }
+.campo-fmt:focus-within { background: #fff; box-shadow: 0 0 0 1px var(--linea); }
+.campo-fmt > label { font-size: 0.88rem; font-weight: 500; }
+.campo-fmt small { color: var(--suave); font-size: 0.83rem; }
+.aparece { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; font-size: 0.8rem; color: var(--tenue); }
+.aparece button { padding: 0 0.5rem; border: 1px solid var(--linea); border-radius: 999px; background: transparent; color: var(--suave); font-size: 0.78rem; }
+.aparece button:hover { border-color: var(--acento); color: var(--acento); }
+.aparece span.fijo { padding: 0 0.5rem; border: 1px dashed var(--linea); border-radius: 999px; font-size: 0.78rem; }
+.plantillas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+.plantilla { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0.9rem; padding: 1rem; text-align: left; border: 1px solid var(--linea); border-radius: 12px; background: #fff; }
+.plantilla[aria-pressed=true] { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-fondo); }
+.plantilla .pag { align-self: start; background: var(--papel); border: 1px solid #cfc8b6; border-radius: 2px; position: relative; }
+.plantilla .pag::after { content: ""; position: absolute; left: 18%; right: 18%; top: 14%; height: 3px; background: #b9b29d; box-shadow: 0 6px 0 #ddd7c6, 0 10px 0 #ddd7c6, 0 14px 0 #ddd7c6, 0 18px 0 #ddd7c6; }
+.plantilla b { font-weight: 600; }
+.plantilla ul { margin: 0.3rem 0 0; padding-left: 1rem; color: var(--suave); font-size: 0.86rem; }
+.previa { position: sticky; top: 4.8rem; display: grid; gap: 0.8rem; }
+.previa .cambiar { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.previa .cambiar button { padding: 0.3rem 0.75rem; border: 1px solid var(--linea); border-radius: 999px; background: #fff; font-size: 0.85rem; color: var(--suave); }
+.previa .cambiar button[aria-pressed=true] { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.marco-previa { position: relative; max-height: calc(100vh - 9rem); overflow: auto; padding: 0.6rem; margin: -0.6rem; }
+.pagina { background: var(--papel); border: 1px solid var(--linea-papel); box-shadow: 0 10px 30px -18px rgba(29, 42, 51, 0.45); font-family: var(--serif); color: #23272a; font-size: 0.62rem; line-height: 1.55; padding: 2rem 2.2rem 1.2rem; display: flex; flex-direction: column; margin-bottom: 0.9rem; }
+.pagina .cuerpo-p { flex: 1; }
+.pagina .c { text-align: center; }
+.pagina .n { font-weight: 700; }
+.pagina .i { font-style: italic; }
+.pagina p { margin: 0 0 0.55rem; }
+.pagina .logo { display: block; margin: 0 auto 0.9rem; height: 2.1rem; }
+.pagina .logo-ph { width: 6.5rem; height: 2.1rem; margin: 0 auto 0.9rem; border: 1px dashed #cfc8b6; display: grid; place-items: center; font-family: var(--sans); font-size: 0.6rem; color: var(--tenue); }
+.pagina .tabla-p { width: 70%; border-collapse: collapse; margin: 0.4rem 0 0.9rem; font-size: 0.56rem; }
+.pagina .tabla-p td { border: 0.5px solid #555; padding: 0.05rem 0.3rem; }
+.pagina .tabla-p td:first-child { font-weight: 700; width: 35%; }
+.pagina .ln { height: 0.32rem; background: #e2ddd0; border-radius: 1px; margin: 0 0 0.42rem; }
+.pagina .ln.c8 { width: 82%; }
+.pagina .ln.c6 { width: 60%; }
+.pagina .pie-p { margin-top: 1.2rem; text-align: center; font-size: 0.5rem; line-height: 1.4; }
+.pagina .num-p { text-align: right; font-size: 0.52rem; margin-top: 0.8rem; }
+.pagina .etq-pag { font-family: var(--sans); font-size: 0.68rem; color: var(--tenue); margin: -1.3rem -1.6rem 0.9rem; }
+.pagina [data-c] { border-radius: 2px; transition: background 0.12s, box-shadow 0.12s; }
+.pagina [data-c].foco { background: rgba(30, 90, 110, 0.16); box-shadow: 0 0 0 2px rgba(30, 90, 110, 0.55); }
+.correo-p { font-family: var(--sans); font-size: 0.72rem; line-height: 1.5; padding: 1.2rem 1.4rem; }
+.correo-p .enc { display: grid; gap: 0.15rem; padding-bottom: 0.7rem; margin-bottom: 0.9rem; border-bottom: 1px solid var(--linea-papel); color: var(--suave); }
+.toast { position: fixed; left: 50%; bottom: 5.5rem; transform: translateX(-50%); z-index: 60; padding: 0.6rem 1.1rem; border-radius: 8px; background: var(--tinta); color: #fff; font-size: 0.92rem; box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
+
+/* IA */
+.ia { max-width: 760px; }
+.ia .sec-fmt { padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--linea); }
+.ia .sec-fmt:first-of-type { border-top: 0; margin-top: 1.5rem; padding-top: 0; }
+.tarjetas-op { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
+.op { display: grid; gap: 0.25rem; align-content: start; padding: 0.9rem 1rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; text-align: left; }
+.op[aria-pressed=true] { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-fondo); }
+.op b { font-weight: 600; }
+.op small { color: var(--suave); font-size: 0.86rem; }
+.estado-clave { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.nota-priv { padding: 0.7rem 0.9rem; border-radius: 8px; background: var(--alerta-fondo); color: var(--alerta); font-size: 0.9rem; }
+details.avanzado summary { cursor: pointer; font-weight: 500; color: var(--acento); }
+details.avanzado[open] summary { margin-bottom: 1rem; }
+
+
+/* Proceso */
+.tz-top { display: flex; flex-wrap: wrap; gap: 0.3rem 2rem; margin-bottom: 1.2rem; color: var(--suave); font-size: 0.92rem; }
+.tz-top b { color: var(--tinta); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tz { display: grid; grid-template-columns: 21rem minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.tz-izq { display: grid; gap: 0.4rem; }
+.tz-et { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.7rem; padding: 0.8rem 0.9rem; border: 1px solid transparent; border-radius: 10px; background: transparent; text-align: left; }
+.tz-et:hover { background: rgba(255, 255, 255, 0.6); }
+.tz-et[aria-pressed=true] { background: #fff; border-color: var(--linea); }
+.tz-et b { font-weight: 500; display: block; }
+.tz-et small { color: var(--suave); font-size: 0.85rem; display: block; }
+.tz-et.espera b { color: var(--suave); }
+.tz-et .giro, .tz-et .hecho-ico, .tz-et .espera-ico { margin-top: 0.1rem; }
+.tz-der { max-height: calc(100vh - 17rem); min-height: 24rem; overflow: auto; background: #fff; border: 1px solid var(--linea); border-radius: 12px; padding: 1.3rem 1.5rem; }
+.tz-der h2 { font-size: 1.1rem; font-weight: 600; }
+.tz-der .tz-sub { color: var(--suave); font-size: 0.9rem; margin: 0.1rem 0 1rem; }
+.tz-lineas { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.tz-l { display: grid; grid-template-columns: 2.6rem 4.6rem minmax(0, 1fr); gap: 0.6rem; align-items: baseline; font-size: 0.93rem; }
+.tz-t { color: var(--tenue); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.tz-k { justify-self: start; padding: 0 0.5rem; border-radius: 999px; font-size: 0.76rem; font-weight: 500; background: var(--fondo-2); color: var(--suave); }
+.tz-razona .tz-k { background: var(--acento-fondo); color: var(--acento); }
+.tz-razona .tz-x { font-style: italic; padding-left: 0.7rem; border-left: 2px solid var(--acento-fondo); color: #2c3e48; }
+.tz-escribe .tz-k { background: var(--sello-fondo); color: var(--sello); }
+.tz-verifica .tz-k { background: var(--ok-fondo); color: var(--ok); }
+.cursor { display: inline-block; width: 0.5rem; height: 1em; margin-left: 2px; vertical-align: -0.12em; background: var(--acento); animation: parpadeo 1s steps(2) infinite; }
+@keyframes parpadeo { 50% { opacity: 0; } }
+.tz-nota { margin-top: 1rem; color: var(--tenue); font-size: 0.83rem; }
+.tz-fin { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.4rem; padding: 1rem 1.2rem; border-radius: 10px; background: var(--ok-fondo); color: var(--ok); }
+.tz-fin b { font-weight: 500; flex: 1; }
+.tz-seguir { margin: 0.8rem 0 0; }
+
+/* Borrador largo */
+.hoja { scroll-margin-top: 5rem; }
+.hoja h3[id] { scroll-margin-top: 5rem; }
+.hoja h4 { margin: 1.4rem 0 0.5rem; font-size: 1rem; font-weight: 700; font-style: italic; }
+.hoja .tabla-h { width: 78%; border-collapse: collapse; margin: 0 0 1.8rem; font-size: 0.9rem; line-height: 1.45; }
+.hoja .tabla-h td { border: 0.5px solid #555; padding: 0.1rem 0.5rem; vertical-align: top; }
+.hoja .tabla-h td:first-child { font-weight: 700; width: 28%; }
+.hoja .cabecera-h { text-align: center; font-weight: 700; margin-bottom: 0.4rem; }
+.hoja .fecha-h { text-align: center; margin-bottom: 1.2rem; }
+.hoja blockquote { margin: 0 0 0.9rem 1.6rem; padding: 0; text-align: justify; font-size: 0.97rem; }
+.hoja.origen .tpl { background: rgba(30, 90, 110, 0.09); box-shadow: -0.5rem 0 0 rgba(30, 90, 110, 0.09), 0.5rem 0 0 rgba(30, 90, 110, 0.09); border-radius: 2px; }
+.indice { display: grid; gap: 0.1rem; margin: 0; padding: 0; list-style: none; }
+.indice button { width: 100%; padding: 0.25rem 0.5rem; text-align: left; border: 0; border-radius: 6px; background: none; color: var(--tinta); font-size: 0.92rem; }
+.indice button:hover { background: #fff; }
+.indice .sub-i { padding-left: 1.2rem; color: var(--suave); font-size: 0.86rem; }
+.leyenda-origen { display: inline-block; width: 0.8rem; height: 0.8rem; margin-right: 0.4rem; border-radius: 2px; background: rgba(30, 90, 110, 0.18); vertical-align: -0.1rem; }
+.interr.chica { padding: 0.2rem 0; font-size: 0.92rem; }
+
+/* Fallo final */
+.dos.res { grid-template-columns: minmax(0, 1fr) 22rem; gap: 2.5rem; }
+.visor-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.4rem 1rem; max-width: 40rem; margin: 0 auto 0.9rem; }
+.visor-bar h2 { font-size: 1.1rem; font-weight: 600; }
+.visor-bar span { color: var(--suave); font-size: 0.88rem; }
+.visor { display: grid; gap: 1.2rem; justify-items: center; }
+.pag-fallo { width: 100%; max-width: 40rem; aspect-ratio: 21.1 / 34.1; display: flex; flex-direction: column; padding: 3.1rem 3.4rem 1.6rem; background: var(--papel); border: 1px solid var(--linea-papel); box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 18px 40px -26px rgba(29, 42, 51, 0.5); font-family: var(--serif); font-size: 0.8rem; line-height: 1.6; color: #23272a; }
+.pag-fallo .cuerpo-f { flex: 1; }
+.pag-fallo p { margin: 0 0 0.7rem; text-align: justify; }
+.pag-fallo .c { text-align: center; }
+.pag-fallo .n { font-weight: 700; }
+.pag-fallo .tit { margin: 1.2rem 0 0.7rem; text-align: center; font-weight: 700; }
+.pag-fallo .sub-f { margin: 1rem 0 0.4rem; font-weight: 700; }
+.pag-fallo blockquote { margin: 0 0 0.7rem 1.4rem; text-align: justify; font-size: 0.77rem; }
+.pag-fallo .logo-f { display: block; height: 2.6rem; margin: 0 auto 1.1rem; }
+.pag-fallo .logo-ph { width: 8rem; height: 2.6rem; margin: 0 auto 1.1rem; border: 1px dashed #cfc8b6; display: grid; place-items: center; font-family: var(--sans); font-size: 0.7rem; color: var(--tenue); }
+.pag-fallo table { border-collapse: collapse; width: 82%; margin: 0.6rem 0 1rem; font-size: 0.76rem; }
+.pag-fallo td { border: 0.5px solid #555; padding: 0.05rem 0.4rem; vertical-align: top; }
+.pag-fallo td:first-child { font-weight: 700; width: 26%; }
+.pag-fallo .pie-f { margin-top: 0.8rem; text-align: center; font-size: 0.66rem; line-height: 1.4; font-style: italic; }
+.pag-fallo .num-f { text-align: right; font-size: 0.7rem; font-family: var(--sans); color: #555; margin-top: 0.5rem; }
+.res-lat { position: sticky; top: 4.8rem; display: grid; gap: 1.4rem; }
+.res-lat h2 { font-size: 1.3rem; font-weight: 600; margin: 0.4rem 0 0.2rem; }
+.res-lat .acciones { display: grid; gap: 0.6rem; margin-top: 1rem; }
+.otros { display: grid; gap: 0.3rem; }
+.otros h3 { font-size: 0.95rem; font-weight: 600; margin: 0.9rem 0 0.1rem; color: var(--suave); }
+.otro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; padding: 0.35rem 0; border-bottom: 1px solid var(--linea); font-size: 0.9rem; }
+.otro small { display: block; color: var(--tenue); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.otro .btn { padding: 0.25rem 0.7rem; font-size: 0.85rem; }
+
+dialog { max-width: 30rem; border: 0; border-radius: 12px; padding: 1.6rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+dialog::backdrop { background: rgba(20, 30, 36, 0.5); }
+dialog h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; }
+dialog .acciones { display: flex; gap: 0.7rem; justify-content: flex-end; margin-top: 1.3rem; }
+
+.proto { position: fixed; left: 0.8rem; bottom: 5rem; z-index: 40; font-size: 0.8rem; }
+.proto details { background: #fff; border: 1px solid var(--linea); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+.proto summary { padding: 0.35rem 0.7rem; cursor: pointer; color: var(--suave); }
+.proto div { display: grid; padding: 0.3rem 0.4rem 0.5rem; }
+.proto button { border: 0; background: none; text-align: left; padding: 0.25rem 0.5rem; border-radius: 4px; }
+.proto button:hover { background: var(--fondo); }
+
+@media (max-width: 960px) {
+  .dos, .dos.ancha, .dos.fmt { grid-template-columns: 1fr; }
+  .riel, .hoja-resuelve, .previa { position: static; max-height: none; }
+  .marco-previa { max-height: none; }
+  .hoja { padding: 1.5rem 1.25rem; }
+  .tz, .dos.res { grid-template-columns: 1fr; }
+  .tz-der { max-height: none; }
+  .res-lat { position: static; }
+  .pag-fallo { padding: 1.6rem 1.3rem 1rem; font-size: 0.7rem; }
+  .tz-l { grid-template-columns: 2.4rem minmax(0, 1fr); }
+  .tz-l .tz-k { display: none; }
+  .doc-fila { grid-template-columns: 2rem minmax(0, 1fr) 2rem; }
+  .doc-fila .rol-col, .doc-fila .jev { grid-column: 2 / -1; }
+  .hero-fallo, .nuevo-caso { grid-template-columns: 1fr; }
+  .nuevo-caso .ilus { border-left: 0; border-top: 1px solid var(--linea); }
+  .miniatura { max-width: 8rem; }
+  .ficha { grid-template-columns: 1fr; gap: 0.7rem; }
+  .ficha .accion { justify-items: start; }
+  .pasos .paso small { display: none; }
+  .procesos, .plantillas, .tarjetas-op { grid-template-columns: 1fr; }
+  .campos { grid-template-columns: 1fr; }
+  .enlace-barra .txt { display: none; }
+  .bienvenida h1 { font-size: 1.8rem; }
+}
+@media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } .nuevo, .ficha.trabajando .seg4 i.a { animation: none; } }
+</style>
+</head>
+<body>
+<header class="barra">
+  <button class="marca" data-ir="inicio" aria-label="Judicabot, ir al inicio">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#2b3d47"/><path d="M17 11h21l10 10v32H17z" fill="#fdfcf9"/><path d="M38 11v10h10" fill="#c8d1d5"/><rect x="22" y="27" width="19" height="3" rx="1.5" fill="#9fb2bb"/><rect x="22" y="34" width="13" height="3" rx="1.5" fill="#9fb2bb"/><circle cx="44" cy="47" r="12" fill="#2b3d47"/><path d="M53.60 47.00 L52.19 48.87 L52.65 51.17 L50.57 52.24 L49.99 54.51 L47.64 54.57 L46.14 56.36 L44.00 55.40 L41.86 56.36 L40.36 54.57 L38.01 54.51 L37.43 52.24 L35.35 51.17 L35.81 48.87 L34.40 47.00 L35.81 45.13 L35.35 42.83 L37.43 41.76 L38.01 39.49 L40.36 39.43 L41.86 37.64 L44.00 38.60 L46.14 37.64 L47.64 39.43 L49.99 39.49 L50.57 41.76 L52.65 42.83 L52.19 45.13Z" fill="#9b3446"/><path d="M39.8 47.2l2.9 2.9 5.6-5.8" fill="none" stroke="#f3dfe3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <b>Judicabot</b>
+  </button>
+  <span class="relleno"></span>
+  <button class="enlace-barra" data-ir="formato" id="nav-formato" aria-label="Formato de documentos">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h7M9 17h5"/></svg>
+    <span class="txt">Formato de documentos</span>
+  </button>
+  <button class="enlace-barra" data-ir="ia" id="nav-ia" aria-label="Inteligencia artificial">
+    <span class="punto" id="punto-clave"></span><span class="txt" id="txt-ia">Sonnet 5.5</span>
+  </button>
+</header>
+
+<main class="lienzo" id="vista"></main>
+<div id="accion"></div>
+<div id="capa"></div>
+<dialog id="dialogo"></dialog>
+
+<div class="proto"><details><summary>Prototipo: saltar a</summary><div>
+  <button data-ir="inicio">Inicio</button>
+  <button data-ir="casos">Casos de segunda instancia</button>
+  <button data-ir="docs">Documentos</button>
+  <button data-ir="redaccion">Redacción en vivo</button>
+  <button data-ir="draft">Borrador</button>
+  <button data-ir="decision">Decisión</button>
+  <button data-ir="result">Fallo</button>
+  <button data-ir="formato">Formato de documentos</button>
+  <button data-ir="ia">Inteligencia artificial</button>
+</div></details></div>
+
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LOGO = '../../backend/tutela2/assets/rama_judicial_logo.png';
+
+const ICO = {
+  primera: '<svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h11l6 6v18H8z"/><path d="M19 4v6h6"/><path d="M12 16h9M12 20h9M12 24h5"/></svg>',
+  segunda: '<svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10v18h14"/><path d="M11 4h10l5 5v15H11z"/><path d="M21 4v5h5"/><path d="M18.5 19v-7M15.5 15l3-3 3 3"/></svg>',
+  desacato: '<svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 28H8V4h11l6 6v5"/><path d="M19 4v6h6"/><path d="M12 15h7M12 19h4"/><circle cx="23.5" cy="23" r="5.5"/><path d="M23.5 20.3v3.2l2 1.3"/></svg>',
+  penal: '<svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5v22M10 27h12M7 9h18"/><path d="M7 9l-4 9a4 4 0 0 0 8 0z"/><path d="M25 9l-4 9a4 4 0 0 0 8 0z"/></svg>',
+};
+const carpeta = (c = '#6f8791') => `<svg width="18" height="15" viewBox="0 0 18 15" fill="none"><path d="M1 3a1.5 1.5 0 0 1 1.5-1.5h4l1.6 2h7.4A1.5 1.5 0 0 1 17 5v7.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 1 12.5z" fill="#fff" stroke="${c}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+const pdfChico = '<svg width="14" height="17" viewBox="0 0 24 30" fill="none"><path d="M3 1h12l7 7v21H3z" fill="#fff" stroke="#8da0a9" stroke-width="2" stroke-linejoin="round"/><rect x="6" y="17" width="12" height="5" rx="1" fill="#a8281f"/></svg>';
+const lupa = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>';
+
+const CASO = {
+  corto: 'Quintero Bedoya c. EPS Horizonte Salud',
+  radicado: '05001 40 88 009 2026 00412 00',
+  aquo: 'Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín',
+  accionante: 'MARTA INÉS QUINTERO BEDOYA',
+  accionada: 'EPS HORIZONTE SALUD S.A.S.',
+  impugnante: 'Marta Inés Quintero Bedoya (accionante)',
+  decisionAquo: 'Declaró improcedente la acción de tutela',
+};
+
+const CASOS = [
+  { quien: 'Quintero Bedoya c. EPS Horizonte Salud', rad: '2026-00412', aquo: 'Juzgado 9 Penal Municipal con Función de Control de Garantías', etapa: 2, tono: 'sello', estado: 'Espera su decisión', accion: ['Decidir', 'sello', 'draft'], cuando: 'Hoy, 9:40', grupo: 'atencion' },
+  { quien: 'Cárdenas Ospina c. Aseguradora Montaña Azul', rad: '2026-00398', aquo: 'Juzgado 2 Penal Municipal con Función de Conocimiento', etapa: 0, tono: 'alerta', estado: 'Falta el fallo de primera instancia', accion: ['Completar', '', 'docs'], cuando: 'Ayer', grupo: 'atencion' },
+  { quien: 'Arango Londoño c. EPS Ceiba Salud', rad: '2026-00377', aquo: 'Juzgado 14 Penal Municipal con Función de Control de Garantías', etapa: 0, tono: '', estado: 'Documentos por revisar', accion: ['Revisar documentos', '', 'docs'], cuando: 'Ayer', grupo: 'atencion' },
+  { quien: 'Restrepo Gil c. Fondo Pensional Altamira', rad: '2026-00390', aquo: 'Juzgado 5 Penal Municipal con Función de Conocimiento', etapa: 1, tono: 'trabajando', estado: 'Redactando el borrador', accion: ['Ver avance', '', 'redaccion'], cuando: 'Hace 3 min', grupo: 'trabajando' },
+  { quien: 'Mejía Ríos c. Fondo Pensional Altamira', rad: '2026-00301', aquo: 'Juzgado 9 Penal Municipal con Función de Control de Garantías', etapa: 4, tono: 'ok', estado: 'Fallo generado', accion: ['Ver fallo', '', 'result'], cuando: '21 oct', grupo: 'terminados' },
+  { quien: 'Duque Salazar c. EPS Ceiba Salud', rad: '2026-00288', aquo: 'Juzgado 3 Penal Municipal con Función de Conocimiento', etapa: 4, tono: 'ok', estado: 'Fallo generado', accion: ['Ver fallo', '', 'result'], cuando: '17 oct', grupo: 'terminados' },
+];
+const GRUPOS = [['atencion', 'Requieren su atención'], ['trabajando', 'En redacción'], ['terminados', 'Terminados']];
+
+const ROLES = {
+  acta_reparto_1a: 'Acta de reparto de primera instancia', escrito_tutela: 'Escrito de tutela', auto_admisorio: 'Auto admisorio',
+  contestacion: 'Contestación', fallo_a_quo: 'Fallo de primera instancia', impugnacion: 'Impugnación',
+  auto_concede_impugnacion: 'Auto que concede la impugnación', notificacion: 'Notificación', memorial: 'Memorial', otro: 'Otro',
+};
+const OBLIGATORIOS = ['escrito_tutela', 'fallo_a_quo', 'impugnacion'];
+const DOCS = [
+  { n: '001.pdf', rol: 'acta_reparto_1a', pag: 1, ev: 'ACTA INDIVIDUAL DE REPARTO. Fecha: 14/09/2026 4:48:30 p. m. NÚMERO RADICACIÓN…', jev: ['acta_reparto_1a', 0.99] },
+  { n: '002.pdf', rol: 'escrito_tutela', pag: 2, ev: 'Referencia: ACCIÓN DE TUTELA de MARTA INÉS QUINTERO BEDOYA contra EPS HORIZONTE SALUD S.A.S.', jev: ['escrito_tutela', 0.98] },
+  { n: '003.pdf', rol: 'auto_admisorio', pag: 1, ev: 'En mérito de lo expuesto, SE ADMITE la presente acción de tutela promovida por MARTA INÉS QUINTERO…', jev: ['auto_admisorio', 0.97] },
+  { n: '004.pdf', rol: 'contestacion', pag: 2, ev: 'Referencia: Contestación de la acción de tutela. Radicado: 05001 40 88 009 2026 00412', jev: ['contestacion', 0.96] },
+  { n: '005.pdf', rol: 'fallo_a_quo', pag: 5, ev: 'Decisión: NIEGA. Fallo: 412/2026. Procede el Despacho a emitir el fallo…', jev: ['fallo_a_quo', 0.99] },
+  { n: '006.pdf', rol: 'impugnacion', pag: 2, ev: 'Referencia: Impugnación del fallo de tutela. Radicado: 05001 40 88 009 2026 00412', jev: ['impugnacion', 0.98] },
+  { n: '007.pdf', rol: 'auto_concede_impugnacion', pag: 1, ev: 'Se presentó escrito de impugnación. Pase a Despacho. Medellín, 6 de octubre de 2026.', jev: ['auto_concede_impugnacion', 0.93] },
+  { n: '008.pdf', rol: 'notificacion', pag: 1, ev: 'TUTELA 2026-00412 Desde Juzgado 9 Penal Municipal Control Garantías Medellín. Fecha Mar 06/10/2026 9:54 AM', jev: ['notificacion', 0.95] },
+  { n: '009.pdf', rol: 'otro', pag: 3, sinTexto: 2, ev: 'Sin rasgos de ningún rol. Dos de tres páginas son imagen sin texto.', jev: ['memorial', 0.94] },
+];
+const CITAS = {
+  c1: { etiqueta: 'sentencia T-760 de 2008', estado: 'ok', cob: 0.98, mp: 'Manuel José Cepeda Espinosa', frag: 'la salud tiene doble connotación: derecho fundamental y servicio público esencial', motivos: [] },
+  c2: { etiqueta: 'sentencia SU-508 de 2020', estado: 'alerta', cob: 0.71, mp: null, frag: 'la garantía de continuidad de los tratamientos en curso hace parte del núcleo esencial', motivos: ['La cobertura del fragmento citado es 71 %. Compare con la relatoría antes de firmar.'] },
+  c3: { etiqueta: 'sentencia T-999 de 2019', estado: 'rechazada', cob: 0, mp: null, frag: 'la EPS no puede suspender el servicio por trámites internos', motivos: ['No aparece en el dataset de la Corte Constitucional.', 'Quite la cita o reemplácela por una verificable.'] },
+};
+const ETQ_ESTADO = { ok: 'Verificada', alerta: 'Con alerta', rechazada: 'No verificada' };
+const REPAROS = [
+  { id: 'R1', sintesis: 'El a quo no valoró la orden médica vigente que prescribe el tratamiento.' },
+  { id: 'R2', sintesis: 'Se desconoció el carácter fundamental del derecho a la salud de una persona con enfermedad crónica.' },
+];
+const DISP_REPARO = [['ACOGE', 'Acoge'], ['DESESTIMA', 'Desestima'], ['ACOGE_PARCIAL', 'Acoge parcialmente'], ['REFORMULA', 'Reformula'], ['ABSORBIDO', 'Absorbido por otro']];
+const SUSTITUTIVAS = [['AMPARAR', 'Amparar', 'Se conceden los derechos y se imparten órdenes.'], ['NEGAR', 'Negar el amparo', 'Se niegan las pretensiones.'], ['IMPROCEDENTE', 'Declarar improcedente', 'No se estudia de fondo.'], ['CARENCIA', 'Carencia actual de objeto', 'Hecho superado, daño consumado o situación sobreviniente.']];
+const UNIDADES = [['horas_habiles', 'horas hábiles'], ['dias_habiles', 'días hábiles'], ['horas', 'horas'], ['dias', 'días']];
+const ORDINAL = ['PRIMERO', 'SEGUNDO', 'TERCERO', 'CUARTO', 'QUINTO', 'SEXTO', 'SÉPTIMO', 'OCTAVO', 'NOVENO', 'DÉCIMO', 'UNDÉCIMO', 'DUODÉCIMO'];
+
+const FMT_INICIAL = {
+  gen: 'B',
+  nombre: 'JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO DE MEDELLÍN',
+  nombre_cuerpo: 'Juzgado Tercero Penal del Circuito con Función de Conocimiento de Medellín',
+  ciudad: 'Medellín',
+  juez: 'SANTIAGO ALEJANDRO CADAVID DUQUE', cargo_juez: 'JUEZ',
+  escribiente: 'John Mendoza', cargo_escribiente: 'Escribiente',
+  firmante_oficio: 'JOHN MANUEL MENDOZA', cargo_firmante_oficio: 'Escribiente',
+  cargo_evaluador: 'Juez 3° Penal del Circuito de Conocimiento',
+  cierre_fallo: 'NOTIFÍQUESE Y CÚMPLASE', cierre_auto: 'NOTIFÍQUESE Y CÚMPLASE',
+  pie_fallo: 'Juzgado Tercero Penal del Circuito con Funciones de Conocimiento Medellín\nPalacio de Justicia Carrera 52 número 42 – 73. Piso 19\nCorreo electrónico: pcto03med@cendoj.ramajudicial.gov.co',
+  pie_auto: 'Juzgado Tercero Penal del Circuito con Función de Conocimiento, Edificio José Félix de Restrepo Carrera 52 # 42 – 73, Medellín, Antioquia\nCorreo Electrónico pcto03med@cendoj.ramajudicial.gov.co, Teléfono 2328525 Ext. 92903',
+  pie: 'Juzgado Tercero Penal del Circuito con Funciones de Conocimiento Medellín',
+  correo: 'pcto03med@cendoj.ramajudicial.gov.co',
+  telefono_correo: 'Tel: 6042328525 Ext. 2903',
+};
+const DOC_CORTO = { fallo: 'Fallo', auto: 'Auto', oficio: 'Oficio', correo: 'Correo', calidad: 'Formato de calidad' };
+const DOC_FMT = { fallo: 'Fallo', auto: 'Auto que asume', oficio: 'Oficio a la Corte', correo: 'Correos', calidad: 'Formato de calidad', trabajo: 'Documentos de trabajo' };
+const SECCIONES_FMT = [
+  { t: 'Despacho', s: 'Cómo se nombra el juzgado en los documentos.', campos: [
+    { k: 'nombre', l: 'Nombre en los encabezados', docs: ['fallo', 'auto', 'oficio'], ayuda: 'En mayúsculas. En el auto y el oficio se omite «DE MEDELLÍN».', ancho: true },
+    { k: 'nombre_cuerpo', l: 'Nombre dentro del texto', docs: ['fallo'], ayuda: 'Va en «En mérito de lo expuesto, el …», justo antes del RESUELVE.', ancho: true },
+    { k: 'ciudad', l: 'Ciudad', docs: ['fallo', 'auto', 'oficio'], ayuda: 'Antecede la fecha.' },
+  ] },
+  { t: 'Firmas', s: 'Quién firma cada documento y con qué cargo.', campos: [
+    { k: 'juez', l: 'Juez', docs: ['fallo', 'auto', 'calidad'] },
+    { k: 'cargo_juez', l: 'Cargo del juez', docs: ['fallo', 'auto'] },
+    { k: 'escribiente', l: 'Escribiente', docs: ['auto', 'correo'], ayuda: 'Firma la constancia del auto y los correos.' },
+    { k: 'cargo_escribiente', l: 'Cargo del escribiente', docs: ['auto', 'correo'] },
+    { k: 'firmante_oficio', l: 'Firma el oficio a la Corte', docs: ['oficio'] },
+    { k: 'cargo_firmante_oficio', l: 'Cargo de quien firma el oficio', docs: ['oficio'] },
+    { k: 'cargo_evaluador', l: 'Cargo de quien evalúa', docs: ['calidad'], ayuda: 'Junto al nombre del juez en el Formato Factor Calidad.', ancho: true },
+  ] },
+  { t: 'Cierres', s: 'La fórmula que antecede la firma del juez.', campos: [
+    { k: 'cierre_fallo', l: 'Cierre del fallo', docs: ['fallo'] },
+    { k: 'cierre_auto', l: 'Cierre del auto', docs: ['auto'] },
+  ] },
+  { t: 'Pies de página', s: 'Un renglón por línea.', campos: [
+    { k: 'pie_fallo', l: 'Pie del fallo', docs: ['fallo'], area: 3, ancho: true },
+    { k: 'pie_auto', l: 'Pie del auto', docs: ['auto'], area: 2, ancho: true },
+    { k: 'pie', l: 'Pie de los documentos de trabajo', docs: ['trabajo'], ayuda: 'Borrador previo, informe de verificación y declaración de uso de IA.', ancho: true },
+  ] },
+  { t: 'Contacto en los correos', s: 'Aparecen en la firma de los borradores de correo.', campos: [
+    { k: 'correo', l: 'Correo del despacho', docs: ['correo', 'trabajo'] },
+    { k: 'telefono_correo', l: 'Teléfono y extensión', docs: ['correo'] },
+  ] },
+];
+
+const S = {
+  vista: 'inicio',
+  roles: Object.fromEntries(DOCS.map((d) => [d.n, d.rol])),
+  abiertos: new Set(),
+  redaccion: null,
+  citaSel: null,
+  rehacer: false,
+  origen: false,
+  detectado: null,
+  arrastrando: false,
+  buscar: '',
+  fmt: { ...FMT_INICIAL },
+  fmtGuardado: { ...FMT_INICIAL },
+  fmtDoc: 'fallo',
+  fmtFoco: null,
+  ia: { modelo: 'Sonnet 5.5', clave: false, jev: 'sombra' },
+  dec: { resultado: '', sust: '', eje: '', por: 'Santiago Alejandro Cadavid Duque', reparos: {}, derechos: [{ n: 'salud', d: 'AMPARA' }, { n: 'mínimo vital', d: 'AMPARA' }], ordenes: [], desvincular: '', prevenir: '', compulsa: false, compulsaA: '', notificar: true, remitir: true, formato: true, fecha: '2026-11-03', libres: [], orden: [] },
+};
+
+function iconoPdf() { return '<svg class="icono-pdf" viewBox="0 0 24 30" fill="none"><path d="M3 1h12l7 7v21H3z" fill="#fff" stroke="#8da0a9" stroke-width="1.5" stroke-linejoin="round"/><path d="M15 1v7h7" stroke="#8da0a9" stroke-width="1.5" stroke-linejoin="round"/><rect x="6" y="17" width="12" height="5" rx="1" fill="#a8281f"/></svg>'; }
+function iconoDocx() { return '<svg class="icono-pdf" viewBox="0 0 24 30" fill="none"><path d="M3 1h12l7 7v21H3z" fill="#fff" stroke="#8da0a9" stroke-width="1.5" stroke-linejoin="round"/><path d="M15 1v7h7" stroke="#8da0a9" stroke-width="1.5" stroke-linejoin="round"/><rect x="6" y="17" width="12" height="5" rx="1" fill="#1e5a6e"/></svg>'; }
+const flecha = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+const visto = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const arriba = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+const abajo = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+
+function migas(items) {
+  return `<ol class="migas">${items.map(([t, v]) => `<li>${v ? `<button data-ir="${v}">${esc(t)}</button>` : esc(t)}</li>`).join('')}</ol>`;
+}
+
+/* ---------- Inicio ---------- */
+function vistaInicio() {
+  const espera = CASOS.filter((c) => c.tono === 'sello').length;
+  const abiertos = CASOS.filter((c) => c.grupo !== 'terminados').length;
+  const hoy = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(2026, 10, 3));
+  const inactivo = (ico, t) => `<div class="proceso-t inactivo" aria-disabled="true"><span class="ico">${ICO[ico]}</span><h2>${t}</h2><p>Próximamente</p></div>`;
+  return `<section class="bienvenida">
+    <p class="despacho">${esc(S.fmtGuardado.nombre_cuerpo)}, ${esc(hoy)}</p>
+    <h1>Elija el proceso</h1>
+    <div class="procesos">
+      ${inactivo('primera', 'Fallo de tutela de primera instancia')}
+      <button class="proceso-t activo" data-ir="casos">
+        <span class="ico">${ICO.segunda}</span>
+        <h2>Fallo de tutela de segunda instancia</h2>
+        <p>Resuelve la impugnación a partir de la carpeta de primera instancia.</p>
+        <span class="pie-t">${espera ? `<span><span class="punto-sello"></span>${espera} ${espera === 1 ? 'espera' : 'esperan'} su decisión</span>` : ''}<span class="sub">${abiertos} casos abiertos</span><span class="abrir">Abrir</span></span>
+      </button>
+      ${inactivo('desacato', 'Incidente de desacato')}
+      ${inactivo('penal', 'Penal')}
+    </div>
+    <section class="continuar"><h2>Para continuar</h2><div class="fichas">${CASOS.filter((c) => c.grupo === 'atencion').slice(0, 2).map((c) => ficha(c)).join('')}</div></section>
+  </section>`;
+}
+
+/* ---------- Casos ---------- */
+function arbol() {
+  return `<ul class="arbol" aria-hidden="true">
+    <li><span class="n">${carpeta()} Tutela 2026-00412</span>
+      <ul>
+        <li class="objetivo"><span class="n">${carpeta('#1e5a6e')} 01PrimeraInstancia <span class="etq">esta</span></span>
+          <ul><li><span class="n">${carpeta()} C01Principal</span>
+            <ul><li><span class="n archivos">${pdfChico} 001.pdf … 009.pdf</span></li></ul></li></ul>
+        </li>
+        <li class="ignorada"><span class="n">${carpeta('#a9b6bd')} 02SegundaInstancia</span><small>se ignora</small></li>
+      </ul>
+    </li>
+  </ul>`;
+}
+function ficha(c, compacta) {
+  const segs = [0, 1, 2, 3].map((i) => `<i class="${i < c.etapa ? 'h' : i === c.etapa ? 'a' : ''}"></i>`).join('');
+  return `<article class="ficha ${c.tono} ${compacta ? 'compacta' : ''}">
+    <div><h4>${esc(c.quien)}</h4><div class="meta"><span>Radicado ${esc(c.rad)}</span><span>${esc(c.aquo)}</span></div></div>
+    <div class="avance" aria-label="Avance: ${esc(c.estado)}"><div class="seg4">${segs}</div><small>${esc(c.estado)}</small></div>
+    <div class="accion"><button class="btn ${c.accion[1]}" data-ir="${c.accion[2]}">${esc(c.accion[0])}</button><small>${esc(c.cuando)}</small></div>
+  </article>`;
+}
+function listaCasos() {
+  const q = S.buscar.trim().toLowerCase();
+  const visibles = CASOS.filter((c) => !q || c.quien.toLowerCase().includes(q) || c.rad.includes(q));
+  if (!visibles.length) return `<p class="vacio-busqueda">Ningún caso coincide con «${esc(S.buscar)}».</p>`;
+  return GRUPOS.map(([g, t]) => {
+    const cs = visibles.filter((c) => c.grupo === g);
+    return cs.length ? `<section class="grupo-casos"><h3>${t} <span>${cs.length}</span></h3><div class="fichas">${cs.map((c) => ficha(c, g === 'terminados')).join('')}</div></section>` : '';
+  }).join('');
+}
+function vistaCasos() {
+  const det = S.detectado;
+  return `${migas([['Inicio', 'inicio'], ['Fallo de tutela de segunda instancia']])}
+  <header class="cabeza-proceso"><span class="ico">${ICO.segunda}</span><h1 class="titulo">Fallos de tutela de segunda instancia</h1><p class="sub">De la carpeta de primera instancia al fallo, con su decisión en el medio.</p></header>
+  <section class="nuevo-caso ${S.arrastrando ? 'activa' : ''}" id="zona">
+    ${det ? `<div class="detectado">
+        <h2 style="font-size:1.25rem;font-weight:600">Carpeta lista</h2>
+        <div class="resumen"><span>${esc(det.nombre)}</span><span>${det.n} archivos PDF en C01Principal</span></div>
+        <div class="campo"><label for="nombre-caso">Nombre del caso</label><input id="nombre-caso" type="text" placeholder="Por ejemplo: Tutela 2026-00412"><small>Para encontrarlo después en esta lista.</small></div>
+        <div class="acciones"><button class="btn primario" data-ir="docs">Crear caso y revisar documentos</button><button class="btn liviano" data-accion="cancelar-soltar">Elegir otra carpeta</button></div>
+      </div>`
+    : `<div class="texto">
+        <h2>Nuevo caso</h2>
+        <p class="sub">Suelte en cualquier parte de esta página la carpeta <b style="color:var(--tinta);font-weight:500">01PrimeraInstancia</b> o la carpeta completa del caso.</p>
+        <div class="acciones"><button class="btn primario" data-accion="elegir">Elegir carpeta</button><span class="sub" style="font-size:.88rem">Se conservan las subcarpetas.</span></div>
+      </div>`}
+    <div class="ilus">${arbol()}</div>
+  </section>
+  <div class="herramientas"><h2>Casos</h2><label class="buscar">${lupa}<input type="search" id="buscar" placeholder="Buscar por partes o radicado" value="${esc(S.buscar)}" aria-label="Buscar casos"></label></div>
+  <div id="lista-casos">${listaCasos()}</div>`;
+}
+
+/* ---------- Encabezado del caso ---------- */
+const ETAPAS = [
+  { id: 'docs', t: 'Documentos', sub: () => '9 documentos revisados' },
+  { id: 'draft', t: 'Borrador', sub: () => (S.vista === 'draft' ? 'Revise antes de decidir' : 'Apertura y consideraciones') },
+  { id: 'decision', t: 'Decisión', sub: () => 'Su decisión como juez', decide: true },
+  { id: 'result', t: 'Fallo', sub: () => 'Documentos para firmar' },
+];
+const ORDEN_ETAPAS = ['docs', 'draft', 'decision', 'result'];
+function etapaActual() { return S.vista === 'redaccion' ? 'draft' : S.vista === 'enviando' ? 'result' : S.vista; }
+function cabezaCaso() {
+  const act = ORDEN_ETAPAS.indexOf(etapaActual());
+  return `${migas([['Inicio', 'inicio'], ['Segunda instancia', 'casos'], [CASO.corto]])}
+  <div class="cabeza"><h1 class="titulo">${esc(CASO.corto)}</h1><div class="meta"><span>Radicado ${esc(CASO.radicado)}</span><span>${esc(CASO.aquo)}</span></div></div>
+  <ol class="pasos" aria-label="Pasos del caso">${ETAPAS.map((e, i) => {
+    const est = i < act ? 'hecho' : i === act ? 'actual' : '';
+    const bloq = i > act;
+    return `<li class="paso ${est} ${e.decide ? 'decide' : ''}" ${i === act ? 'aria-current="step"' : ''} aria-disabled="${bloq}">
+      <button ${bloq ? 'tabindex="-1"' : `data-ir="${e.id}"`}><span class="marca-paso">${i < act ? visto : i + 1}</span><b>${e.t}</b><small>${esc(e.sub())}</small></button></li>`;
+  }).join('')}</ol>`;
+}
+
+/* ---------- Documentos ---------- */
+function vistaDocs() {
+  const presentes = new Set(Object.values(S.roles));
+  const faltan = OBLIGATORIOS.filter((r) => !presentes.has(r));
+  const filas = DOCS.map((d) => {
+    const rol = S.roles[d.n];
+    const [jr, jc] = d.jev;
+    const abierto = S.abiertos.has(d.n);
+    const jevTxt = S.ia.jev === 'apagado' ? '<span class="jev"></span>' : jr === rol
+      ? `<span class="jev alto"><span class="pct">${Math.round(jc * 100)} % de confianza</span></span>`
+      : `<span class="jev discrepa">Jev propone ${esc(ROLES[jr])}, <span class="pct">${Math.round(jc * 100)} % de confianza</span> <button class="btn liviano" data-aceptar="${d.n}">Aceptar</button></span>`;
+    return `<div class="doc ${abierto ? 'abierto' : ''}">
+      <div class="doc-fila">
+        ${iconoPdf()}
+        <div class="nombre"><b>${d.n}</b><small>${d.pag} ${d.pag === 1 ? 'página' : 'páginas'}${d.sinTexto ? `, <span style="color:var(--alerta)">${d.sinTexto} sin texto</span>` : ''}</small></div>
+        <div class="rol-col"><select class="rol ${rol !== d.rol ? 'cambiado' : ''}" data-rol="${d.n}" aria-label="Rol de ${d.n}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${k === rol ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        ${jevTxt}
+        <button class="expandir" data-abrir="${d.n}" aria-expanded="${abierto}" aria-label="Ver evidencia de ${d.n}"><span>Evidencia</span>${flecha}</button>
+      </div>
+      ${abierto ? `<div class="doc-detalle"><q>${esc(d.ev)}</q>${d.sinTexto ? `<p class="alerta-doc">${d.sinTexto} de ${d.pag} páginas son imagen y no tienen texto. Su contenido no llegará al modelo.</p>` : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `${cabezaCaso()}
+  <div class="faltantes ${faltan.length ? 'mal' : ''}" role="status">
+    <b>${faltan.length ? 'Faltan piezas obligatorias' : 'Están las piezas obligatorias'}</b>
+    <span class="piezas">${OBLIGATORIOS.map((r) => `<span>${presentes.has(r) ? '&#10003;' : '&#10007;'} ${ROLES[r]}</span>`).join('')}</span>
+  </div>
+  <div class="docs">${filas}</div>
+  <section class="bloque">
+    <h2>Datos del auto que asume el conocimiento</h2>
+    <p class="sub">Se leyeron del expediente. Corríjalos si alguno está mal.</p>
+    <div class="rejilla-auto">
+      <div class="campo"><label for="a-fecha">Fecha del auto</label><input id="a-fecha" type="date" value="2026-10-22"></div>
+      <div class="campo"><label for="a-rep">Fecha de reparto</label><input id="a-rep" type="date" value="2026-10-21"></div>
+      <div class="campo"><label for="a-acc">Accionante</label><input id="a-acc" type="text" value="${esc(CASO.accionante)}"></div>
+      <div class="campo"><label for="a-ada">Accionada</label><input id="a-ada" type="text" value="${esc(CASO.accionada)}"></div>
+    </div>
+  </section>
+  <section class="bloque">
+    <h2>Ya generados</h2>
+    <p class="sub">Salen de la lectura del expediente; no dependen del modelo.</p>
+    <div class="salidas-previas">
+      <div class="fila-archivo">${iconoPdf()}<div>Acta de reparto de la impugnación<small>001ActaRepartoSegunda.pdf</small></div><button class="btn">Descargar</button></div>
+      <div class="fila-archivo">${iconoDocx()}<div>Auto que asume el conocimiento<small>002AutoAsumeSegunda202600412.docx</small></div><button class="btn">Descargar</button></div>
+    </div>
+  </section>`;
+}
+function accionDocs() {
+  const cambios = DOCS.filter((d) => S.roles[d.n] !== d.rol).length;
+  return `<div class="accion-fija"><div>
+    <span class="relleno">${cambios ? `<b>${cambios} ${cambios === 1 ? 'rol cambiado' : 'roles cambiados'}.</b> ` : ''}Redactar apertura y consideraciones con ${esc(S.ia.modelo)} tarda unos minutos y se detiene antes de la decisión.</span>
+    ${cambios ? '<button class="btn" data-accion="guardar-roles">Guardar cambios</button>' : ''}
+    <button class="btn primario grande" data-accion="redactar">Iniciar redacción</button>
+  </div></div>`;
+}
+
+/* ---------- Redacción ---------- */
+const TIPOS = { lee: 'Lee', razona: 'Razona', escribe: 'Redacta', verifica: 'Verifica' };
+const DUR = { lee: 2, verifica: 2, escribe: 3, razona: 4 };
+function trazas(tipo) {
+  const jev = S.ia.jev !== 'apagado';
+  if (tipo === 'redaccion') return [
+    { t: 'Lectura del expediente', d: 'Texto de cada PDF y rol de cada documento', l: [
+      ['lee', 'Abro la carpeta 01PrimeraInstancia/C01Principal: 9 archivos PDF.'],
+      ['lee', 'pdftotext extrae el texto de 8 archivos. En 009.pdf, 2 de 3 páginas no tienen capa de texto.'],
+      ['verifica', 'OCR en español sobre las páginas 2 y 3 de 009.pdf: texto recuperado, calidad media.'],
+      ['razona', '005.pdf dice «Fallo: 412/2026» y trae una parte resolutiva: es el fallo de primera instancia. 006.pdf es la impugnación y 007.pdf el auto que la concede.'],
+      ...(jev ? [['verifica', 'Jev confirma los roles con 93 % o más. Propone «Memorial» para 009.pdf (94 %).']] : []),
+      ['verifica', 'Están las tres piezas obligatorias: escrito de tutela, fallo de primera instancia e impugnación.'],
+    ] },
+    { t: 'Apertura', d: 'Antecedentes, sentencia impugnada, impugnación', l: [
+      ['lee', 'Entrego al modelo los 9 documentos con su rol, su nombre y las páginas marcadas.'],
+      ['razona', 'El escrito de tutela (002.pdf, p. 1) dice que a la accionante le suspendieron el medicamento que su médico le prescribió. Los derechos invocados son la salud y el mínimo vital.'],
+      ['razona', 'El encabezado del fallo de primera instancia dice «NIEGA», pero su parte resolutiva (005.pdf, p. 5) declara improcedente la acción por subsidiariedad. Me quedo con la parte resolutiva.'],
+      ['razona', 'La impugnación (006.pdf) plantea dos reparos: no se valoró la orden médica vigente (R1) y se desconoció el carácter fundamental de la salud (R2).'],
+      ['escribe', 'Redacto los antecedentes (4 párrafos), la sentencia impugnada (3) y la impugnación (2), citando entre comillas solo lo que consta en los PDF.'],
+      ['verifica', 'Cada fecha, nombre y radicado del texto aparece en los documentos: 14 de 14 coinciden.'],
+    ] },
+    { t: 'Consideraciones', d: 'Marco jurídico y jurisprudencia', l: [
+      ['razona', 'Del problema jurídico salen tres temas (el máximo permitido es 3): continuidad del tratamiento, subsidiariedad frente a la Superintendencia de Salud y mínimo vital.'],
+      ['lee', 'Busco en el dataset de la Corte Constitucional sentencias sobre salud y continuidad de tratamientos.'],
+      ['razona', 'T-760 de 2008 sirve para la doble connotación de la salud. SU-508 de 2020 sirve para la continuidad del tratamiento. Guardo el fragmento literal de cada una.'],
+      ['escribe', 'Redacto «La salud y la continuidad del tratamiento», con dos citas textuales.'],
+      ['escribe', 'Redacto «La subsidiariedad y la vía ante la Superintendencia Nacional de Salud» y «El mínimo vital».'],
+      ['razona', 'No saco conclusiones sobre este caso: el caso concreto se escribe después, con la decisión del juez.'],
+    ] },
+    { t: 'Verificación de citas', d: 'Cada sentencia contra la relatoría', l: [
+      ['verifica', 'T-760 de 2008: encontrada en el dataset. Magistrado ponente: Manuel José Cepeda Espinosa.'],
+      ['verifica', 'El fragmento citado coincide en un 98 % con la relatoría. Verificada.'],
+      ['verifica', 'SU-508 de 2020: encontrada, pero el fragmento coincide solo en un 71 %. Queda con alerta.'],
+      ['verifica', 'T-999 de 2019: no aparece en el dataset. Queda sin verificar.'],
+      ['verifica', 'Informe de citas: 1 verificada, 1 con alerta, 1 sin verificar.'],
+      ['razona', 'Borrador listo. Me detengo antes del caso concreto.'],
+    ] },
+  ];
+  const d = S.dec;
+  const res = (d.resultado || 'REVOCAR').toLowerCase();
+  return [
+    { t: 'Caso concreto', d: 'Su decisión aplicada a los hechos', l: [
+      ['lee', `Recibo su decisión: ${d.resultado || 'REVOCAR'}${d.sust ? ', ' + d.sust : ', AMPARAR'}.`],
+      ['razona', `El eje que usted dio es: «${(d.eje || 'El a quo omitió valorar la orden médica vigente; la EPS suspendió el tratamiento sin justificación.').slice(0, 140)}»`],
+      ['escribe', 'Resuelvo R1 y R2 según la disposición que usted marcó, citando las sentencias ya verificadas.'],
+      ['verifica', `El texto concluye que se debe ${res} el fallo de primera instancia, igual que su decisión.`],
+    ] },
+    { t: 'Documentos', d: 'Fallo y documentos de apoyo', l: [
+      ['escribe', `Armo el fallo con la plantilla Generación ${S.fmtGuardado.gen}, el RESUELVE y la firma del juez.`],
+      ['escribe', 'Genero el Formato Factor Calidad, el oficio a la Corte y dos borradores de correo.'],
+      ['verifica', 'Valido la estructura de cada .docx: sin errores.'],
+    ] },
+  ];
+}
+let tz = null;
+let temporizador = null;
+const mmss = (ms) => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+function iniciarTraza(tipo) {
+  clearInterval(temporizador);
+  const et = trazas(tipo);
+  tz = { tipo, et, e: 0, n: 0, espera: 1, marcas: et.map(() => []), t0: Date.now(), sel: null, tokens: 0, fin: false };
+  S.vista = tipo; render(); window.scrollTo(0, 0);
+  temporizador = setInterval(tick, 450);
+}
+function adelantarTraza(e, n) {
+  tz.e = e; tz.n = n; tz.t0 = Date.now() - 38000;
+  tz.et.forEach((et, i) => { const k = i < e ? et.l.length : i === e ? n : 0; tz.marcas[i] = Array.from({ length: k }, (_, j) => (i * 6 + j) * 1500 + 1200); });
+  tz.tokens = 310; pintarTraza(true);
+}
+function tick() {
+  if (!tz || S.vista !== tz.tipo) { clearInterval(temporizador); tz = null; return; }
+  if (tz.fin) return;
+  if (--tz.espera > 0) return pintarTraza();
+  const et = tz.et[tz.e];
+  if (tz.n < et.l.length) {
+    const k = et.l[tz.n][0];
+    tz.marcas[tz.e].push(Date.now() - tz.t0);
+    tz.n++; tz.tokens += k === 'escribe' ? 180 : k === 'razona' ? 90 : 0;
+    tz.espera = DUR[k];
+  } else if (tz.e < tz.et.length - 1) { tz.e++; tz.n = 0; tz.espera = 2; }
+  else { tz.fin = true; clearInterval(temporizador); }
+  pintarTraza();
+}
+function terminarTraza() { if (!tz) return; tz.et.forEach((et, i) => { tz.marcas[i] = et.l.map((_, j) => (i * 6 + j) * 1500 + 1200); }); tz.e = tz.et.length - 1; tz.n = tz.et[tz.e].l.length; tz.fin = true; tz.tokens = 2480 / 8; clearInterval(temporizador); pintarTraza(true); }
+function trazaTop() {
+  const t = tz.fin ? Math.max(...tz.marcas.flat(), 0) + 1500 : Date.now() - tz.t0;
+  return `<span>Tiempo <b>${mmss(t)}</b></span><span>Modelo <b>${esc(S.ia.modelo)}</b></span><span>Texto generado <b>${(tz.tokens * 8).toLocaleString('es-CO')} tokens</b></span>`;
+}
+function estadoEtapa(i) { return tz.fin || i < tz.e ? 'hecho' : i === tz.e ? 'actual' : 'espera'; }
+function trazaIzq() {
+  const vis = tz.sel ?? tz.e;
+  return tz.et.map((et, i) => {
+    const est = estadoEtapa(i);
+    const hechas = est === 'hecho' ? et.l.length : est === 'actual' ? tz.n : 0;
+    return `<button class="tz-et ${est}" data-etapa="${i}" aria-pressed="${vis === i}">
+      ${est === 'hecho' ? `<span class="hecho-ico">${visto}</span>` : est === 'actual' ? '<span class="giro" aria-label="En curso"></span>' : '<span class="espera-ico"></span>'}
+      <span><b>${et.t}</b><small>${est === 'espera' ? et.d : `${hechas} de ${et.l.length} pasos. ${et.d}`}</small></span></button>`;
+  }).join('');
+}
+function trazaDer() {
+  const vis = tz.sel ?? tz.e;
+  const et = tz.et[vis];
+  const est = estadoEtapa(vis);
+  const k = est === 'hecho' ? et.l.length : est === 'actual' ? tz.n : 0;
+  const lineas = et.l.slice(0, k).map(([tipo, texto], j) => {
+    const ultima = est === 'actual' && j === k - 1 && (tipo === 'razona' || tipo === 'escribe');
+    return `<li class="tz-l tz-${tipo}"><span class="tz-t">${mmss(tz.marcas[vis][j] ?? 0)}</span><span class="tz-k">${TIPOS[tipo]}</span><span class="tz-x">${esc(texto)}${ultima ? '<span class="cursor"></span>' : ''}</span></li>`;
+  }).join('');
+  return `<h2>${et.t}</h2><p class="tz-sub">${et.d}</p>
+    ${k ? `<ol class="tz-lineas">${lineas}</ol>` : '<p class="sub">Esta etapa empieza cuando termine la anterior.</p>'}
+    ${tz.sel !== null && tz.sel !== tz.e && !tz.fin ? '<p class="tz-seguir"><button class="btn liviano" data-etapa="">Volver a lo que ocurre ahora</button></p>' : ''}
+    <p class="tz-nota">Resumen del razonamiento del modelo y de los pasos del sistema. Los textos finales no se modifican aquí.</p>
+    ${tz.fin && vis === tz.et.length - 1 ? `<div class="tz-fin"><b>${tz.tipo === 'redaccion' ? 'El borrador está listo. Faltan sus decisiones.' : 'El fallo y los documentos están listos.'}</b><button class="btn ${tz.tipo === 'redaccion' ? 'sello' : 'primario'} grande" data-accion="traza-fin">${tz.tipo === 'redaccion' ? 'Ver el borrador' : 'Ver el fallo'}</button></div>` : ''}`;
+}
+function pintarTraza(forzar) {
+  if (!tz) return;
+  const top = $('#tz-top'); if (!top) return;
+  top.innerHTML = trazaTop();
+  $('#tz-izq').innerHTML = trazaIzq();
+  const vis = tz.sel ?? tz.e;
+  if (forzar || tz.sel === null || vis === tz.e) { const d = $('#tz-der'); d.innerHTML = trazaDer(); if (tz.sel === null) d.scrollTop = d.scrollHeight; }
+}
+function vistaTraza() {
+  if (!tz) return cabezaCaso();
+  return `${cabezaCaso()}
+  <div class="tz-top" id="tz-top">${trazaTop()}</div>
+  <div class="tz"><div class="tz-izq" id="tz-izq">${trazaIzq()}</div><div class="tz-der" id="tz-der">${trazaDer()}</div></div>`;
+}
+const vistaRedaccion = vistaTraza;
+const vistaEnviando = vistaTraza;
+
+/* ---------- Borrador ---------- */
+
+const TEXTO = {
+  antecedentes: [
+    'La señora MARTA INÉS QUINTERO BEDOYA, identificada con cédula de ciudadanía 43.999.101, presentó acción de tutela el catorce (14) de septiembre de dos mil veintiséis (2026) contra la EPS HORIZONTE SALUD S.A.S., entidad a la que se encuentra afiliada en el régimen contributivo, por considerar vulnerados sus derechos fundamentales a la salud y al mínimo vital.',
+    'Relató que padece una enfermedad crónica por la cual su médico tratante le prescribió un medicamento de uso continuo, que la entidad le suministró hasta agosto de dos mil veintiséis (2026), cuando dejó de entregárselo sin una razón que le fuera comunicada por escrito. Agregó que no cuenta con recursos para comprarlo por su cuenta y que de ella dependen económicamente sus hijos menores de edad.',
+    'Con fundamento en lo anterior, solicitó que se ordenara a la entidad suministrar el medicamento prescrito, de manera continua y sin dilaciones, y que se le brindara el tratamiento integral que su patología requiera. Adjuntó la fórmula médica vigente y la copia de su historia clínica.',
+    'El Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín admitió la acción el quince (15) de septiembre de dos mil veintiséis (2026) y ordenó notificar a la accionada. La EPS HORIZONTE SALUD S.A.S. contestó el diecisiete (17) de septiembre siguiente; manifestó que el medicamento no figuraba autorizado para la afiliada y que esta podía acudir a la Superintendencia Nacional de Salud, por lo que solicitó negar el amparo.',
+  ],
+  sentencia: [
+    'Mediante sentencia del veintiocho (28) de septiembre de dos mil veintiséis (2026), el Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín declaró improcedente la acción de tutela.',
+    'Para sustentar su decisión, el juez de primera instancia consideró que no se cumplía el requisito de subsidiariedad, pues la accionante disponía de un mecanismo ante la Superintendencia Nacional de Salud, que ejerce funciones jurisdiccionales para resolver controversias entre los afiliados y las entidades promotoras de salud. Añadió que no encontró acreditado un perjuicio irremediable que habilitara el estudio de fondo.',
+    'En consecuencia, no se pronunció sobre la existencia de la orden médica ni sobre la suspensión del medicamento.',
+  ],
+  impugnacion: [
+    ['R1', 'la orden médica vigente que prescribe el medicamento y que anexé al escrito de tutela no fue valorada por el juez'],
+    ['R2', 'la salud es un derecho fundamental y no puedo esperar el trámite ante la Superintendencia teniendo una enfermedad crónica'],
+  ],
+  continuidad: [
+    'La Corte Constitucional ha reiterado que la salud tiene una doble connotación, como derecho fundamental y como servicio público esencial {c1}. En esa medida, el Estado y las entidades que prestan el servicio están obligados a garantizarlo conforme a los principios de eficiencia, universalidad y solidaridad.',
+    'De la mano de lo anterior, la jurisprudencia ha precisado que la continuidad de los tratamientos en curso hace parte del núcleo esencial del derecho {c2}. Al respecto, el alto tribunal señaló:',
+  ],
+  continuidadCita: '«una vez iniciado un tratamiento, su interrupción por razones administrativas desconoce el principio de continuidad, pues el paciente no puede asumir las consecuencias de las barreras internas de la entidad».',
+  continuidad2: [
+    'Por esa razón, las entidades promotoras de salud no pueden suspender un servicio ya autorizado o prescrito por el médico tratante con fundamento en trámites internos que no son oponibles al usuario.',
+  ],
+  subsidiariedad: [
+    'El requisito de subsidiariedad exige verificar si el afectado dispone de otro mecanismo de defensa judicial idóneo y eficaz. La Corte ha sostenido que, en materia de salud, el mecanismo ante la Superintendencia Nacional de Salud no desplaza al juez de tutela cuando no resulta eficaz frente a las circunstancias particulares del caso {c3}.',
+    'Esa valoración debe atender, entre otros aspectos, la gravedad de la patología, la urgencia del tratamiento y la condición de especial protección del solicitante, de modo que la mera existencia de una vía alternativa no basta para declarar la improcedencia.',
+  ],
+  minimo: [
+    'El mínimo vital, por su parte, se afecta cuando la persona no puede satisfacer sus necesidades básicas y las de su núcleo familiar. Cuando la falta de un tratamiento obliga a asumir un gasto que no se puede costear, la vulneración de la salud puede proyectarse sobre este derecho.',
+  ],
+  caso: [
+    'Corresponde al Despacho determinar si la decisión de primera instancia se ajusta a la Constitución y a la ley, a la luz de los reparos formulados por la impugnante.',
+  ],
+};
+const COMPETENCIA = [
+  'Este Despacho es competente para conocer y resolver el recurso de impugnación interpuesto contra la sentencia de tutela de primera instancia, de conformidad con lo dispuesto en el artículo 32 del Decreto 2591 de 1991 y las normas concordantes de reparto de la acción de amparo. En su condición de superior funcional, le corresponde adelantar un examen integral de la providencia recurrida a la luz de los postulados de la Carta Política y de la doctrina fijada por la Corte Constitucional.',
+  'Este Despacho es competente para resolver la impugnación presentada contra la sentencia de tutela proferida el veintiocho (28) de septiembre de dos mil veintiséis (2026) por el Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín, de conformidad con el artículo 32 del Decreto 2591 de 1991.',
+];
+const PROCEDIBILIDAD = [
+  'La acción de tutela, consagrada en el artículo 86 de la Constitución Política y reglamentada por el Decreto 2591 de 1991, se erige como un mecanismo preferente y sumario concebido para la protección inmediata y efectiva de los derechos constitucionales fundamentales cuando estos resulten vulnerados o amenazados por la acción u omisión de las autoridades públicas o de los particulares. Dada su finalidad tuitiva y extraordinaria, el juicio de procedibilidad de la acción exige la verificación rigurosa y concurrente de los presupuestos procesales obligatorios: la legitimación en la causa (activa y pasiva), la inmediatez y la subsidiariedad.',
+  'En relación con la legitimación en la causa por activa, el ordenamiento constitucional faculta a toda persona para solicitar el amparo de sus garantías fundamentales, actuando por sí misma, por medio de apoderado judicial, a través de representante legal o mediante agente oficioso cuando el titular no se encuentre en condiciones de promover su propia defensa. Por su parte, la legitimación en la causa por pasiva exige que la solicitud se dirija contra la autoridad o el particular a quien se le atribuya la conducta omisiva o lesiva.',
+];
+const conCitas = (t, f) => t.replace(/\{c(\d)\}/g, (_, n) => f(`c${n}`));
+const citaPlana = (id) => `(${CITAS[id].etiqueta})`;
+const parrafos = (a, f) => a.map((t) => `<p>${conCitas(t, f)}</p>`).join('');
+function c(id) { const x = CITAS[id]; return `<button class="cita ${x.estado} ${S.citaSel === id ? 'sel' : ''}" data-cita="${id}">${esc(x.etiqueta)}</button>`; }
+const mayus = (t) => t[0].toUpperCase() + t.slice(1);
+function vistaDraft() {
+  const sel = S.citaSel ? CITAS[S.citaSel] : null;
+  const cuenta = (e) => Object.values(CITAS).filter((x) => x.estado === e).length;
+  const pl = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+  return `${cabezaCaso()}
+  <div class="dos">
+    <article class="hoja ${S.origen ? 'origen' : ''}" aria-label="Borrador">
+      <span class="sello-borrador">Borrador, aún no es el fallo</span>
+      <p class="cabecera-h tpl">${esc(S.fmtGuardado.nombre)}</p>
+      <p class="fecha-h tpl">${esc(S.fmtGuardado.ciudad)}, tres (03) de noviembre de dos mil veintiséis (2026)</p>
+      <table class="tabla-h tpl"><tr><td>Radicado</td><td>050014088009 2026 00412 01</td></tr><tr><td>Accionante</td><td>${esc(CASO.accionante)}</td></tr><tr><td>Accionada</td><td>${esc(CASO.accionada)}</td></tr><tr><td>Procedencia</td><td>JUZGADO 9 PENAL MUNICIPAL CON FUNCIÓN DE CONTROL DE GARANTÍAS DE MEDELLÍN</td></tr><tr><td>Derechos</td><td>SALUD, MÍNIMO VITAL</td></tr><tr><td>Decisión</td><td>Pendiente de su decisión</td></tr></table>
+      <h3 id="s-asunto">I. ASUNTO</h3>
+      <p class="tpl">Procede el Despacho a resolver la impugnación presentada por la accionante contra el fallo de tutela emitido el veintiocho (28) de septiembre de dos mil veintiséis (2026) por el Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín, por medio del cual se declaró improcedente la acción de tutela.</p>
+      <h3 id="s-antecedentes">II. ANTECEDENTES DEL CASO</h3>
+      ${parrafos(TEXTO.antecedentes, c)}
+      <h3 id="s-sentencia">III. LA SENTENCIA IMPUGNADA</h3>
+      ${parrafos(TEXTO.sentencia, c)}
+      <h3 id="s-impugnacion">IV. LA IMPUGNACIÓN</h3>
+      ${TEXTO.impugnacion.map(([r, q]) => `<p>En relación con el reparo ${r}, la impugnante señala que «${esc(q)}».</p>`).join('')}
+      <p>Con fundamento en lo anterior, la impugnante solicita al superior que revoque el fallo de primera instancia y ampare sus derechos fundamentales.</p>
+      <h3 id="s-consideraciones">V. CONSIDERACIONES</h3>
+      <h4 id="s-competencia" class="tpl" style="display:inline-block">Competencia</h4>
+      ${COMPETENCIA.map((t) => `<p class="tpl">${t}</p>`).join('')}
+      <h4 id="s-procedibilidad" class="tpl" style="display:inline-block">Presupuestos generales de procedibilidad de la acción de tutela</h4>
+      ${PROCEDIBILIDAD.map((t) => `<p class="tpl">${t}</p>`).join('')}
+      <h4 id="s-continuidad">La salud y la continuidad del tratamiento</h4>
+      ${parrafos(TEXTO.continuidad, c)}
+      <blockquote>${TEXTO.continuidadCita}</blockquote>
+      ${parrafos(TEXTO.continuidad2, c)}
+      <h4 id="s-subsidiariedad">La subsidiariedad y la vía ante la Superintendencia Nacional de Salud</h4>
+      ${parrafos(TEXTO.subsidiariedad, c)}
+      <h4 id="s-minimo">El mínimo vital</h4>
+      ${parrafos(TEXTO.minimo, c)}
+      <p class="tpl">Definido el marco jurídico aplicable y los criterios constitucionales relevantes, procede este Despacho a continuación a examinar la situación fáctica y jurídica específica puesta en conocimiento en este trámite constitucional.</p>
+      <p class="nota-edit">Las secciones VI (caso concreto) y VII (resuelve) se redactan después de que usted decida. Texto de ejemplo del prototipo: las citas y los fragmentos son inventados.</p>
+    </article>
+    <aside class="riel" aria-label="Qué revisar">
+      ${sel ? `<section><div class="detalle-cita">
+        <h3>${esc(mayus(sel.etiqueta))}</h3>
+        <div><span class="chip ${sel.estado === 'rechazada' ? 'mal' : sel.estado}">${ETQ_ESTADO[sel.estado]}</span></div>
+        <q>${esc(sel.frag)}</q>
+        <dl><dt>Cobertura</dt><dd>${Math.round(sel.cob * 100)} %</dd>${sel.mp ? `<dt>M.P.</dt><dd>${esc(sel.mp)}</dd>` : ''}</dl>
+        ${sel.motivos.map((m) => `<p style="color:var(--${sel.estado === 'alerta' ? 'alerta' : 'mal'})">${esc(m)}</p>`).join('')}
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">${sel.estado !== 'rechazada' ? '<a class="btn" href="#" onclick="return false">Abrir relatoría</a>' : ''}<button class="btn liviano" data-cita="">Cerrar</button></div>
+      </div></section>` : ''}
+      <section>
+        <h2>Secciones</h2>
+        <ul class="indice">
+          <li><button data-ancla="s-asunto">I. Asunto</button></li>
+          <li><button data-ancla="s-antecedentes">II. Antecedentes del caso</button></li>
+          <li><button data-ancla="s-sentencia">III. La sentencia impugnada</button></li>
+          <li><button data-ancla="s-impugnacion">IV. La impugnación</button></li>
+          <li><button data-ancla="s-consideraciones">V. Consideraciones</button></li>
+          <li><button class="sub-i" data-ancla="s-continuidad">Salud y continuidad</button></li>
+          <li><button class="sub-i" data-ancla="s-subsidiariedad">Subsidiariedad</button></li>
+          <li><button class="sub-i" data-ancla="s-minimo">Mínimo vital</button></li>
+        </ul>
+        <label class="interr chica" style="margin-top:.6rem"><input type="checkbox" data-accion="origen" ${S.origen ? 'checked' : ''}> <span><span class="leyenda-origen"></span>Marcar el texto que sale de plantillas</span></label>
+      </section>
+      <section>
+        <h2>Qué conviene revisar</h2>
+        <div class="conteo"><span class="chip ok">${pl(cuenta('ok'), 'verificada', 'verificadas')}</span><span class="chip alerta">${cuenta('alerta')} con alerta</span><span class="chip mal">${pl(cuenta('rechazada'), 'no verificada', 'no verificadas')}</span></div>
+        <ul class="lista-rev">
+          <li><span class="chip mal">Cita</span><span>${esc(mayus(CITAS.c3.etiqueta))} no aparece en el dataset de la Corte. <button class="btn liviano" data-cita="c3">Ver</button></span></li>
+          <li><span class="chip alerta">Cita</span><span>La cobertura de SU-508 de 2020 es baja. <button class="btn liviano" data-cita="c2">Ver</button></span></li>
+          <li><span class="chip alerta">Archivo</span><span>El documento 009.pdf tiene 2 páginas sin texto.</span></li>
+        </ul>
+      </section>
+      ${S.ia.jev !== 'apagado' ? `<section>
+        <h2>Verificación de Jev</h2>
+        <div class="jev-fila"><span>Sentido del fallo de primera instancia</span><span><b>Niega</b> <span class="sub">97 %</span></span><div class="barra-conf"><i style="width:97%"></i></div></div>
+        <div class="jev-fila"><span>Quién impugna</span><span><b>Accionante</b> <span class="sub">99 %</span></span><div class="barra-conf"><i style="width:99%"></i></div></div>
+        <div class="jev-fila bajo"><span>Cláusula del borrador sobre el a quo</span><span><b>Improcedente</b> <span class="sub">62 %, por debajo del umbral</span></span><div class="barra-conf"><i style="width:62%"></i></div></div>
+      </section>` : ''}
+      <section>
+        <h2>El borrador no sirve</h2>
+        ${S.rehacer ? `<div class="rehacer"><div class="campo"><label for="instr">Qué debe corregir</label><textarea id="instr" placeholder="Por ejemplo: el a quo declaró improcedente, no negó."></textarea></div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn" data-accion="rehacer">Rehacer apertura</button><button class="btn" data-accion="rehacer">Rehacer consideraciones</button></div></div>`
+        : '<button class="btn" data-accion="abrir-rehacer">Pedir correcciones</button>'}
+      </section>
+    </aside>
+  </div>`;
+}
+function accionDraft() {
+  return `<div class="accion-fija"><div>
+    <span class="relleno">Las alertas no bloquean la decisión. Revíselas antes de firmar el fallo.</span>
+    <button class="btn sello grande" data-ir="decision">Pasar a la decisión</button>
+  </div></div>`;
+}
+
+/* ---------- Decisión ---------- */
+function seg(nombre, opciones, valor) {
+  return `<div class="seg" role="group" aria-label="${nombre}">${opciones.map(([v, t]) => `<button type="button" data-seg="${nombre}" data-v="${v}" aria-pressed="${valor === v}">${t}</button>`).join('')}</div>`;
+}
+function ordenCard(o, i) {
+  return `<div class="orden-card" data-orden="${i}">
+    <div class="fila">
+      <div class="campo"><label>Destinatario</label><input type="text" data-of="dest" value="${esc(o.dest)}" placeholder="la EPS HORIZONTE SALUD S.A.S."><small>Con artículo: «el BANCO X», «la EPS Y».</small></div>
+      <div class="campo"><label>Plazo</label><input type="number" min="1" data-of="n" value="${o.n}"></div>
+      <div class="campo"><label>Unidad</label><select data-of="u">${UNIDADES.map(([v, t]) => `<option value="${v}" ${o.u === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+    </div>
+    <div class="campo"><label>Qué debe hacer</label><textarea data-of="conducta" placeholder="Autorizar y entregar el medicamento prescrito sin dilaciones">${esc(o.conducta)}</textarea></div>
+    <div class="pie"><label class="interr" style="padding:0"><input type="checkbox" data-of="via" ${o.via ? 'checked' : ''}> A través de su representante legal</label><button class="btn liviano" data-quitar-orden="${i}">Quitar orden</button></div>
+  </div>`;
+}
+const libreHtml = (t, i) => `<div class="campo hijo"><label>Numeral libre</label><textarea data-libre="${i}" rows="2">${esc(t)}</textarea></div>`;
+function vistaDecision() {
+  const d = S.dec;
+  const noConf = d.resultado && d.resultado !== 'CONFIRMAR';
+  return `${cabezaCaso()}
+  <div class="contexto"><div><b>Impugna</b>${esc(CASO.impugnante)}</div><div><b>Decisión del a quo</b>${esc(CASO.decisionAquo)}</div><div><b>Pruebas nuevas</b>Ninguna en segunda instancia</div></div>
+  <div class="dos ancha">
+    <div class="form-dec">
+      <section class="sec-dec">
+        <h2>Qué decide</h2>
+        <p class="sub">Frente a la sentencia de primera instancia.</p>
+        ${seg('resultado', [['CONFIRMAR', 'Confirmar'], ['REVOCAR', 'Revocar'], ['MODIFICAR', 'Modificar']], d.resultado)}
+        <div class="hijo" id="bloque-sust" ${noConf ? '' : 'hidden'}>
+          <p style="font-weight:500;margin-bottom:.5rem">En su lugar, el Despacho</p>
+          <div class="opciones">${SUSTITUTIVAS.map(([v, t, s]) => `<button type="button" class="opcion" data-sust="${v}" aria-pressed="${d.sust === v}"><span class="rad"></span><span><b style="font-weight:500">${t}</b><br><small class="sub">${s}</small></span></button>`).join('')}</div>
+        </div>
+        <div class="campo hijo"><label for="eje">Por qué, en pocas líneas</label>
+          <textarea id="eje" rows="5" placeholder="De 2 a 5 líneas. El caso concreto desarrolla este eje.">${esc(d.eje)}</textarea>
+          <small>Obligatorio. Escriba solo lo que está en el expediente; no agregue datos nuevos.</small></div>
+      </section>
+      <section class="sec-dec">
+        <h2>Reparos de la impugnación</h2>
+        <p class="sub">Qué hace con cada uno.</p>
+        ${REPAROS.map((r) => `<div class="reparo"><div><div class="quien">${r.id}</div><div class="que">${esc(r.sintesis)}</div></div>
+          <select data-reparo="${r.id}" aria-label="Disposición de ${r.id}">${DISP_REPARO.map(([v, t]) => `<option value="${v}" ${((d.reparos[r.id]?.d) || 'ACOGE') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <input type="text" data-reparo-nota="${r.id}" value="${esc(d.reparos[r.id]?.nota || '')}" placeholder="Nota (opcional)" aria-label="Nota de ${r.id}"></div>`).join('')}
+      </section>
+      <section class="sec-dec" id="bloque-derechos" ${d.sust === 'AMPARAR' || d.sust === 'NEGAR' ? '' : 'hidden'}>
+        <h2>Derechos invocados</h2>
+        <p class="sub">Se piden solo al amparar o negar.</p>
+        ${d.derechos.map((x, i) => `<div class="reparo"><div class="quien">${esc(x.n)}</div><select data-derecho="${i}" aria-label="Derecho ${esc(x.n)}">${[['AMPARA', 'Ampara'], ['NIEGA', 'Niega'], ['SIN', 'Sin pronunciamiento']].map(([v, t]) => `<option value="${v}" ${x.d === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`).join('')}
+      </section>
+      <section class="sec-dec" id="bloque-ordenes" ${d.sust === 'AMPARAR' ? '' : 'hidden'}>
+        <h2>Órdenes</h2>
+        <p class="sub">Qué debe hacer cada destinatario y en cuánto tiempo.</p>
+        <div id="lista-ordenes">${d.ordenes.map(ordenCard).join('')}</div>
+        <button class="btn" data-accion="agregar-orden">Agregar orden</button>
+      </section>
+      <section class="sec-dec">
+        <h2>Otras determinaciones</h2>
+        <p class="sub">Se agregan al RESUELVE en el orden que vea a la derecha.</p>
+        <label class="interr"><input type="checkbox" data-chk="notificar" ${d.notificar ? 'checked' : ''}> Notificar a las partes <small>art. 30 del Decreto 2591 de 1991</small></label>
+        <label class="interr"><input type="checkbox" data-chk="remitir" ${d.remitir ? 'checked' : ''}> Remitir a la Corte Constitucional <small>art. 32 del Decreto 2591 de 1991</small></label>
+        <label class="interr"><input type="checkbox" data-chk="compulsa" ${d.compulsa ? 'checked' : ''}> Compulsar copias</label>
+        <div class="campo hijo" id="bloque-compulsa" ${d.compulsa ? '' : 'hidden'}><label for="compulsa-a">Respecto de quién</label><input id="compulsa-a" type="text" value="${esc(d.compulsaA)}"></div>
+        <div class="fila-2 hijo">
+          <div class="campo"><label for="desv">Desvincular</label><textarea id="desv" rows="2" placeholder="Una entidad por línea">${esc(d.desvincular)}</textarea></div>
+          <div class="campo"><label for="prev">Prevenir</label><textarea id="prev" rows="2" placeholder="Un destinatario por línea">${esc(d.prevenir)}</textarea></div>
+        </div>
+        <button class="btn liviano hijo" data-accion="agregar-libre">Agregar un numeral de texto libre</button>
+        <div id="lista-libres">${d.libres.map(libreHtml).join('')}</div>
+      </section>
+      <section class="sec-dec">
+        <h2>Fecha y documentos de salida</h2>
+        <div class="fila-2">
+          <div class="campo"><label for="fecha">Fecha del fallo</label><input id="fecha" type="date" value="${d.fecha}"></div>
+          <div class="campo"><label for="por">Decidido por</label><input id="por" type="text" value="${esc(d.por)}"><small>Queda en la declaración de uso de IA.</small></div>
+        </div>
+        <label class="interr"><input type="checkbox" data-chk="formato" ${d.formato ? 'checked' : ''}> Generar el Formato Factor Calidad</label>
+      </section>
+    </div>
+    <aside class="hoja hoja-resuelve" aria-label="Vista previa del RESUELVE" id="hoja"></aside>
+  </div>`;
+}
+function accionDecision() {
+  return `<div class="accion-fija"><div>
+    <span class="relleno" id="estado-validez"></span>
+    <button class="btn" data-ir="draft">Volver al borrador</button>
+    <button class="btn sello grande" data-accion="enviar-decision" id="btn-enviar">Enviar decisión y redactar</button>
+  </div></div>`;
+}
+function validar() {
+  const d = S.dec; const e = [];
+  if (!d.resultado) e.push('el resultado');
+  if (d.resultado && d.resultado !== 'CONFIRMAR' && !d.sust) e.push('la decisión sustitutiva');
+  if (!d.eje.trim()) e.push('el porqué');
+  if (d.sust === 'AMPARAR' && !d.ordenes.length) e.push('al menos una orden');
+  if (d.sust === 'AMPARAR' && d.ordenes.some((o) => !o.dest.trim() || !o.conducta.trim())) e.push('destinatario y conducta en cada orden');
+  if (d.compulsa && !d.compulsaA.trim()) e.push('respecto de quién se compulsa');
+  if (d.libres.some((t) => !t.trim())) e.push('el texto de un numeral libre');
+  return e;
+}
+const fin = (t) => (t.endsWith('.') ? '' : '.');
+const falta = (t) => `<span class="falta">${t}</span>`;
+function numerales(d = S.dec) {
+  const it = [];
+  if (!d.resultado) return it;
+  it.push({ k: 'resultado', h: `<b>${d.resultado}</b> la sentencia de primera instancia proferida por el ${esc(CASO.aquo)}, dentro de la acción de tutela promovida por ${esc(CASO.accionante)} contra ${esc(CASO.accionada)}${fin(CASO.accionada)}` });
+  if (d.resultado !== 'CONFIRMAR') {
+    const amp = d.derechos.filter((x) => x.d === 'AMPARA').map((x) => x.n).join(' y ');
+    const t = {
+      AMPARAR: `<b>AMPARAR</b> los derechos fundamentales a ${amp ? esc(amp) : falta('derechos')} de ${esc(CASO.accionante)}.`,
+      NEGAR: `<b>NEGAR</b> el amparo de los derechos invocados por ${esc(CASO.accionante)}.`,
+      IMPROCEDENTE: `<b>DECLARAR IMPROCEDENTE</b> la acción de tutela promovida por ${esc(CASO.accionante)}.`,
+      CARENCIA: `<b>DECLARAR</b> la carencia actual de objeto en la acción de tutela promovida por ${esc(CASO.accionante)}.`,
+    }[d.sust];
+    it.push({ k: 'sustitutiva', h: t || falta('Falta la decisión sustitutiva') });
+  }
+  if (d.sust === 'AMPARAR') d.ordenes.forEach((o, i) => it.push({ k: `orden-${i}`, h: `<b>ORDENAR</b> a ${o.dest.trim() ? esc(o.dest) : falta('destinatario')}${o.via ? ', por intermedio de su representante legal,' : ''} que en el término de ${o.n || falta('plazo')} ${UNIDADES.find((u) => u[0] === o.u)[1]}, contados a partir de la notificación de esta providencia, ${o.conducta.trim() ? esc(o.conducta.trim().replace(/\.$/, '')) : falta('conducta')}.` }));
+  d.desvincular.split('\n').map((x) => x.trim()).filter(Boolean).forEach((x, i) => it.push({ k: `desv-${i}`, h: `<b>DESVINCULAR</b> a ${esc(x)} de la presente acción de tutela.` }));
+  d.prevenir.split('\n').map((x) => x.trim()).filter(Boolean).forEach((x, i) => it.push({ k: `prev-${i}`, h: `<b>PREVENIR</b> a ${esc(x)} para que en lo sucesivo se abstenga de incurrir en las conductas que dieron lugar a esta acción.` }));
+  if (d.compulsa) it.push({ k: 'compulsa', h: `<b>COMPULSAR</b> copias de lo actuado ante la Comisión Seccional de Disciplina Judicial de Antioquia, respecto de ${d.compulsaA.trim() ? esc(d.compulsaA) : falta('quién')}.` });
+  d.libres.forEach((t, i) => it.push({ k: `libre-${i}`, h: t.trim() ? esc(t) : falta('texto libre') }));
+  if (d.notificar) it.push({ k: 'notificar', h: '<b>NOTIFICAR</b> esta providencia a las partes por el medio más expedito, de conformidad con lo dispuesto en el artículo 30 del Decreto 2591 de 1991.' });
+  if (d.remitir) it.push({ k: 'remitir', h: '<b>REMITIR</b> el expediente a la Honorable Corte Constitucional para su eventual revisión.' });
+  const rank = (k) => { const i = d.orden.indexOf(k); return i === -1 ? 1e6 : i; };
+  return it.map((x, i) => [x, i]).sort((a, b) => (rank(a[0].k) - rank(b[0].k)) || (a[1] - b[1])).map(([x]) => x);
+}
+let ultimasClaves = [];
+function pintarHoja() {
+  const hoja = $('#hoja'); if (!hoja) return;
+  const it = numerales();
+  hoja.innerHTML = `<h3>RESUELVE</h3>${it.length ? it.map((x, i) => `<p class="numeral ${ultimasClaves.length && !ultimasClaves.includes(x.k) ? 'nuevo' : ''}"><b>${ORDINAL[i] || i + 1}:</b> ${x.h}<span class="mover"><button data-mover="${i}" data-dir="-1" aria-label="Subir">${arriba}</button><button data-mover="${i}" data-dir="1" aria-label="Bajar">${abajo}</button></span></p>`).join('') : '<p class="vacio-hoja">Elija qué decide y esta parte del fallo se arma aquí a medida que avanza.</p>'}
+  ${it.length ? `<p style="text-align:center;font-weight:700;margin-top:1rem">${esc(S.fmtGuardado.cierre_fallo)}</p><p class="pie-hoja">Vista previa. El texto final lo arman las plantillas del despacho con estos mismos datos.</p>` : ''}`;
+  ultimasClaves = it.map((x) => x.k);
+  const f = validar();
+  const est = $('#estado-validez'); const btn = $('#btn-enviar');
+  if (est) est.innerHTML = f.length ? `Para enviar falta: ${f.map((x) => `<b>${x}</b>`).join(', ')}.` : 'Listo para enviar.';
+  if (btn) btn.disabled = f.length > 0;
+}
+function sincronizarDecision() {
+  const d = S.dec;
+  $('#bloque-sust').hidden = !(d.resultado && d.resultado !== 'CONFIRMAR');
+  $('#bloque-derechos').hidden = !(d.sust === 'AMPARAR' || d.sust === 'NEGAR');
+  $('#bloque-ordenes').hidden = d.sust !== 'AMPARAR';
+  $('#bloque-compulsa').hidden = !d.compulsa;
+  document.querySelectorAll('[data-seg="resultado"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === d.resultado)));
+  document.querySelectorAll('[data-sust]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sust === d.sust)));
+  pintarHoja();
+}
+
+/* ---------- Fallo ---------- */
+function decisionEfectiva() {
+  const d = S.dec;
+  if (d.resultado) return d;
+  return { ...d, resultado: 'REVOCAR', sust: 'AMPARAR', eje: 'El a quo omitió valorar la orden médica vigente; la EPS suspendió el tratamiento sin justificación.',
+    ordenes: [{ dest: 'la EPS HORIZONTE SALUD S.A.S.', n: 48, u: 'horas_habiles', conducta: 'autorice y entregue el medicamento prescrito a la accionante, sin dilaciones', via: true }], orden: [] };
+}
+const VERBO_DEC = { CONFIRMAR: ['confirmar', 'CONFIRMA'], REVOCAR: ['revocar', 'REVOCA'], MODIFICAR: ['modificar', 'MODIFICA'] };
+function paginasFallo() {
+  const d = decisionEfectiva();
+  const f = S.fmtGuardado;
+  const g = f.gen;
+  const tit = g === 'A' ? ['FALLO RECURRIDO', 'IMPUGNACIÓN', 'CONSIDERACIONES DEL JUZGADO'] : ['LA SENTENCIA IMPUGNADA', 'LA IMPUGNACIÓN', 'CONSIDERACIONES'];
+  const merito = g === 'A' ? 'administrando justicia en nombre del Pueblo y por mandato Constitucional,' : 'administrando justicia en nombre de la República y por autoridad de la Ley,';
+  const [verbo, decTabla] = VERBO_DEC[d.resultado];
+  const it = numerales(d);
+  const lg = `<img class="logo-f" src="${LOGO}" alt="Logo de la Rama Judicial" onerror="this.outerHTML='<div class=&quot;logo-ph&quot;>Logo Rama Judicial</div>'">`;
+  const pie = (n) => `<div class="pie-f">${f.pie_fallo.split('\n').map(esc).join('<br>')}</div>${g === 'B' ? `<div class="num-f">${n}</div>` : ''}`;
+  const pg = (n, cuerpo) => `<section class="pag-fallo" aria-label="Página ${n}"><div class="cuerpo-f">${cuerpo}</div>${pie(n)}</section>`;
+  const P = (a) => parrafos(a, citaPlana);
+  const caso = `<p>${TEXTO.caso[0]}</p>${TEXTO.impugnacion.map(([r, q], i) => `<p>Sobre el reparo ${r}, la impugnante señala que «${esc(q)}». El Despacho lo ${(d.reparos[r]?.d || 'ACOGE') === 'DESESTIMA' ? 'desestima' : 'acoge'}: ${esc(d.eje.replace(/\.$/, ''))}. Esto se apoya en la ${i ? citaPlana('c2').slice(1, -1) : citaPlana('c1').slice(1, -1)}.</p>`).join('')}<p>En consecuencia, el Despacho considera que debe ${verbo} el fallo de primera instancia${d.sust === 'AMPARAR' ? ' y amparar los derechos fundamentales invocados' : ''}.</p>`;
+  return [
+    pg(1, `${lg}<p class="c n">${esc(f.nombre)}</p><p class="c">${esc(f.ciudad)}, tres (03) de noviembre de dos mil veintiséis (2026)</p>
+      <table><tr><td>Radicado</td><td>050014088009 2026 00412 01</td></tr><tr><td>Accionante</td><td>${esc(CASO.accionante)}</td></tr><tr><td>Accionada</td><td>${esc(CASO.accionada)}</td></tr><tr><td>Procedencia</td><td>JUZGADO 9 PENAL MUNICIPAL CON FUNCIÓN DE CONTROL DE GARANTÍAS DE MEDELLÍN</td></tr><tr><td>Derechos</td><td>SALUD, MÍNIMO VITAL</td></tr><tr><td>Decisión</td><td>${decTabla}</td></tr></table>
+      <p class="tit">I.&nbsp;&nbsp;&nbsp;ASUNTO</p><p>Procede el Despacho a resolver la impugnación presentada por la accionante contra el fallo de tutela emitido el veintiocho (28) de septiembre de dos mil veintiséis (2026) por el Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín, por medio del cual se declaró improcedente la acción de tutela.</p>
+      <p class="tit">II.&nbsp;&nbsp;&nbsp;ANTECEDENTES DEL CASO</p>${P(TEXTO.antecedentes.slice(0, 3))}`),
+    pg(2, `${P(TEXTO.antecedentes.slice(3))}<p class="tit">III.&nbsp;&nbsp;&nbsp;${tit[0]}</p>${P(TEXTO.sentencia)}<p class="tit">IV.&nbsp;&nbsp;&nbsp;${tit[1]}</p>${TEXTO.impugnacion.map(([r, q]) => `<p>En relación con el reparo ${r}, la impugnante señala que «${esc(q)}».</p>`).join('')}<p>Con fundamento en lo anterior, la impugnante solicita al superior que revoque el fallo de primera instancia y ampare sus derechos fundamentales.</p>`),
+    pg(3, `<p class="tit">V.&nbsp;&nbsp;&nbsp;${tit[2]}</p><p class="sub-f">Competencia</p>${COMPETENCIA.map((t) => `<p>${t}</p>`).join('')}<p class="sub-f">Presupuestos generales de procedibilidad de la acción de tutela</p>${PROCEDIBILIDAD.map((t) => `<p>${t}</p>`).join('')}`),
+    pg(4, `<p class="sub-f">La salud y la continuidad del tratamiento</p>${P(TEXTO.continuidad)}<blockquote>${TEXTO.continuidadCita}</blockquote>${P(TEXTO.continuidad2)}<p class="sub-f">La subsidiariedad y la vía ante la Superintendencia Nacional de Salud</p>${P(TEXTO.subsidiariedad)}<p class="sub-f">El mínimo vital</p>${P(TEXTO.minimo)}<p>Definido el marco jurídico aplicable y los criterios constitucionales relevantes, procede este Despacho a continuación a examinar la situación fáctica y jurídica específica puesta en conocimiento en este trámite constitucional.</p>`),
+    pg(5, `<p class="tit">VI.&nbsp;&nbsp;&nbsp;CASO CONCRETO</p>${caso}<p>En mérito de lo expuesto, el <b>${esc(f.nombre_cuerpo)}</b>, ${merito}</p><p class="tit">VII.&nbsp;&nbsp;&nbsp;RESUELVE</p>${it.map((x, i) => `<p><b>${ORDINAL[i] || i + 1}:</b> ${x.h}</p>`).join('')}<p class="c n" style="margin-top:1.4rem">${esc(f.cierre_fallo)}</p><p class="c n" style="margin:1.8rem 0 0">${esc(f.juez)}</p><p class="c n">${esc(f.cargo_juez)}</p>`),
+  ].join('');
+}
+function vistaResult() {
+  const otros = [
+    ['Para el expediente', [['Acta de reparto de la impugnación', '001ActaRepartoSegunda.pdf'], ['Auto que asume el conocimiento', '002AutoAsumeSegunda202600412.docx'], ['Formato Factor Calidad', '004FormatoCalificacion202600412.docx']]],
+    ['Por radicar', [['Oficio a la Corte Constitucional', 'OficioRemiteCorteConstitucional.docx']]],
+    ['Borradores de correo', [['Notificación del fallo a las partes', 'NotificacionFalloPartes.docx'], ['Envío del formato de calidad', 'EnvioFormatoCalidad.docx']]],
+    ['Documentos de trabajo', [['Declaración de uso de IA', 'declaracion_ia.docx'], ['Informe de verificación de citas', 'informe_verificacion.docx'], ['Borrador previo', 'previo.docx']]],
+  ];
+  return `${cabezaCaso()}
+  <div class="dos res">
+    <div>
+      <div class="visor-bar"><h2>Vista previa del fallo</h2><span>5 páginas, plantilla Generación ${S.fmtGuardado.gen}</span></div>
+      <div class="visor">${paginasFallo()}</div>
+      <p class="sub" style="max-width:40rem;margin:1rem auto 0;font-size:.85rem">Vista previa aproximada. En Word se usa Bookman Old Style en página de ${S.fmtGuardado.gen === 'A' ? '21,6 × 33' : '21,1 × 34,1'} cm y la paginación puede variar.</p>
+    </div>
+    <aside class="res-lat" aria-label="Descargas">
+      <section>
+        <span class="chip ok">Fallo generado</span>
+        <h2>Fallo de segunda instancia</h2>
+        <p class="sub" style="font-size:.9rem">003FalloSegunda202600412.docx</p>
+        <div class="acciones"><button class="btn primario grande">Descargar fallo</button><button class="btn">Descargar todo (.zip)</button></div>
+      </section>
+      <section>
+        <ul class="antes-firmar">
+          <li><span class="chip alerta">Revise</span><span>Quedó una cita sin verificar (T-999 de 2019) y una con alerta (SU-508 de 2020). El informe de verificación las detalla.</span></li>
+          <li><span class="chip info">Recuerde</span><span>Adjunte la declaración de uso de IA que exige el Acuerdo PCSJA24-12243.</span></li>
+        </ul>
+      </section>
+      <section class="otros">
+        <h2 style="font-size:1rem;font-weight:600">Demás archivos del caso</h2>
+        ${otros.map(([t, arch]) => `<h3>${t}</h3>${arch.map(([n, fn]) => `<div class="otro"><span>${n}<small>${fn}</small></span><button class="btn">Descargar</button></div>`).join('')}`).join('')}
+      </section>
+    </aside>
+  </div>`;
+}
+
+/* ---------- Formato de documentos ---------- */
+const v = (k) => `<span data-c="${k}">${esc(S.fmt[k])}</span>`;
+const sinCiudad = (k) => `<span data-c="${k}">${esc(S.fmt[k].replace(' DE MEDELLÍN', ''))}</span>`;
+const lineas = (k) => `<span data-c="${k}" style="display:block">${S.fmt[k].split('\n').map(esc).join('<br>')}</span>`;
+const lns = (n, cl = '') => Array.from({ length: n }, (_, i) => `<div class="ln ${i === n - 1 ? 'c6' : cl}"></div>`).join('');
+const logo = `<img class="logo" src="${LOGO}" alt="Logo de la Rama Judicial" onerror="this.outerHTML='<div class=&quot;logo-ph&quot;>Logo Rama Judicial</div>'">`;
+const FECHA_LARGA = 'tres (03) de noviembre de dos mil veintiséis (2026)';
+function previaFallo() {
+  const g = S.fmt.gen;
+  const tit = g === 'A' ? ['FALLO RECURRIDO', 'IMPUGNACIÓN', 'CONSIDERACIONES DEL JUZGADO'] : ['LA SENTENCIA IMPUGNADA', 'LA IMPUGNACIÓN', 'CONSIDERACIONES'];
+  const merito = g === 'A' ? 'administrando justicia en nombre del Pueblo y por mandato Constitucional,' : 'administrando justicia en nombre de la República y por autoridad de la Ley,';
+  const pie = `<div class="pie-p i">${lineas('pie_fallo')}</div>${g === 'B' ? '<div class="num-p">1</div>' : ''}`;
+  return `<div class="pagina"><div class="etq-pag">Primera página</div><div class="cuerpo-p">
+      ${logo}
+      <p class="c n">${v('nombre')}</p>
+      <p class="c">${v('ciudad')}, ${FECHA_LARGA}</p>
+      <table class="tabla-p"><tr><td>Radicado</td><td>050014088009 2026 00412 01</td></tr><tr><td>Accionante</td><td>MARTA INÉS QUINTERO BEDOYA</td></tr><tr><td>Accionada</td><td>EPS HORIZONTE SALUD S.A.S.</td></tr><tr><td>Decisión</td><td>REVOCA</td></tr></table>
+      <p class="c n">I. ASUNTO</p>${lns(3, 'c8')}
+      <p class="c n">II. ANTECEDENTES DEL CASO</p>${lns(4)}
+      <p class="c n">III. ${tit[0]}</p>${lns(2)}
+    </div>${pie}</div>
+    <div class="pagina"><div class="etq-pag">Última página</div><div class="cuerpo-p">
+      <p class="c n">V. ${tit[2]}</p>${lns(3)}
+      ${g === 'A' ? '<p class="c n">PARTE RESOLUTIVA</p>' : ''}
+      <p>En mérito de lo expuesto, el <b>${v('nombre_cuerpo')}</b>, ${merito}</p>
+      <p class="c n">RESUELVE</p>
+      <p><b>PRIMERO:</b> <b>REVOCAR</b> la sentencia de primera instancia…</p>${lns(2)}
+      <p class="c n" style="margin-top:1rem">${v('cierre_fallo')}</p>
+      <p class="c n" style="margin-top:1.4rem;margin-bottom:0">${v('juez')}</p>
+      <p class="c n">${v('cargo_juez')}</p>
+    </div>${pie}</div>`;
+}
+function previaAuto() {
+  return `<div class="pagina"><div class="cuerpo-p">
+      <p style="margin-bottom:.2rem">Radicado: 05001408800920260041201</p><p style="margin-bottom:.2rem">Accionante: MARTA INÉS QUINTERO BEDOYA</p><p>Accionada: EPS HORIZONTE SALUD S.A.S.</p>
+      <p class="n" style="margin-top:.8rem">CONSTANCIA:</p>${lns(3)}
+      <p>${v('ciudad')}, ocho (08) de octubre de dos mil veintiséis (2026)</p>
+      <p class="n" style="margin:0">${v('escribiente')}</p><p>${v('cargo_escribiente')}</p>
+      <div style="margin-top:1rem">${logo}</div>
+      <p class="c n">${sinCiudad('nombre')}</p>
+      <p class="c">${v('ciudad')}, ocho (08) de octubre de dos mil veintiséis (2026)</p>
+      <p class="c n">ASUNTO: AUTO ASUME CONOCIMIENTO DE IMPUGNACIÓN DE TUTELA</p>${lns(2)}
+      <p class="c n" style="margin-top:.8rem">${v('cierre_auto')}</p>
+      <p class="c n" style="margin-top:1.4rem;margin-bottom:.2rem">${v('juez')}</p>
+      <p class="c n">${v('cargo_juez')}</p>
+    </div><div class="pie-p">${lineas('pie_auto')}</div></div>`;
+}
+function previaOficio() {
+  return `<div class="pagina"><div class="cuerpo-p">
+      ${logo}
+      <p class="c n i">${sinCiudad('nombre')}</p>
+      <p class="c">${v('ciudad')}, ${FECHA_LARGA}</p>
+      <p>Asunto: REMISIÓN EXPEDIENTE DE TUTELA EN REVISIÓN</p>
+      <p class="n" style="margin-bottom:0">Señores<br>HONORABLES MAGISTRADOS<br>Corte Constitucional – Sala de Revisión<br>Calle 12 N° 7 – 65<br>Bogotá D. C.</p>
+      <p style="margin-top:.7rem">Cordial Saludo</p>${lns(3)}
+      <p class="n" style="margin-left:1.5rem">Radicado: 05001408800920260041201<br>Accionante: MARTA INÉS QUINTERO BEDOYA<br>Accionado: EPS HORIZONTE SALUD S.A.S.</p>
+      <p class="n" style="margin:1.6rem 0 0 1.5rem">${v('firmante_oficio')}</p><p class="n" style="margin-left:1.5rem">${v('cargo_firmante_oficio')}</p>
+    </div></div>`;
+}
+function previaCorreo() {
+  return `<div class="pagina correo-p"><div class="enc"><span>Para: las partes</span><span>Asunto: Notificación del fallo de tutela de segunda instancia, radicado 2026-00412</span></div>
+      ${lns(4)}
+      <p style="margin-top:1rem;margin-bottom:0"><b>${v('escribiente')}</b></p>
+      <p style="margin:0">${v('cargo_escribiente')}</p>
+      <p style="margin:0">Juzgado 3 Penal del Circuito con Funciones</p><p style="margin:0">de Conocimiento de Medellín</p>
+      <p style="margin:0">${v('correo')}</p><p style="margin:0">${v('telefono_correo')}</p></div>`;
+}
+function previaCalidad() {
+  return `<div class="pagina"><div class="cuerpo-p">
+      <p class="c n">FORMATO FACTOR CALIDAD</p>${lns(5)}
+      <table class="tabla-p" style="width:100%"><tr><td>Nombre del evaluador</td><td>${v('juez')}</td></tr><tr><td>Cargo</td><td>${v('cargo_evaluador')}</td></tr></table>
+    </div></div>`;
+}
+const PREVIAS = { fallo: previaFallo, auto: previaAuto, oficio: previaOficio, correo: previaCorreo, calidad: previaCalidad };
+const fmtSucio = () => JSON.stringify(S.fmt) !== JSON.stringify(S.fmtGuardado);
+function pintarPrevia() {
+  const m = $('#marco-previa'); if (!m) return;
+  m.innerHTML = PREVIAS[S.fmtDoc]();
+  document.querySelectorAll('.previa [data-fdoc]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.fdoc === S.fmtDoc)));
+  if (S.fmtFoco) m.querySelectorAll(`[data-c="${S.fmtFoco}"]`).forEach((el, i) => {
+    el.classList.add('foco');
+    if (i) return;
+    const caja = m.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const abajo = Math.min(caja.bottom, window.innerHeight - 90);
+    if (r.top < caja.top || r.bottom > abajo) m.scrollTop += r.top - caja.top - (abajo - caja.top) / 2;
+  });
+  $('#accion').innerHTML = fmtSucio() ? '<div class="accion-fija"><div><span class="relleno"><b>Hay cambios sin guardar.</b> Se aplican a los casos nuevos.</span><button class="btn" data-accion="descartar-fmt">Descartar</button><button class="btn primario grande" data-accion="guardar-fmt">Guardar formato</button></div></div>' : '';
+}
+function campoFmt(f) {
+  const docs = f.docs.map((d) => (PREVIAS[d] ? `<button type="button" data-fdoc="${d}" data-desde="${f.k}">${DOC_FMT[d]}</button>` : `<span class="fijo">${DOC_FMT[d]}</span>`)).join('');
+  const ctrl = f.area ? `<textarea id="f-${f.k}" data-fmt="${f.k}" rows="${f.area}">${esc(S.fmt[f.k])}</textarea>` : `<input type="text" id="f-${f.k}" data-fmt="${f.k}" value="${esc(S.fmt[f.k])}">`;
+  return `<div class="campo-fmt ${f.ancho ? 'ancho' : ''}"><label for="f-${f.k}">${f.l}</label>${ctrl}${f.ayuda ? `<small>${f.ayuda}</small>` : ''}<div class="aparece">Aparece en ${docs}</div></div>`;
+}
+function vistaFormato() {
+  const pag = (w, h) => `<span class="pag" style="width:${w * 0.16}rem;height:${h * 0.16}rem"></span>`;
+  return `${migas([['Inicio', 'inicio'], ['Formato de documentos']])}
+  <h1 class="titulo">Formato de los documentos</h1>
+  <p class="sub" style="margin:.3rem 0 2rem">Lo que escriba aquí aparece en el fallo, el auto, el oficio y los correos. A la derecha ve dónde.</p>
+  <div class="dos fmt">
+    <div class="form-fmt">
+      <section class="sec-fmt">
+        <h2>Plantilla del fallo</h2>
+        <p class="sub">Define el tamaño de la página y los títulos de las secciones.</p>
+        <div class="plantillas">
+          <button class="plantilla" data-gen="A" aria-pressed="${S.fmt.gen === 'A'}">${pag(21.6, 33)}<span><b>Generación A</b><ul><li>Página de 21,6 × 33 cm</li><li>Fallo recurrido, Impugnación, Consideraciones del juzgado</li><li>Parte resolutiva «en nombre del Pueblo y por mandato Constitucional»</li></ul></span></button>
+          <button class="plantilla" data-gen="B" aria-pressed="${S.fmt.gen === 'B'}">${pag(21.1, 34.1)}<span><b>Generación B</b><ul><li>Página de 21,1 × 34,1 cm</li><li>La sentencia impugnada, La impugnación, Consideraciones</li><li>Número de página en el pie</li></ul></span></button>
+        </div>
+      </section>
+      ${SECCIONES_FMT.map((s) => `<section class="sec-fmt"><h2>${s.t}</h2><p class="sub">${s.s}</p><div class="campos">${s.campos.map(campoFmt).join('')}</div></section>`).join('')}
+    </div>
+    <aside class="previa" aria-label="Vista previa">
+      <div class="cambiar" role="group" aria-label="Documento de la vista previa">${Object.keys(PREVIAS).map((d) => `<button type="button" data-fdoc="${d}" aria-pressed="${S.fmtDoc === d}">${DOC_CORTO[d]}</button>`).join('')}</div>
+      <div class="marco-previa" id="marco-previa"></div>
+    </aside>
+  </div>`;
+}
+
+/* ---------- Inteligencia artificial ---------- */
+function vistaIA() {
+  const ia = S.ia;
+  const op = (attr, val, actual, t, s) => `<button class="op" data-${attr}="${val}" aria-pressed="${actual === val}"><b>${t}</b><small>${s}</small></button>`;
+  return `${migas([['Inicio', 'inicio'], ['Inteligencia artificial']])}
+  <div class="ia">
+    <h1 class="titulo">Inteligencia artificial</h1>
+    <p class="sub" style="margin-top:.3rem">Qué modelo redacta los borradores y con qué clave.</p>
+    <section class="sec-fmt">
+      <h2>Modelo</h2>
+      <p class="sub">Vale para todos los casos desde la siguiente redacción.</p>
+      <div class="tarjetas-op">
+        ${op('modelo', 'Sonnet 5.5', ia.modelo, 'Sonnet 5.5', 'Recomendado. Equilibrio entre calidad, tiempo y costo.')}
+        ${op('modelo', 'Opus 5.5', ia.modelo, 'Opus 5.5', 'El más cuidadoso. Más lento y más costoso.')}
+        ${op('modelo', 'Haiku 5.5', ia.modelo, 'Haiku 5.5', 'El más rápido. Si rechaza una tarea, se reintenta con Sonnet.')}
+      </div>
+    </section>
+    <section class="sec-fmt">
+      <h2>Clave de Anthropic</h2>
+      <p class="sub">Vive solo en la memoria del servidor: no se guarda en disco y se pierde al reiniciarlo.</p>
+      <div class="estado-clave" style="margin-bottom:.7rem"><span class="punto ${ia.clave ? '' : 'mal'}"></span>${ia.clave ? 'Hay una clave lista.' : 'No hay clave. Sin ella no se puede redactar.'}</div>
+      <div style="display:flex;gap:.6rem;max-width:32rem"><input type="password" id="clave" placeholder="sk-ant-…" autocomplete="off" aria-label="Clave de Anthropic"><button class="btn" data-accion="usar-clave">${ia.clave ? 'Reemplazar' : 'Usar clave'}</button></div>
+    </section>
+    <section class="sec-fmt">
+      <h2>Jev, segunda opinión</h2>
+      <p class="sub">Verifica los roles de los documentos y los datos del fallo de primera instancia. Nunca decide el sentido del fallo.</p>
+      <div class="tarjetas-op">
+        ${op('jev', 'apagado', ia.jev, 'Apagado', 'No sale ninguna petición.')}
+        ${op('jev', 'sombra', ia.jev, 'Sombra', 'Opina y deja alertas. No cambia nada.')}
+        ${op('jev', 'relleno', ia.jev, 'Relleno', 'Además asigna el rol de documentos que quedaron como «Otro».')}
+      </div>
+      ${ia.jev !== 'apagado' ? `<p class="nota-priv" style="margin-top:1rem">Con Jev encendido se envían a TypeSafe AI fragmentos del expediente: la cabecera de cada documento y la cola del fallo de primera instancia, nunca el expediente completo. Antes de usarlo con casos reales, confirme que sus términos cumplen el artículo 8.6 del Acuerdo PCSJA24-12243.</p>
+      <div style="display:flex;gap:.6rem;max-width:32rem;margin-top:1rem"><input type="password" placeholder="Clave de Jev" aria-label="Clave de Jev"><button class="btn" data-accion="usar-clave-jev">Usar clave</button></div>` : ''}
+    </section>
+    <section class="sec-fmt">
+      <details class="avanzado"><summary>Opciones avanzadas</summary>
+        <div class="campos">
+          <div class="campo"><label>Esfuerzo de razonamiento</label><select><option>high</option><option>xhigh</option><option>max</option><option>medium</option><option>low</option></select></div>
+          <div class="campo"><label>Máximo de tokens de salida</label><input type="number" value="64000"><small>Súbalo si una respuesta se corta.</small></div>
+          <div class="campo"><label>Reintentos por llamada</label><input type="number" value="1"></div>
+          <div class="campo"><label>Instrucciones del modelo</label><button class="btn" style="justify-self:start">Editar instrucciones</button></div>
+        </div>
+      </details>
+    </section>
+  </div>`;
+}
+
+/* ---------- Render ---------- */
+const VISTAS = { inicio: vistaInicio, casos: vistaCasos, docs: vistaDocs, redaccion: vistaRedaccion, draft: vistaDraft, decision: vistaDecision, enviando: vistaEnviando, result: vistaResult, formato: vistaFormato, ia: vistaIA };
+const ACCIONES = { docs: accionDocs, draft: accionDraft, decision: accionDecision };
+function render() {
+  const y = window.scrollY;
+  $('#vista').innerHTML = VISTAS[S.vista]();
+  $('#accion').innerHTML = (ACCIONES[S.vista] || (() => ''))();
+  $('#capa').innerHTML = S.arrastrando ? '<div class="soltar-global"><div><h2>Suelte la carpeta</h2><p>Se creará un caso nuevo con ella.</p></div></div>' : '';
+  $('#txt-ia').textContent = S.ia.clave ? S.ia.modelo : `${S.ia.modelo}, sin clave`;
+  $('#punto-clave').className = 'punto' + (S.ia.clave ? '' : ' mal');
+  $('#nav-formato').removeAttribute('aria-current');
+  $('#nav-ia').removeAttribute('aria-current');
+  if (S.vista === 'formato') { $('#nav-formato').setAttribute('aria-current', 'page'); pintarPrevia(); }
+  if (S.vista === 'ia') $('#nav-ia').setAttribute('aria-current', 'page');
+  if (S.vista === 'decision') { ultimasClaves = numerales().map((x) => x.k); pintarHoja(); }
+  window.scrollTo(0, y);
+}
+function ir(vista) {
+  if (vista === 'result' && S.vista === 'decision') vista = 'enviando';
+  if (S.vista === 'formato' && vista !== 'formato') {
+    if (fmtSucio() && !confirm('Hay cambios de formato sin guardar. ¿Salir sin guardarlos?')) return;
+    S.fmt = { ...S.fmtGuardado };
+  }
+  S.vista = vista; S.citaSel = null; S.fmtFoco = null;
+  render(); window.scrollTo(0, 0);
+  if (vista === 'enviando' || vista === 'redaccion') iniciarTraza(vista);
+}
+function cambiar(vista) { S.vista = vista; render(); window.scrollTo(0, 0); }
+function aviso(texto) {
+  const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = texto;
+  document.body.append(t); setTimeout(() => t.remove(), 2200);
+}
+function pedirClave() {
+  const dl = $('#dialogo');
+  dl.innerHTML = `<h2>Falta la clave de Anthropic</h2><p class="sub">Sin ella no se puede redactar. Vive solo en la memoria del servidor.</p><div class="campo" style="margin-top:1rem"><label for="clave-dl">Clave</label><input id="clave-dl" type="password" placeholder="sk-ant-…" autocomplete="off"></div><div class="acciones"><button class="btn" id="d-no">Cancelar</button><button class="btn primario" id="d-si">Usar clave e iniciar</button></div>`;
+  dl.showModal(); $('#clave-dl').focus();
+  $('#d-no').onclick = () => dl.close();
+  $('#d-si').onclick = () => { if (!$('#clave-dl').value.trim()) return $('#clave-dl').focus(); S.ia.clave = true; dl.close(); ir('redaccion'); };
+}
+function confirmarEnvio() {
+  const dl = $('#dialogo'); const d = S.dec;
+  dl.innerHTML = `<h2>Enviar su decisión</h2><p>Se redactará el caso concreto con esta decisión (<b>${d.resultado}${d.sust ? ', ' + d.sust : ''}</b>) y se generarán el fallo y los documentos de apoyo.</p><p class="sub" style="margin-top:.5rem">Usará ${esc(S.ia.modelo)}.</p><div class="acciones"><button class="btn" id="d-no">Seguir editando</button><button class="btn sello" id="d-si">Enviar y redactar</button></div>`;
+  dl.showModal();
+  $('#d-no').onclick = () => dl.close();
+  $('#d-si').onclick = () => { dl.close(); ir('result'); };
+}
+function agregarOrden() { S.dec.ordenes.push({ dest: '', n: 48, u: 'horas_habiles', conducta: '', via: true }); }
+function carpetaLista() { S.detectado = { n: 9, nombre: 'Carpeta 01PrimeraInstancia' }; }
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, [data-ir], [data-accion]');
+  if (!t) return;
+  if (t.dataset.etapa !== undefined && tz) { tz.sel = t.dataset.etapa === '' ? null : +t.dataset.etapa; return pintarTraza(true); }
+  if (t.dataset.ancla) { const el = document.getElementById(t.dataset.ancla); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (t.dataset.ir) { if (t.closest('.proto')) t.closest('details').open = false; return ir(t.dataset.ir); }
+  if (t.dataset.abrir) { S.abiertos.has(t.dataset.abrir) ? S.abiertos.delete(t.dataset.abrir) : S.abiertos.add(t.dataset.abrir); return render(); }
+  if (t.dataset.aceptar) { S.roles[t.dataset.aceptar] = DOCS.find((d) => d.n === t.dataset.aceptar).jev[0]; return render(); }
+  if (t.dataset.cita !== undefined) { S.citaSel = t.dataset.cita || null; return render(); }
+  if (t.dataset.seg === 'resultado') { S.dec.resultado = t.dataset.v; if (t.dataset.v === 'CONFIRMAR') S.dec.sust = ''; return sincronizarDecision(); }
+  if (t.dataset.sust) { S.dec.sust = t.dataset.sust; if (t.dataset.sust === 'AMPARAR' && !S.dec.ordenes.length) { agregarOrden(); $('#lista-ordenes').innerHTML = S.dec.ordenes.map(ordenCard).join(''); } return sincronizarDecision(); }
+  if (t.dataset.mover) { const i = +t.dataset.mover, dir = +t.dataset.dir; const claves = numerales().map((x) => x.k); const j = i + dir; if (j < 0 || j >= claves.length) return; [claves[i], claves[j]] = [claves[j], claves[i]]; S.dec.orden = claves; return pintarHoja(); }
+  if (t.dataset.quitarOrden !== undefined) { S.dec.ordenes.splice(+t.dataset.quitarOrden, 1); $('#lista-ordenes').innerHTML = S.dec.ordenes.map(ordenCard).join(''); return pintarHoja(); }
+  if (t.dataset.fdoc) { S.fmtDoc = t.dataset.fdoc; if (t.dataset.desde) S.fmtFoco = t.dataset.desde; return pintarPrevia(); }
+  if (t.dataset.gen) { S.fmt.gen = t.dataset.gen; S.fmtDoc = 'fallo'; S.fmtFoco = null; document.querySelectorAll('[data-gen]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.gen === S.fmt.gen))); return pintarPrevia(); }
+  if (t.dataset.modelo) { S.ia.modelo = t.dataset.modelo; aviso(`Modelo: ${S.ia.modelo}`); return render(); }
+  if (t.dataset.jev) { S.ia.jev = t.dataset.jev; return render(); }
+  switch (t.dataset.accion) {
+    case 'elegir': carpetaLista(); return render();
+    case 'cancelar-soltar': S.detectado = null; return render();
+    case 'guardar-roles': DOCS.forEach((d) => { d.rol = S.roles[d.n]; }); aviso('Cambios guardados'); return render();
+    case 'redactar': return S.ia.clave ? ir('redaccion') : pedirClave();
+    case 'abrir-rehacer': S.rehacer = true; return render();
+    case 'rehacer': S.rehacer = false; return ir('redaccion');
+    case 'agregar-orden': agregarOrden(); $('#lista-ordenes').innerHTML = S.dec.ordenes.map(ordenCard).join(''); return pintarHoja();
+    case 'agregar-libre': S.dec.libres.push(''); $('#lista-libres').innerHTML = S.dec.libres.map(libreHtml).join(''); return pintarHoja();
+    case 'enviar-decision': return confirmarEnvio();
+    case 'traza-fin': { const destino = tz.tipo === 'redaccion' ? 'draft' : 'result'; tz = null; clearInterval(temporizador); return cambiar(destino); }
+    case 'guardar-fmt': S.fmtGuardado = { ...S.fmt }; aviso('Formato guardado'); return pintarPrevia();
+    case 'descartar-fmt': S.fmt = { ...S.fmtGuardado }; S.fmtFoco = null; return render();
+    case 'usar-clave': if ($('#clave').value.trim()) { S.ia.clave = true; aviso('Clave lista'); render(); } else $('#clave').focus(); return;
+    case 'usar-clave-jev': aviso('Clave de Jev lista'); return;
+  }
+});
+document.addEventListener('focusin', (e) => {
+  const k = e.target.dataset?.fmt;
+  if (!k) return;
+  const f = SECCIONES_FMT.flatMap((s) => s.campos).find((x) => x.k === k);
+  S.fmtFoco = k;
+  if (!f.docs.includes(S.fmtDoc) && PREVIAS[f.docs[0]]) S.fmtDoc = f.docs[0];
+  pintarPrevia();
+});
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.dataset.fmt) { S.fmt[t.dataset.fmt] = t.value; return pintarPrevia(); }
+  if (t.id === 'buscar') { S.buscar = t.value; $('#lista-casos').innerHTML = listaCasos(); return; }
+  if (t.id === 'eje') S.dec.eje = t.value;
+  else if (t.id === 'por') S.dec.por = t.value;
+  else if (t.id === 'fecha') S.dec.fecha = t.value;
+  else if (t.id === 'desv') S.dec.desvincular = t.value;
+  else if (t.id === 'prev') S.dec.prevenir = t.value;
+  else if (t.id === 'compulsa-a') S.dec.compulsaA = t.value;
+  else if (t.dataset.libre !== undefined) S.dec.libres[+t.dataset.libre] = t.value;
+  else if (t.dataset.of) { const o = S.dec.ordenes[+t.closest('[data-orden]').dataset.orden]; const k = t.dataset.of; o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? +t.value : t.value; }
+  else if (t.dataset.reparoNota) { (S.dec.reparos[t.dataset.reparoNota] ||= { d: 'ACOGE' }).nota = t.value; return; }
+  else return;
+  if (S.vista === 'decision') pintarHoja();
+});
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.accion === 'origen') { S.origen = t.checked; return render(); }
+  if (t.dataset.rol) { S.roles[t.dataset.rol] = t.value; return render(); }
+  if (t.dataset.chk) { S.dec[t.dataset.chk] = t.checked; return sincronizarDecision(); }
+  if (t.dataset.reparo) { (S.dec.reparos[t.dataset.reparo] ||= {}).d = t.value; return; }
+  if (t.dataset.derecho !== undefined) { S.dec.derechos[+t.dataset.derecho].d = t.value; return pintarHoja(); }
+  if (t.dataset.of) { const o = S.dec.ordenes[+t.closest('[data-orden]').dataset.orden]; o[t.dataset.of] = t.type === 'checkbox' ? t.checked : t.value; return pintarHoja(); }
+});
+let profundidad = 0;
+document.addEventListener('dragenter', (e) => { if (S.vista !== 'casos') return; e.preventDefault(); profundidad++; if (!S.arrastrando) { S.arrastrando = true; $('#capa').innerHTML = '<div class="soltar-global"><div><h2>Suelte la carpeta</h2><p>Se creará un caso nuevo con ella.</p></div></div>'; } });
+document.addEventListener('dragover', (e) => { if (S.vista === 'casos') e.preventDefault(); });
+document.addEventListener('dragleave', () => { if (S.vista !== 'casos') return; profundidad = Math.max(0, profundidad - 1); if (!profundidad && S.arrastrando) { S.arrastrando = false; $('#capa').innerHTML = ''; } });
+document.addEventListener('drop', (e) => { if (S.vista !== 'casos') return; e.preventDefault(); profundidad = 0; S.arrastrando = false; carpetaLista(); render(); });
+window.addEventListener('beforeunload', (e) => { if (S.vista === 'formato' && fmtSucio()) e.preventDefault(); });
+
+(() => {
+  const h = location.hash.slice(1);
+  if (h === 'decision-lleno') {
+    Object.assign(S.dec, { resultado: 'REVOCAR', sust: 'AMPARAR', eje: 'El a quo omitió valorar la orden médica vigente; la EPS suspendió el tratamiento sin justificación.' });
+    S.dec.ordenes.push({ dest: 'la EPS HORIZONTE SALUD S.A.S.', n: 48, u: 'horas_habiles', conducta: 'autorice y entregue el medicamento prescrito, sin dilaciones', via: true });
+    S.vista = 'decision';
+  } else if (h === 'formato-foco') { S.vista = 'formato'; S.fmtFoco = 'juez'; S.fmtDoc = 'fallo'; }
+  else if (h === 'formato-auto') { S.vista = 'formato'; S.fmtDoc = 'auto'; S.fmtFoco = 'escribiente'; S.fmt.escribiente = 'Laura Camila Ospina Ríos'; }
+  else if (h === 'casos-listo') { S.vista = 'casos'; carpetaLista(); }
+  else if (h === 'ia-jev') { S.vista = 'ia'; S.ia.jev = 'sombra'; }
+  else if (VISTAS[h]) S.vista = h;
+  else if (h === 'traza-mitad') S.vista = 'redaccion';
+  else if (h === 'draft-origen') { S.vista = 'draft'; S.origen = true; }
+})();
+render();
+if (['redaccion', 'enviando'].includes(S.vista)) { iniciarTraza(S.vista); if (location.hash === '#traza-mitad') adelantarTraza(2, 3); }
+</script>
+</body>
+</html>

@@ -161,8 +161,7 @@ def _firma(doc, cfg: Config) -> None:
         (
             d.escribiente,
             d.cargo_escribiente,
-            "Juzgado 3 Penal del Circuito con Funciones",
-            "de Conocimiento de Medellín",
+            *d.firma_correo,
             d.correo,
             d.telefono_correo,
         )

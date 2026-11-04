@@ -17,19 +17,25 @@ El diseño está en `docs/diseno-tutela-2a-instancia.md` y los contratos entre m
 - [uv](https://docs.astral.sh/uv/) y Python 3.12 (uv lo instala si falta).
 - `poppler-utils` (`pdftotext`): extrae el texto mucho más rápido y en mejor orden. Si falta, se usa `pypdf` y la ingesta deja una alerta.
 - OCR para páginas escaneadas: `tesseract-ocr` y `tesseract-ocr-spa` (Debian/Ubuntu: `sudo apt install tesseract-ocr tesseract-ocr-spa`) y el extra de Python `uv sync --extra ocr`. Si falta alguno (o `ocr` está desactivado en la configuración), esas páginas quedan sin texto, la ingesta deja una alerta y su contenido no llega al modelo.
+- Para la interfaz: Node 24 y pnpm (`corepack enable`). Solo hace falta para compilarla; el servidor solo sirve los archivos ya generados. La imagen Docker la compila en su primera etapa.
 - Red en la primera ejecución, incluso en modo `fake`: se descarga el dataset de sentencias de la Corte (datos.gov.co, unos 3,6 MB) y, con `verificar_relatoria` activo, las páginas de relatoría citadas (corteconstitucional.gov.co). Todo queda en `~/.cache/tutela2` (carpeta configurable con `cache_dir`). El dataset se refresca a los 30 días; sin red se usa la copia local si existe.
 
 ## Cómo ejecutar la interfaz
 
+La interfaz es una aplicación Preact (`frontend/`) que FastAPI sirve ya compilada desde `backend/tutela2/static/dist/` (carpeta generada que no se versiona).
+
 ```bash
-cd backend
+cd frontend
+pnpm install --frozen-lockfile
+pnpm build
+cd ../backend
 uv sync
 uv run tutela2-ui
 ```
 
-Abra http://127.0.0.1:8000. Variables de entorno opcionales: `PORT` (por defecto 8000), `HOST` (por defecto `127.0.0.1`), `CASOS_DIR` (por defecto `casos/` en la raíz del repo) y `ALLOWED_HOSTS` (lista separada por comas, por defecto `127.0.0.1,localhost`; cualquier otro nombre recibe un 400). `JUDICABOT_PASSWORD` activa una pantalla de contraseña (sin usuario) y es obligatoria si `HOST` no es local; sin ella en localhost no hay autenticación. `/healthz` queda exento.
+Abra http://127.0.0.1:8000. Si falta compilar el frontend, `/` responde 503 con "Falta compilar el frontend (pnpm build)". Variables de entorno opcionales: `PORT` (por defecto 8000), `HOST` (por defecto `127.0.0.1`), `CASOS_DIR` (por defecto `casos/` en la raíz del repo) y `ALLOWED_HOSTS` (lista separada por comas, por defecto `127.0.0.1,localhost`; cualquier otro nombre recibe un 400). `JUDICABOT_PASSWORD` activa una pantalla de contraseña (sin usuario) y es obligatoria si `HOST` no es local; sin ella en localhost no hay autenticación. `/healthz` queda exento.
 
-Uso: **Casos** (arrastrar `01PrimeraInstancia` o la carpeta del caso; también hay botón de carpeta) → **Documentos** → **Configuración** → **Ejecutar** → **Revisión** (apertura, consideraciones, tabla de citas y alertas) → **Decisión** → **Resultado** (árbol de salidas con descargas y `.zip`).
+Uso: **Inicio** → tarjeta "Fallo de tutela de segunda instancia" (**Casos de segunda instancia**: arrastrar `01PrimeraInstancia` o la carpeta del caso a la zona de soltar, o elegir la carpeta; la lista de casos agrupa por estado) → por cada caso, cinco pasos: **Documentos** (roles, faltantes y datos del auto) → **Proceso** (la redacción en vivo, con lo que el sistema lee, escribe y verifica) → **Borrador** (apertura, consideraciones, citas con su verificación y la segunda lectura de Jev; permite pedir correcciones) → **Decisión** (con la vista previa del RESUELVE) → **Fallo** (visor de las páginas, descargas y `.zip`). Dos pantallas valen para todos los casos: **Formato de los documentos** (datos del despacho que salen en el fallo, el auto, el oficio y los correos, y plantilla A o B) e **Inteligencia artificial** (modelo, claves y Jev).
 
 Estados de un caso:
 
@@ -45,10 +51,10 @@ La pantalla **Documentos** muestra cada archivo con su rol (editable), la eviden
 
 ## Clave de la API de Anthropic
 
-Por defecto el proveedor es `anthropic`, con `claude-sonnet-5-5` y `effort` en `high`. El modelo se elige en el selector "Modelo" de la cabecera (Sonnet 5.5, Haiku 5.5 u Opus 5.5) y vale para todos los casos desde la siguiente ejecución; la elección queda en `<CASOS_DIR>/.preferencias.json`. Fuera de la UI, la variable `TUTELA2_MODELO` reemplaza `llm.modelo`. Los tokens de razonamiento cuentan contra `llm.max_tokens` (64000 por defecto). Si una llamada falla con "La respuesta se cortó por el límite de tokens", suba `llm.max_tokens` (el modelo admite hasta 128000) o baje `llm.effort`. Las llamadas usan streaming. Dos formas de entregar la clave:
+Por defecto el proveedor es `anthropic`, con `claude-sonnet-5-5` y `effort` en `high`. El modelo se elige en **Inteligencia artificial** (Sonnet 5.5, Haiku 5.5 u Opus 5.5) y vale para todos los casos desde la siguiente ejecución; esa pantalla también fija `effort`, `max_tokens`, reintentos y el modo de Jev, y todo queda en `<CASOS_DIR>/.preferencias.json`. Fuera de la UI, la variable `TUTELA2_MODELO` reemplaza `llm.modelo`. Los tokens de razonamiento cuentan contra `llm.max_tokens` (64000 por defecto). Si una llamada falla con "La respuesta se cortó por el límite de tokens", suba `llm.max_tokens` (el modelo admite hasta 128000) o baje `llm.effort`. Las llamadas usan streaming. Dos formas de entregar la clave:
 
 1. Variable de entorno antes de arrancar: `export ANTHROPIC_API_KEY=sk-ant-...`.
-2. Campo "API key" de la cabecera de la UI. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor.
+2. Botón de la clave de Anthropic en **Inteligencia artificial**. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor.
 
 ## Jev (segunda opinión, opcional)
 
@@ -57,7 +63,7 @@ Jev (TypeSafe AI) es un modelo de decisión que no genera texto: contesta pregun
 | Modo | Qué hace |
 |---|---|
 | `apagado` (por defecto) | No sale ninguna petición, aunque haya clave. |
-| `sombra` | Jev opina sobre el rol de cada documento con texto y verifica con tres preguntas cerradas el sentido del fallo, el sentido de `decision_a_quo` y el rol del impugnante. Las opiniones se guardan y se muestran con su confianza en **Documentos** y en **Revisión** (tarjeta "Verificación de Jev"); si discrepan con una confianza igual o superior a `jev.umbral_confianza`, dejan una alerta. No cambia ningún rol. |
+| `sombra` | Jev opina sobre el rol de cada documento con texto y verifica con tres preguntas cerradas el sentido del fallo, el sentido de `decision_a_quo` y el rol del impugnante. Las opiniones se guardan y se muestran con su confianza en **Documentos** y en **Borrador** (tarjeta "Segunda lectura de Jev"); si discrepan con una confianza igual o superior a `jev.umbral_confianza`, dejan una alerta. No cambia ningún rol. |
 | `relleno` | Lo mismo que `sombra` y, además, asigna el rol a un documento que el código dejó como `otro` por no hallar rasgos de ningún rol, si la confianza de Jev llega al umbral (la fila dice "Sugerido por Jev"). Nunca pisa un rol decidido por el código ni uno fijado por usted, y no asigna `fallo_a_quo` ni `acta_reparto_2a` si otro documento ya tiene ese rol (en ese caso deja una alerta). |
 
 Un documento sin texto (escaneado sin OCR) no genera ninguna petición. Si Jev falla (sin clave válida, tiempo agotado, servicio saturado), la ingesta y la apertura terminan igual y queda una alerta.
@@ -67,9 +73,9 @@ Los porcentajes de confianza se pintan según el umbral con el que se calcularon
 La clave solo vive en la variable de entorno `JEV_API_KEY`; nunca en `config.json`, en el repositorio ni en la bitácora. Dos formas de entregarla:
 
 1. Archivo `.local.env` en la raíz del repo (está en `.gitignore`, con una línea `JEV_API_KEY=...`) y arrancar con `cd backend && uv run --env-file ../.local.env tutela2-ui`.
-2. Campo "Clave de Jev" del grupo Jev en **Configuración**. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor. Solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.
+2. Botón de la clave de Jev en **Inteligencia artificial**. Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor. Solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.
 
-Sin clave no sale ninguna petición, aunque el modo no sea `apagado`. El modo y los demás ajustes (`jev.*`) se cambian en la pestaña Parámetros de **Configuración**.
+Sin clave no sale ninguna petición, aunque el modo no sea `apagado`. El modo y el umbral se cambian en **Inteligencia artificial**; los demás ajustes (`jev.*`) están en `config.json`.
 
 **Privacidad (Acuerdo PCSJA24-12243, art. 8.6).** En los modos `sombra` y `relleno` se envían datos del expediente a un tercero (TypeSafe AI). Para los roles, el nombre del archivo y un fragmento inicial de cada documento con texto, acotado por `jev.max_chars_cabecera` (1500 caracteres por defecto). Para los metadatos, la cola del fallo de primera instancia (`jev.max_chars_sentido`, 2500), la cláusula `decision_a_quo`, la cabecera del escrito de impugnación y los nombres de las partes. Nunca se envía el expediente completo. Antes de usarlo con expedientes reales, el despacho debe confirmar que los términos de TypeSafe AI cumplen el art. 8.6 (sin apropiación, uso para reentrenar ni reenvío de los datos).
 
@@ -87,18 +93,18 @@ uv run --env-file ../.local.env tutela2 jev-bench --referencia ../referencia --i
 
 ## Modo `fake` (probar sin clave)
 
-En la configuración del caso, ponga `llm.proveedor` en `fake`. Un cliente determinista construye salidas válidas a partir del texto del expediente y de dos sentencias reales (T-200/22 y SU-082/95), y recorre todo el flujo sin llamar a ningún modelo. El texto resultante es de relleno; sirve para ver pantallas, documentos y validaciones. Los datos que salen de la ingesta (radicado, juzgado de origen, partes, fechas) son reales; los que redacta el modelo (impugnantes, resultado del fallo de origen, tratamiento e identificación del accionante, juez de origen) llevan valores ficticios.
+Arranque el servidor con `TUTELA2_PROVEEDOR=fake` (también desactiva `verificar_relatoria`) o ponga `llm.proveedor` en `fake` en el `config.json` del caso. Un cliente determinista construye salidas válidas a partir del texto del expediente y de dos sentencias reales (T-200/22 y SU-082/95), y recorre todo el flujo sin llamar a ningún modelo. El texto resultante es de relleno; sirve para ver pantallas, documentos y validaciones. Los datos que salen de la ingesta (radicado, juzgado de origen, partes, fechas) son reales; los que redacta el modelo (impugnantes, resultado del fallo de origen, tratamiento e identificación del accionante, juez de origen) llevan valores ficticios.
 
 ## Configuración por caso (`casos/<id>/config.json`)
 
-Se edita desde la UI. Los valores por defecto están en `backend/tutela2/config.py` (`uv run tutela2 config-default`).
+Los ajustes globales se fijan en la UI: **Inteligencia artificial** (modelo, `effort`, `max_tokens`, reintentos y modo y umbral de Jev) y **Formato de los documentos** (`despacho.*` y `plantilla_gen`, que se copian a `config.json` al crear un caso). El resto se edita en el archivo o con `PUT /api/casos/<id>/config`. Los valores por defecto están en `backend/tutela2/config.py` (`uv run tutela2 config-default`).
 
 | Opción | Qué controla |
 |---|---|
 | `plantilla_gen` | `A` o `B` (por defecto `B`): generación del formato del despacho (títulos, tamaño de página, fórmula de mérito) |
 | `despacho.*` | Nombre, ciudad, juez, pie de página y correo que salen en los documentos |
 | `llm.proveedor` | `anthropic` o `fake` |
-| `llm.modelo`, `llm.effort` | Modelo (por defecto `claude-sonnet-5-5`; en la UI lo fija el selector de la cabecera) y nivel de esfuerzo (`low` a `max`, por defecto `high`) |
+| `llm.modelo`, `llm.effort` | Modelo (por defecto `claude-sonnet-5-5`; en la UI lo fija **Inteligencia artificial**) y nivel de esfuerzo (`low` a `max`, por defecto `high`) |
 | `llm.modelo_por_nodo`, `llm.effort_por_nodo` | Ajustes por nodo: `apertura`, `consideraciones`, `caso_concreto` |
 | `llm.max_tokens`, `llm.timeout_s` | Tope de tokens de salida por llamada (64000) y tiempo máximo (1200 s) |
 | `llm.fallbacks_default` | Solo actúa cuando el filtro de seguridad del modelo rechaza la solicitud (`stop_reason: refusal`). Con Sonnet y Opus pide a la API que repita la llamada en el modelo de respaldo; si la API no acepta el parámetro se reintenta sin él. El respaldo del servidor no reintenta todas las categorías de rechazo: con Sonnet 5.5 solo reintenta `cyber` y `frontier_llm` (no `bio`, `reasoning_extraction` ni `general_harms`) y con Opus 5.5 no reintenta `reasoning_extraction`. Haiku 5.5 no tiene respaldo en el servidor: ante un rechazo, la aplicación repite la llamada con Sonnet 5.5 |
@@ -114,7 +120,7 @@ Se edita desde la UI. Los valores por defecto están en `backend/tutela2/config.
 | `rango_palabras` | Extensión esperada por sección (si se sale, solo hay alerta) |
 | `max_chars_documento` | Tope de caracteres por documento enviado al modelo |
 | `dataset_csv_url`, `cache_dir` | Origen y carpeta de caché del dataset de sentencias |
-| `prompts_override` | Reemplazo de las instrucciones de cada nodo (pestaña de prompts de la UI) |
+| `prompts_override` | Reemplazo de las instrucciones de cada nodo (la UI todavía no los edita; se cambian en el archivo) |
 
 ## Línea de comandos
 
@@ -158,6 +164,41 @@ salidas/trabajo/                           previo, informe_verificacion, declara
 ```
 
 Los nombres terminan con los dígitos 13 a 21 del radicado (`YYYYNNNNN`). `nuevo` borra `salidas/` completo.
+
+## Frontend (`frontend/`)
+
+Preact 10, `@preact/signals`, Vite y TypeScript estricto; sin otras dependencias de interfaz. Los textos están en español.
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm dev            # Vite en http://localhost:5173 con proxy de /api a http://127.0.0.1:8000
+pnpm build          # compila a ../backend/tutela2/static/dist
+pnpm typecheck      # tsc --noEmit
+pnpm test           # vitest + @testing-library/preact
+pnpm size           # presupuestos de tamaño sobre dist/ (falla si se exceden)
+pnpm e2e            # Playwright contra el servidor real
+```
+
+- **Desarrollo con proxy:** deje corriendo el backend (`cd backend && uv run tutela2-ui`) y, en otra terminal, `pnpm dev`. Con `VITE_MOCK=1 pnpm dev` las vistas responden con los datos de ejemplo de `src/vistas/*/mock.ts`; lo que no tenga dato de ejemplo se sigue pidiendo al backend.
+- **Presupuestos (`pnpm size`, gzip):** JS inicial 60 KB, cada chunk de ruta 25 KB, CSS inicial 15 KB, CSS total 25 KB, fuentes 60 KB.
+- **Tipos de la API:** `frontend/openapi.json` y `frontend/src/api/schema.d.ts` se generan desde el servidor con `pnpm gen:tipos` y se versionan. `src/api/contrato.ts` es el contrato escrito a mano que usan las vistas; `src/api/contrato.verificacion.ts` hace fallar `pnpm typecheck` si se aparta del esquema generado. `pnpm check:tipos` (CI) falla si `schema.d.ts` no corresponde a `openapi.json`, y una prueba del backend falla si `openapi.json` no corresponde al servidor. Tras cambiar un endpoint o su `response_model`, ejecute `pnpm gen:tipos`.
+- **E2E:** `pnpm e2e` genera el caso sintético (`backend/scripts/caso_sintetico.py`), levanta dos servidores `uv run tutela2-ui` (uno abierto y otro detrás de `JUDICABOT_PASSWORD`) con `TUTELA2_PROVEEDOR=fake` y carpetas de casos temporales, y recorre el flujo. La primera vez: `pnpm exec playwright install chromium`.
+
+Estructura:
+
+```
+frontend/
+  src/api/       cliente HTTP, SSE de eventos, contrato.ts, schema.d.ts (generado)
+  src/estado/    estado compartido con signals (servidor, toasts, formato)
+  src/rutas/     router por hash (#/segunda/<caso>/<paso>), Shell y carga perezosa de vistas
+  src/ui/        primitivas: Topbar, Pasos, Boton, Chip, Dialogo, Aviso, VisorPagina
+  src/vistas/    una carpeta por pantalla: inicio, casos, documentos, proceso, borrador, decision, fallo, formato, ia
+  src/estilos/   tokens, fuentes (IBM Plex Sans autoalojada) y base
+  public/        favicon, manifiesto e iconos
+  e2e/           pruebas Playwright
+  scripts/size.mjs
+```
 
 ## Pruebas
 

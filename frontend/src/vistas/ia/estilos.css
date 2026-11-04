@@ -1,0 +1,45 @@
+.ia { max-width: 760px; }
+.ia-intro { margin-top: 0.3rem; }
+.ia-sec { padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--linea); }
+.ia-sec:first-of-type { border-top: 0; margin-top: 1.5rem; padding-top: 0; }
+.ia-sec h2 { font-size: 1.15rem; font-weight: 600; }
+.ia-sec > .sub { font-size: 0.92rem; margin: 0.15rem 0 1rem; }
+
+.ia-tarjetas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ia-op { position: relative; display: grid; gap: 0.25rem; align-content: start; padding: 0.9rem 1rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; cursor: pointer; }
+.ia-op:hover { border-color: var(--acento); }
+.ia-op.sel { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-fondo); }
+.ia-op:has(input:focus-visible) { outline: 2px solid var(--foco); outline-offset: 2px; }
+.ia-op b { font-weight: 600; }
+.ia-op small { color: var(--suave); font-size: 0.86rem; }
+
+.ia-clave { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1.2rem; max-width: 36rem; }
+.ia .estado-clave { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.ia .estado-clave .punto { background: var(--ok); }
+.ia .estado-clave .punto.mal { background: var(--alerta); }
+
+.ia-jev-detalle { display: grid; gap: 1.4rem; margin-top: 1.2rem; }
+.ia-rango { display: flex; align-items: center; gap: 0.9rem; max-width: 24rem; }
+.ia-rango input { flex: 1; min-width: 0; accent-color: var(--acento); }
+.ia-rango output { min-width: 3.2rem; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+
+.ia details.avanzado summary { cursor: pointer; font-weight: 500; color: var(--acento); }
+.ia details.avanzado[open] summary { margin-bottom: 1rem; }
+.ia-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem 1rem; }
+.ia-etiqueta { font-size: 0.88rem; font-weight: 500; }
+.ia-prox { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; }
+.ia-proximamente { color: var(--suave); font-size: 0.86rem; }
+
+.ia [aria-invalid="true"] { border-color: var(--mal); }
+.ia-error { margin-top: 0.3rem; color: var(--mal); font-size: 0.86rem; }
+
+.ia-aviso-guardar { margin-top: 2rem; }
+.ia-guardar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; margin-top: 2rem; padding: 0.9rem 0; background: var(--fondo); border-top: 1px solid var(--linea); }
+.ia-estado { min-height: 1.4rem; color: var(--suave); font-size: 0.92rem; }
+
+.ia-form-clave { display: grid; gap: 1rem; }
+.ia-form-clave .acciones { margin-top: 0.3rem; }
+
+@media (max-width: 960px) {
+  .ia-tarjetas, .ia-campos { grid-template-columns: 1fr; }
+}

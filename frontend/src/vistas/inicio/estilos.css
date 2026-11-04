@@ -1,0 +1,33 @@
+.bienvenida { max-width: 960px; margin: 2.5rem auto 0; }
+.bienvenida .despacho { color: var(--suave); }
+.bienvenida h1 { margin: 0.3rem 0 2rem; font-size: 2.3rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; }
+.procesos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.proceso-t { position: relative; display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); align-content: start; gap: 0.4rem 1.1rem; min-height: 10.5rem; padding: 1.4rem 1.5rem; border: 1px solid var(--linea); border-radius: 14px; background: #fff; text-align: left; }
+.proceso-t .ico { grid-row: 1 / span 3; display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 12px; background: var(--acento-fondo); color: var(--acento); }
+.proceso-t h2 { font-size: 1.15rem; font-weight: 600; line-height: 1.3; }
+.proceso-t p { color: var(--suave); font-size: 0.93rem; }
+.proceso-t .pie-t { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; margin-top: 0.8rem; font-size: 0.9rem; }
+.proceso-t .pie-t .abrir { margin-left: auto; color: var(--acento); font-weight: 500; }
+.proceso-t.activo { transition: border-color 0.15s, box-shadow 0.15s; }
+.proceso-t.activo:hover { border-color: var(--acento); box-shadow: 0 10px 26px -18px rgba(30, 90, 110, 0.8); }
+.proceso-t.activo:has(:focus-visible) { outline: 2px solid var(--foco); outline-offset: 2px; }
+.enlace-tarjeta { color: inherit; text-decoration: none; }
+.enlace-tarjeta:focus-visible { outline: none; }
+.enlace-tarjeta::after { content: ""; position: absolute; inset: 0; border-radius: 14px; }
+.proceso-t.inactivo { border-style: dashed; background: transparent; cursor: default; }
+.proceso-t.inactivo .ico { background: var(--fondo-2); color: var(--tenue); }
+.proceso-t.inactivo h2 { color: var(--suave); font-weight: 500; }
+.punto-sello { display: inline-block; width: 0.5rem; height: 0.5rem; margin-right: 0.35rem; border-radius: 50%; background: var(--sello); vertical-align: 0.05rem; }
+.bienvenida > .aviso { margin-top: 1.5rem; }
+.continuar { margin-top: 2.5rem; }
+.continuar h2 { margin-bottom: 0.6rem; font-size: 0.98rem; font-weight: 600; color: var(--suave); }
+
+@media (max-width: 960px) {
+  .procesos { grid-template-columns: 1fr; }
+  .proceso-t.inactivo { min-height: 0; }
+  .bienvenida { margin-top: 1rem; }
+  .bienvenida h1 { font-size: 1.8rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .proceso-t.activo { transition: none; }
+}

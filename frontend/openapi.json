@@ -1,0 +1,2438 @@
+{
+  "components": {
+    "schemas": {
+      "ApiKeyBody": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "ApiKeyBody",
+        "type": "object"
+      },
+      "Bloque": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "origen": {
+            "enum": [
+              "plantilla",
+              "modelo"
+            ],
+            "title": "Origen",
+            "type": "string"
+          },
+          "seccion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seccion"
+          },
+          "segmentos": {
+            "items": {
+              "$ref": "#/components/schemas/Segmento"
+            },
+            "title": "Segmentos",
+            "type": "array"
+          },
+          "tipo": {
+            "enum": [
+              "titulo",
+              "encabezado",
+              "parrafo",
+              "cita_bloque",
+              "lista",
+              "tabla",
+              "firma",
+              "pie",
+              "resuelve_numeral"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "origen",
+          "seccion",
+          "segmentos"
+        ],
+        "title": "Bloque",
+        "type": "object"
+      },
+      "Body_crear_caso_api_casos_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "nombre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_crear_caso_api_casos_post",
+        "type": "object"
+      },
+      "CampoFormato": {
+        "properties": {
+          "ayuda": {
+            "title": "Ayuda",
+            "type": "string"
+          },
+          "clave": {
+            "title": "Clave",
+            "type": "string"
+          },
+          "documentos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Documentos",
+            "type": "array"
+          },
+          "etiqueta": {
+            "title": "Etiqueta",
+            "type": "string"
+          },
+          "grupo": {
+            "title": "Grupo",
+            "type": "string"
+          },
+          "tipo": {
+            "enum": [
+              "texto",
+              "texto_largo",
+              "lista"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clave",
+          "etiqueta",
+          "ayuda",
+          "tipo",
+          "grupo",
+          "documentos"
+        ],
+        "title": "CampoFormato",
+        "type": "object"
+      },
+      "CasoCreado": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "n_insumos": {
+            "title": "N Insumos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "n_insumos"
+        ],
+        "title": "CasoCreado",
+        "type": "object"
+      },
+      "CasoResumen": {
+        "properties": {
+          "accionadas": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accionadas",
+            "type": "array"
+          },
+          "accionante": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accionante"
+          },
+          "actualizado": {
+            "title": "Actualizado",
+            "type": "string"
+          },
+          "estado": {
+            "enum": [
+              "sin_iniciar",
+              "revision",
+              "incompleto",
+              "esperando_decision",
+              "terminado",
+              "error",
+              "corriendo"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "etapa": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Etapa",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_activo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Activo"
+          },
+          "juzgado_a_quo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Juzgado A Quo"
+          },
+          "n_alertas": {
+            "title": "N Alertas",
+            "type": "integer"
+          },
+          "n_insumos": {
+            "title": "N Insumos",
+            "type": "integer"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "radicado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radicado"
+          },
+          "siguiente_paso": {
+            "title": "Siguiente Paso",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "radicado",
+          "accionante",
+          "accionadas",
+          "juzgado_a_quo",
+          "estado",
+          "etapa",
+          "siguiente_paso",
+          "n_insumos",
+          "n_alertas",
+          "job_activo",
+          "actualizado"
+        ],
+        "title": "CasoResumen",
+        "type": "object"
+      },
+      "CitaVista": {
+        "properties": {
+          "cobertura": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cobertura"
+          },
+          "detalle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalle"
+          },
+          "estado": {
+            "enum": [
+              "verificada",
+              "revisar",
+              "rechazada"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "fuente": {
+            "title": "Fuente",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "texto",
+          "fuente",
+          "cobertura",
+          "estado",
+          "detalle"
+        ],
+        "title": "CitaVista",
+        "type": "object"
+      },
+      "DecisionVistaRespuesta": {
+        "properties": {
+          "errores": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errores",
+            "type": "array"
+          },
+          "faltantes": {
+            "items": {
+              "$ref": "#/components/schemas/FaltanteDecision"
+            },
+            "title": "Faltantes",
+            "type": "array"
+          },
+          "numerales": {
+            "items": {
+              "$ref": "#/components/schemas/NumeralVista"
+            },
+            "title": "Numerales",
+            "type": "array"
+          }
+        },
+        "required": [
+          "numerales",
+          "faltantes",
+          "errores"
+        ],
+        "title": "DecisionVistaRespuesta",
+        "type": "object"
+      },
+      "Despacho": {
+        "properties": {
+          "cargo_escribiente": {
+            "default": "Escribiente",
+            "title": "Cargo Escribiente",
+            "type": "string"
+          },
+          "cargo_evaluador": {
+            "default": "Juez 3° Penal del Circuito de Conocimiento",
+            "title": "Cargo Evaluador",
+            "type": "string"
+          },
+          "cargo_firmante_oficio": {
+            "default": "Escribiente",
+            "title": "Cargo Firmante Oficio",
+            "type": "string"
+          },
+          "cargo_juez": {
+            "default": "JUEZ",
+            "title": "Cargo Juez",
+            "type": "string"
+          },
+          "cierre_auto": {
+            "default": "NOTIFÍQUESE Y CÚMPLASE",
+            "title": "Cierre Auto",
+            "type": "string"
+          },
+          "cierre_fallo": {
+            "default": "NOTIFÍQUESE Y CÚMPLASE",
+            "title": "Cierre Fallo",
+            "type": "string"
+          },
+          "ciudad": {
+            "default": "Medellín",
+            "title": "Ciudad",
+            "type": "string"
+          },
+          "correo": {
+            "default": "pcto03med@cendoj.ramajudicial.gov.co",
+            "title": "Correo",
+            "type": "string"
+          },
+          "escribiente": {
+            "default": "John Mendoza",
+            "title": "Escribiente",
+            "type": "string"
+          },
+          "firma_correo": {
+            "default": [
+              "Juzgado 3 Penal del Circuito con Funciones",
+              "de Conocimiento de Medellín"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Firma Correo",
+            "type": "array"
+          },
+          "firmante_oficio": {
+            "default": "JOHN MANUEL MENDOZA",
+            "title": "Firmante Oficio",
+            "type": "string"
+          },
+          "juez": {
+            "default": "SANTIAGO ALEJANDRO CADAVID DUQUE",
+            "title": "Juez",
+            "type": "string"
+          },
+          "nombre": {
+            "default": "JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO DE MEDELLÍN",
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nombre_corto": {
+            "default": "JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO",
+            "title": "Nombre Corto",
+            "type": "string"
+          },
+          "nombre_cuerpo": {
+            "default": "Juzgado Tercero Penal del Circuito con Función de Conocimiento de Medellín",
+            "title": "Nombre Cuerpo",
+            "type": "string"
+          },
+          "pie": {
+            "default": "Juzgado Tercero Penal del Circuito con Funciones de Conocimiento Medellín",
+            "title": "Pie",
+            "type": "string"
+          },
+          "pie_auto": {
+            "default": [
+              "Juzgado Tercero Penal del Circuito con Función de Conocimiento, Edificio José Félix de Restrepo Carrera 52 # 42 – 73, Medellín, Antioquia",
+              "Correo Electrónico pcto03med@cendoj.ramajudicial.gov.co, Teléfono 2328525 Ext. 92903"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pie Auto",
+            "type": "array"
+          },
+          "pie_fallo": {
+            "default": [
+              "Juzgado Tercero Penal del Circuito con Funciones de Conocimiento Medellín",
+              "Palacio de Justicia Carrera 52 número 42 – 73. Piso 19",
+              "Correo electrónico: pcto03med@cendoj.ramajudicial.gov.co"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pie Fallo",
+            "type": "array"
+          },
+          "telefono_correo": {
+            "default": "Tel: 6042328525 Ext. 2903",
+            "title": "Telefono Correo",
+            "type": "string"
+          }
+        },
+        "title": "Despacho",
+        "type": "object"
+      },
+      "DespachoEntrada": {
+        "additionalProperties": false,
+        "properties": {
+          "cargo_escribiente": {
+            "maxLength": 500,
+            "title": "Cargo Escribiente",
+            "type": "string"
+          },
+          "cargo_evaluador": {
+            "maxLength": 500,
+            "title": "Cargo Evaluador",
+            "type": "string"
+          },
+          "cargo_firmante_oficio": {
+            "maxLength": 500,
+            "title": "Cargo Firmante Oficio",
+            "type": "string"
+          },
+          "cargo_juez": {
+            "maxLength": 500,
+            "title": "Cargo Juez",
+            "type": "string"
+          },
+          "cierre_auto": {
+            "maxLength": 500,
+            "title": "Cierre Auto",
+            "type": "string"
+          },
+          "cierre_fallo": {
+            "maxLength": 500,
+            "title": "Cierre Fallo",
+            "type": "string"
+          },
+          "ciudad": {
+            "maxLength": 500,
+            "title": "Ciudad",
+            "type": "string"
+          },
+          "correo": {
+            "maxLength": 500,
+            "title": "Correo",
+            "type": "string"
+          },
+          "escribiente": {
+            "maxLength": 500,
+            "title": "Escribiente",
+            "type": "string"
+          },
+          "firma_correo": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Firma Correo",
+            "type": "array"
+          },
+          "firmante_oficio": {
+            "maxLength": 500,
+            "title": "Firmante Oficio",
+            "type": "string"
+          },
+          "juez": {
+            "maxLength": 500,
+            "title": "Juez",
+            "type": "string"
+          },
+          "nombre": {
+            "maxLength": 500,
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nombre_corto": {
+            "maxLength": 500,
+            "title": "Nombre Corto",
+            "type": "string"
+          },
+          "nombre_cuerpo": {
+            "maxLength": 500,
+            "title": "Nombre Cuerpo",
+            "type": "string"
+          },
+          "pie": {
+            "maxLength": 500,
+            "title": "Pie",
+            "type": "string"
+          },
+          "pie_auto": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pie Auto",
+            "type": "array"
+          },
+          "pie_fallo": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pie Fallo",
+            "type": "array"
+          },
+          "telefono_correo": {
+            "maxLength": 500,
+            "title": "Telefono Correo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombre",
+          "nombre_corto",
+          "nombre_cuerpo",
+          "ciudad",
+          "juez",
+          "cargo_juez",
+          "escribiente",
+          "cargo_escribiente",
+          "firmante_oficio",
+          "cargo_firmante_oficio",
+          "cargo_evaluador",
+          "pie",
+          "correo",
+          "telefono_correo",
+          "cierre_fallo",
+          "cierre_auto",
+          "pie_fallo",
+          "pie_auto",
+          "firma_correo"
+        ],
+        "title": "DespachoEntrada",
+        "type": "object"
+      },
+      "DocumentoFormato": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nombre"
+        ],
+        "title": "DocumentoFormato",
+        "type": "object"
+      },
+      "EntradaIndice": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "titulo"
+        ],
+        "title": "EntradaIndice",
+        "type": "object"
+      },
+      "EstadoServidor": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "boolean"
+          },
+          "jev_key": {
+            "title": "Jev Key",
+            "type": "boolean"
+          },
+          "modelo": {
+            "title": "Modelo",
+            "type": "string"
+          },
+          "modelos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modelos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_key",
+          "jev_key",
+          "modelo",
+          "modelos"
+        ],
+        "title": "EstadoServidor",
+        "type": "object"
+      },
+      "Evento": {
+        "properties": {
+          "datos": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datos"
+          },
+          "etapa": {
+            "enum": [
+              "ingesta",
+              "apertura",
+              "consideraciones",
+              "verificacion",
+              "caso_concreto",
+              "documentos",
+              "sistema"
+            ],
+            "title": "Etapa",
+            "type": "string"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          },
+          "tipo": {
+            "enum": [
+              "lee",
+              "razona",
+              "escribe",
+              "verifica",
+              "sistema",
+              "error"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "n",
+          "t",
+          "etapa",
+          "tipo",
+          "texto",
+          "datos"
+        ],
+        "title": "Evento",
+        "type": "object"
+      },
+      "EventosJob": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "estado": {
+            "enum": [
+              "corriendo",
+              "terminado",
+              "error"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "eventos": {
+            "items": {
+              "$ref": "#/components/schemas/Evento"
+            },
+            "title": "Eventos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "eventos",
+          "estado",
+          "error"
+        ],
+        "title": "EventosJob",
+        "type": "object"
+      },
+      "FaltanteDecision": {
+        "properties": {
+          "campo": {
+            "title": "Campo",
+            "type": "string"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          }
+        },
+        "required": [
+          "campo",
+          "mensaje"
+        ],
+        "title": "FaltanteDecision",
+        "type": "object"
+      },
+      "FormatoCuerpo": {
+        "additionalProperties": false,
+        "properties": {
+          "plantilla_gen": {
+            "enum": [
+              "A",
+              "B"
+            ],
+            "title": "Plantilla Gen",
+            "type": "string"
+          },
+          "valores": {
+            "$ref": "#/components/schemas/DespachoEntrada"
+          }
+        },
+        "required": [
+          "valores",
+          "plantilla_gen"
+        ],
+        "title": "FormatoCuerpo",
+        "type": "object"
+      },
+      "FormatoErrorCampo": {
+        "properties": {
+          "campo": {
+            "title": "Campo",
+            "type": "string"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          }
+        },
+        "required": [
+          "campo",
+          "mensaje"
+        ],
+        "title": "FormatoErrorCampo",
+        "type": "object"
+      },
+      "FormatoErrores": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FormatoErroresDetalle"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FormatoErrores",
+        "type": "object"
+      },
+      "FormatoErroresDetalle": {
+        "properties": {
+          "errores": {
+            "items": {
+              "$ref": "#/components/schemas/FormatoErrorCampo"
+            },
+            "title": "Errores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "errores"
+        ],
+        "title": "FormatoErroresDetalle",
+        "type": "object"
+      },
+      "FormatoRespuesta": {
+        "properties": {
+          "campos": {
+            "items": {
+              "$ref": "#/components/schemas/CampoFormato"
+            },
+            "title": "Campos",
+            "type": "array"
+          },
+          "documentos": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentoFormato"
+            },
+            "title": "Documentos",
+            "type": "array"
+          },
+          "plantilla_gen": {
+            "enum": [
+              "A",
+              "B"
+            ],
+            "title": "Plantilla Gen",
+            "type": "string"
+          },
+          "valores": {
+            "$ref": "#/components/schemas/Despacho"
+          }
+        },
+        "required": [
+          "campos",
+          "valores",
+          "plantilla_gen",
+          "documentos"
+        ],
+        "title": "FormatoRespuesta",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IAErrorCampo": {
+        "properties": {
+          "campo": {
+            "title": "Campo",
+            "type": "string"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          }
+        },
+        "required": [
+          "campo",
+          "mensaje"
+        ],
+        "title": "IAErrorCampo",
+        "type": "object"
+      },
+      "IAErrores": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/IAErroresDetalle"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "IAErrores",
+        "type": "object"
+      },
+      "IAErroresDetalle": {
+        "properties": {
+          "errores": {
+            "items": {
+              "$ref": "#/components/schemas/IAErrorCampo"
+            },
+            "title": "Errores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "errores"
+        ],
+        "title": "IAErroresDetalle",
+        "type": "object"
+      },
+      "IAEstado": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "boolean"
+          },
+          "effort": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "title": "Effort",
+            "type": "string"
+          },
+          "jev": {
+            "$ref": "#/components/schemas/IAJev"
+          },
+          "jev_key": {
+            "title": "Jev Key",
+            "type": "boolean"
+          },
+          "max_retries": {
+            "title": "Max Retries",
+            "type": "integer"
+          },
+          "max_tokens": {
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "modelo": {
+            "enum": [
+              "claude-sonnet-5-5",
+              "claude-haiku-5-5",
+              "claude-opus-5-5"
+            ],
+            "title": "Modelo",
+            "type": "string"
+          },
+          "modelos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modelos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "modelo",
+          "modelos",
+          "api_key",
+          "jev_key",
+          "jev",
+          "effort",
+          "max_tokens",
+          "max_retries"
+        ],
+        "title": "IAEstado",
+        "type": "object"
+      },
+      "IAJev": {
+        "properties": {
+          "modo": {
+            "enum": [
+              "apagado",
+              "sombra",
+              "relleno"
+            ],
+            "title": "Modo",
+            "type": "string"
+          },
+          "umbral": {
+            "title": "Umbral",
+            "type": "number"
+          }
+        },
+        "required": [
+          "modo",
+          "umbral"
+        ],
+        "title": "IAJev",
+        "type": "object"
+      },
+      "JevPreferencias": {
+        "additionalProperties": false,
+        "properties": {
+          "modo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "apagado",
+                  "sombra",
+                  "relleno"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modo"
+          },
+          "umbral": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Umbral"
+          }
+        },
+        "title": "JevPreferencias",
+        "type": "object"
+      },
+      "JobInicio": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobInicio",
+        "type": "object"
+      },
+      "ModeloBody": {
+        "properties": {
+          "modelo": {
+            "title": "Modelo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelo"
+        ],
+        "title": "ModeloBody",
+        "type": "object"
+      },
+      "NumeralVista": {
+        "properties": {
+          "clave": {
+            "title": "Clave",
+            "type": "string"
+          },
+          "negritas": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Negritas",
+            "type": "array"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clave",
+          "texto",
+          "negritas"
+        ],
+        "title": "NumeralVista",
+        "type": "object"
+      },
+      "PaginaVista": {
+        "properties": {
+          "bloques": {
+            "items": {
+              "$ref": "#/components/schemas/Bloque"
+            },
+            "title": "Bloques",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bloques"
+        ],
+        "title": "PaginaVista",
+        "type": "object"
+      },
+      "Preferencias": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "jev": {
+            "$ref": "#/components/schemas/JevPreferencias"
+          },
+          "max_retries": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Retries"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 64000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "modelo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude-sonnet-5-5",
+                  "claude-haiku-5-5",
+                  "claude-opus-5-5"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelo"
+          }
+        },
+        "title": "Preferencias",
+        "type": "object"
+      },
+      "RevisionBody": {
+        "properties": {
+          "auto": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto"
+          },
+          "roles": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roles"
+          }
+        },
+        "title": "RevisionBody",
+        "type": "object"
+      },
+      "RunBody": {
+        "properties": {
+          "cmd": {
+            "enum": [
+              "nuevo",
+              "iniciar",
+              "decidir",
+              "continuar"
+            ],
+            "title": "Cmd",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "forzar": {
+            "default": false,
+            "title": "Forzar",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cmd"
+        ],
+        "title": "RunBody",
+        "type": "object"
+      },
+      "Segmento": {
+        "properties": {
+          "cita_id": {
+            "title": "Cita Id",
+            "type": "string"
+          },
+          "cursiva": {
+            "title": "Cursiva",
+            "type": "boolean"
+          },
+          "negrita": {
+            "title": "Negrita",
+            "type": "boolean"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "texto"
+        ],
+        "title": "Segmento",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "Vista": {
+        "properties": {
+          "citas": {
+            "items": {
+              "$ref": "#/components/schemas/CitaVista"
+            },
+            "title": "Citas",
+            "type": "array"
+          },
+          "indice": {
+            "items": {
+              "$ref": "#/components/schemas/EntradaIndice"
+            },
+            "title": "Indice",
+            "type": "array"
+          },
+          "paginas": {
+            "items": {
+              "$ref": "#/components/schemas/PaginaVista"
+            },
+            "title": "Paginas",
+            "type": "array"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "tipo": {
+            "enum": [
+              "borrador",
+              "fallo"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "sha256",
+          "paginas",
+          "citas",
+          "indice"
+        ],
+        "title": "Vista",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Tutela 2ª instancia",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/api-key": {
+      "post": {
+        "operationId": "guardar_api_key_api_api_key_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Guardar Api Key Api Api Key Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guardar Api Key"
+      }
+    },
+    "/api/casos": {
+      "get": {
+        "operationId": "listar_casos_api_casos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CasoResumen"
+                  },
+                  "title": "Response Listar Casos Api Casos Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Casos"
+      },
+      "post": {
+        "operationId": "crear_caso_api_casos_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_crear_caso_api_casos_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasoCreado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Crear Caso"
+      }
+    },
+    "/api/casos/{caso_id}/config": {
+      "get": {
+        "operationId": "leer_config_api_casos__caso_id__config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Leer Config Api Casos  Caso Id  Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Config"
+      },
+      "put": {
+        "operationId": "escribir_config_api_casos__caso_id__config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Escribir Config Api Casos  Caso Id  Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Escribir Config"
+      }
+    },
+    "/api/casos/{caso_id}/decision/vista": {
+      "post": {
+        "operationId": "vista_decision_api_casos__caso_id__decision_vista_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Decisión parcial con los campos de la decisión; todos opcionales.",
+                "title": "DecisionParcial",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionVistaRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso no encontrado."
+          },
+          "413": {
+            "description": "La decisión supera el tamaño permitido."
+          },
+          "422": {
+            "description": "El cuerpo no es un objeto JSON válido."
+          }
+        },
+        "summary": "Vista Decision"
+      }
+    },
+    "/api/casos/{caso_id}/estado": {
+      "get": {
+        "operationId": "estado_caso_api_casos__caso_id__estado_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Estado Caso Api Casos  Caso Id  Estado Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Estado Caso"
+      }
+    },
+    "/api/casos/{caso_id}/resumen": {
+      "get": {
+        "operationId": "resumen_del_caso_api_casos__caso_id__resumen_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasoResumen"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resumen Del Caso"
+      }
+    },
+    "/api/casos/{caso_id}/revision": {
+      "put": {
+        "operationId": "revisar_api_casos__caso_id__revision_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revisar Api Casos  Caso Id  Revision Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revisar"
+      }
+    },
+    "/api/casos/{caso_id}/run": {
+      "post": {
+        "operationId": "ejecutar_api_casos__caso_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInicio"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ejecutar"
+      }
+    },
+    "/api/casos/{caso_id}/salidas": {
+      "get": {
+        "operationId": "listar_salidas_api_casos__caso_id__salidas_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Listar Salidas Api Casos  Caso Id  Salidas Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Salidas"
+      }
+    },
+    "/api/casos/{caso_id}/salidas/{archivo}": {
+      "get": {
+        "operationId": "descargar_salida_api_casos__caso_id__salidas__archivo__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "archivo",
+            "required": true,
+            "schema": {
+              "title": "Archivo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Descargar Salida"
+      }
+    },
+    "/api/casos/{caso_id}/vista/{tipo}": {
+      "get": {
+        "operationId": "obtener_vista_api_casos__caso_id__vista__tipo__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tipo",
+            "required": true,
+            "schema": {
+              "enum": [
+                "borrador",
+                "fallo"
+              ],
+              "title": "Tipo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vista"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Obtener Vista"
+      }
+    },
+    "/api/casos/{caso_id}/zip": {
+      "get": {
+        "operationId": "descargar_zip_api_casos__caso_id__zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Descargar Zip"
+      }
+    },
+    "/api/config-default": {
+      "get": {
+        "operationId": "config_default_api_config_default_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Config Default Api Config Default Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Config Default"
+      }
+    },
+    "/api/estado-servidor": {
+      "get": {
+        "operationId": "estado_servidor_api_estado_servidor_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoServidor"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Estado Servidor"
+      }
+    },
+    "/api/formato": {
+      "get": {
+        "operationId": "obtener_formato_api_formato_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormatoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Obtener Formato",
+        "tags": [
+          "formato"
+        ]
+      },
+      "put": {
+        "operationId": "guardar_formato_api_formato_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormatoCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormatoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormatoErrores"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Guardar Formato",
+        "tags": [
+          "formato"
+        ]
+      }
+    },
+    "/api/ia": {
+      "get": {
+        "operationId": "obtener_ia_api_ia_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IAEstado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Obtener Ia",
+        "tags": [
+          "ia"
+        ]
+      },
+      "put": {
+        "operationId": "guardar_ia_api_ia_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Preferencias"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IAEstado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IAErrores"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Guardar Ia",
+        "tags": [
+          "ia"
+        ]
+      }
+    },
+    "/api/jev-key": {
+      "post": {
+        "operationId": "guardar_jev_key_api_jev_key_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Guardar Jev Key Api Jev Key Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guardar Jev Key"
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "operationId": "leer_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Leer Job Api Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Job"
+      }
+    },
+    "/api/jobs/{job_id}/eventos": {
+      "get": {
+        "operationId": "eventos_job_api_jobs__job_id__eventos_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desde",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Desde",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "formato",
+            "required": false,
+            "schema": {
+              "default": "sse",
+              "enum": [
+                "sse",
+                "json"
+              ],
+              "title": "Formato",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "last-event-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventosJob"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Eventos Job"
+      }
+    },
+    "/api/modelo": {
+      "post": {
+        "operationId": "elegir_modelo_api_modelo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeloBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Elegir Modelo Api Modelo Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Elegir Modelo"
+      }
+    },
+    "/api/prompts-default": {
+      "get": {
+        "operationId": "prompts_default_api_prompts_default_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Prompts Default Api Prompts Default Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prompts Default"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz"
+      }
+    }
+  }
+}

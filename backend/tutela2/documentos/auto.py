@@ -135,7 +135,7 @@ def render_auto(md: Metadatos, datos: DatosAuto, cfg: Config, ruta: Path) -> Pat
     formato_b.espaciado(logo, antes=16.2)
     formato_b.logo(logo)
 
-    _par(doc, d.nombre.replace(" DE MEDELLÍN", ""), alin=C, antes=12, pitch=PITCH_SIMPLE,
+    _par(doc, d.nombre_corto, alin=C, antes=12, pitch=PITCH_SIMPLE,
          negrita=True, izq=SANGRIA_TITULO, der=SANGRIA_TITULO)
     _par(doc, f"{d.ciudad}, {fecha}", alin=C, antes=14.2, pitch=PITCH_SIMPLE)
     _par(doc, "ASUNTO: AUTO ASUME CONOCIMIENTO DE IMPUGNACIÓN DE TUTELA", alin=C, antes=14.2,

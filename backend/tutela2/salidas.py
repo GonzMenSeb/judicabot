@@ -31,7 +31,7 @@ def listar(caso_dir: Path) -> list[str]:
     base = raiz(caso_dir)
     if not base.is_dir():
         return []
-    return sorted(f.relative_to(base).as_posix() for f in base.rglob("*") if f.is_file())
+    return sorted(f.relative_to(base).as_posix() for f in base.rglob("*") if f.is_file() and ".vista.json" not in f.name)
 
 
 def resolver(caso_dir: Path, rel: str) -> Path:

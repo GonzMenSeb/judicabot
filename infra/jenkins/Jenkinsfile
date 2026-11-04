@@ -36,7 +36,7 @@ pipeline {
                         ? sh(returnStdout: true, script: "git diff --name-only ${base} ${env.GIT_COMMIT}").trim().split('\n') as List
                         : null
 
-                    def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|Dockerfile$)/
+                    def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|frontend\/|Dockerfile$)/
                     def testPaths  = ~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/)/
 
                     if (changed == null) {
@@ -60,6 +60,31 @@ pipeline {
                         ? "${env.GIT_SHA} - docs only, nothing to do"
                         : env.GIT_SHA
                 }
+            }
+        }
+
+        stage('Frontend') {
+            when { expression { env.RUN_TESTS == 'true' } }
+            agent {
+                docker {
+                    image 'node:24-slim'
+                    reuseNode true
+                    args '-e HOME=${WORKSPACE}/.home'
+                }
+            }
+            steps {
+                sh '''
+                    mkdir -p "$HOME/.local/bin"
+                    export PATH="$HOME/.local/bin:$PATH"
+                    corepack enable --install-directory "$HOME/.local/bin"
+                    cd frontend
+                    pnpm install --frozen-lockfile
+                    pnpm check:tipos
+                    pnpm typecheck
+                    pnpm test
+                    pnpm build
+                    pnpm size
+                '''
             }
         }
 

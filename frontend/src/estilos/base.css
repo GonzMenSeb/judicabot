@@ -1,0 +1,17 @@
+.solo-lectura { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.titulo { font-size: 1.6rem; font-weight: 600; line-height: 1.25; }
+.sub { color: var(--suave); }
+.lienzo { display: block; max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.5rem 7rem; }
+.lienzo:focus { outline: none; }
+.lienzo[aria-busy=true] { cursor: progress; }
+
+input[type=text], input[type=password], input[type=date], input[type=number], input[type=search], input[type=email], select, textarea { width: 100%; padding: 0.5rem 0.65rem; background: #fff; border: 1px solid var(--linea); border-radius: 6px; }
+textarea { resize: vertical; min-height: 4.5rem; line-height: 1.45; }
+.campo { display: grid; gap: 0.3rem; align-content: start; }
+.campo > label { font-size: 0.88rem; font-weight: 500; }
+.campo small { color: var(--suave); font-size: 0.83rem; }
+
+@media (max-width: 960px) {
+  .lienzo { padding: 1.25rem 1rem 7rem; }
+  .titulo { font-size: 1.4rem; }
+}

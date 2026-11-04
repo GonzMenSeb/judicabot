@@ -23,6 +23,7 @@ from .clasificar import (
     texto_cabecera,
 )
 from .clasificar import plano as _plano
+from . import eventos
 from .config import Config
 from .jev import JevClient, cliente_jev
 from .jev_roles import aplicar, segunda_opinion
@@ -765,7 +766,13 @@ def reaplicar(ing: Ingesta, roles: dict[str, Rol]) -> Ingesta:
         ):
             d.rol, d.rol_origen = roles[d.doc_id], "usuario"
             d.evidencia = "Rol fijado por el usuario."
-    return _derivar(docs, list(ing.ignorados), list(ing.alertas_lectura), ing.llamadas_jev)
+    fijados = {d.doc_id: d.rol for d in docs if d.rol_origen == "usuario"}
+    if fijados:
+        eventos.emitir("ingesta", "lee", f"Se conservan {len(fijados)} roles fijados por el usuario.", {"roles": fijados})
+    nueva = _derivar(docs, list(ing.ignorados), list(ing.alertas_lectura), ing.llamadas_jev)
+    if fijados:
+        _emitir_faltantes(nueva)
+    return nueva
 
 
 def _segunda_opinion_jev(
@@ -791,6 +798,16 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
             alertas=[f"No existe la carpeta de insumos: {base}."],
         )
     archivos, alertas_lectura, ignorados = _recolectar(base)
+    por_tipo = Counter(r.suffix.lower().lstrip(".").upper() for r in archivos)
+    eventos.emitir(
+        "ingesta",
+        "lee",
+        f"Se leen {len(archivos)} archivos de insumos ({', '.join(f'{n} {t}' for t, n in sorted(por_tipo.items())) or 'ninguno'})"
+        + (f"; {len(alertas_lectura)} con formato no soportado" if alertas_lectura else "")
+        + (f"; se ignoran {len(ignorados)} carpetas de segunda instancia" if ignorados else "")
+        + ".",
+        {"archivos": len(archivos), "por_tipo": dict(por_tipo), "no_soportados": len(alertas_lectura), "ignorados": ignorados},
+    )
 
     docs: list[Doc] = []
     for i, ruta in enumerate(archivos, 1):
@@ -812,14 +829,29 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
     os.environ["OMP_THREAD_LIMIT"] = "1"
     try:
         with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as pool:
-            leidos = list(
+            leidos = []
+            for d, leido in zip(
+                docs,
                 pool.map(
                     lambda t: _leer_documento(
                         t[0], t[1].doc_id, t[1].sha256, dir_cache
                     ),
                     zip(archivos, docs),
+                ),
+            ):
+                leidos.append(leido)
+                paginas = leido[0]
+                n_ocr = sum(1 for p in paginas if p.ocr)
+                n_sin = sum(1 for p in paginas if p.sin_texto)
+                eventos.emitir(
+                    "ingesta",
+                    "lee",
+                    f"{d.ruta}: {len(paginas)} página{'' if len(paginas) == 1 else 's'}"
+                    + (f", {n_ocr} leídas con OCR" if n_ocr else "")
+                    + (f", {n_sin} sin texto legible" if n_sin else "")
+                    + ".",
+                    {"doc_id": d.doc_id, "archivo": d.ruta, "paginas": len(paginas), "ocr": n_ocr, "sin_texto": n_sin, "alertas": leido[1]},
                 )
-            )
     finally:
         if previo is None:
             os.environ.pop("OMP_THREAD_LIMIT", None)
@@ -845,12 +877,63 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
     resolver_caso(docs, prefijo)
     alertas_jev, llamadas_jev = _segunda_opinion_jev(docs, cfg, jev)
     alertas_lectura += alertas_jev
+    if cfg.jev.modo != "apagado":
+        con_opinion = sum(1 for d in docs if d.jev_rol)
+        eventos.emitir(
+            "ingesta",
+            "verifica",
+            f"Segunda opinión de Jev (modo {cfg.jev.modo}): {len(llamadas_jev)} consultas, "
+            f"{con_opinion} de {len(docs)} documentos con rol propuesto, {len(alertas_jev)} alertas.",
+            {"modo": cfg.jev.modo, "consultas": len(llamadas_jev), "con_opinion": con_opinion, "alertas": alertas_jev},
+        )
     if cfg.jev.modo == "relleno":
         resolver_caso(docs, prefijo)
         for d in docs:
             if d.rol_origen == "jev" and d.rol != d.jev_rol:
                 d.rol_origen = "contenido"
-    return _derivar(docs, ignorados, alertas_lectura, llamadas_jev)
+    ing = _derivar(docs, ignorados, alertas_lectura, llamadas_jev)
+    for d in ing.documentos:
+        jev_txt = (
+            f"; Jev propone {d.jev_rol} ({d.jev_confianza:.0%})"
+            if d.jev_rol and d.jev_confianza is not None
+            else (f"; Jev propone {d.jev_rol}" if d.jev_rol else "")
+        )
+        eventos.emitir(
+            "ingesta",
+            "lee",
+            f"{d.ruta}: rol {d.rol} (origen: {d.rol_origen}){jev_txt}"
+            + ("; ajeno al caso" if d.doc_id in ing.docs_ajenos else "")
+            + (f"; ruido: {d.motivo_ruido}" if d.ruido else "")
+            + ".",
+            {
+                "doc_id": d.doc_id,
+                "archivo": d.ruta,
+                "rol": d.rol,
+                "rol_origen": d.rol_origen,
+                "evidencia": d.evidencia,
+                "jev_rol": d.jev_rol,
+                "jev_confianza": d.jev_confianza,
+                "ajeno": d.doc_id in ing.docs_ajenos,
+                "ruido": d.ruido,
+            },
+        )
+    _emitir_faltantes(ing)
+    return ing
+
+
+def _emitir_faltantes(ing: Ingesta) -> None:
+    eventos.emitir(
+        "ingesta",
+        "verifica",
+        (
+            f"Faltan documentos obligatorios: {', '.join(ing.faltantes)}."
+            if ing.faltantes
+            else f"Están los documentos obligatorios: {', '.join(ROLES_OBLIGATORIOS)}."
+        )
+        + (f" No se encontraron: {', '.join(ing.esperados_faltantes)}." if ing.esperados_faltantes else "")
+        + (f" {len(ing.alertas)} alertas de ingesta." if ing.alertas else ""),
+        {"faltantes": ing.faltantes, "esperados_faltantes": ing.esperados_faltantes, "alertas": len(ing.alertas)},
+    )
 
 
 def texto_para_llm(

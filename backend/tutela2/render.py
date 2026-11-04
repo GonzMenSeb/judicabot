@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import functools
 import hashlib
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -15,7 +17,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from pydantic import BaseModel
 
-from tutela2 import fallos, formato_b, formulas, normas, prompts
+from tutela2 import fallos, formato_b, formulas, normas, prompts, vista
 from tutela2.config import Config
 from tutela2.formulas import encabezado_decision as decision_encabezado
 from tutela2.letras import fecha_larga, numero_a_letras
@@ -32,6 +34,8 @@ from tutela2.models import (
 )
 
 __all__ = ["decision_encabezado", "fecha_larga", "numero_a_letras"]
+
+log = logging.getLogger(__name__)
 
 FUENTE = "Bookman Old Style"
 
@@ -193,6 +197,18 @@ def _tam_marca(par, tam: float) -> None:
     ppr.append(rpr)
 
 
+def _bloque(tipo: str):
+    def decorar(f):
+        @functools.wraps(f)
+        def envoltura(d, *args, **kwargs):
+            with d.reg.como(tipo):
+                return f(d, *args, **kwargs)
+
+        return envoltura
+
+    return decorar
+
+
 def _idioma_es(doc) -> None:
     for lang in doc.styles.element.iter(qn("w:lang")):
         lang.set(qn("w:val"), "es-CO")
@@ -216,6 +232,7 @@ class _Docx:
         self.primero: float | None = None
         self.antes_titulo: float | None = None
         self.pendiente = 0.0
+        self.reg = vista.Registro()
         self.doc = Document()
         formato_b.ajustes_word(self.doc)
         _idioma_es(self.doc)
@@ -263,6 +280,7 @@ class _Docx:
             if not trozo:
                 continue
             run = par.add_run(trozo)
+            self.reg.segmento(par._p, trozo, negrita, cursiva)
             run.bold = negrita or None
             run.italic = cursiva or None
             if tam:
@@ -310,6 +328,7 @@ class _Docx:
                 if not trozo:
                     continue
                 run = par.add_run(trozo)
+                self.reg.segmento(par._p, trozo, negrita or resaltado, cursiva)
                 formato_b.fuente(
                     run,
                     FUENTE,
@@ -381,6 +400,7 @@ class _Docx:
     def plantilla(self, texto: str):
         return self.cuerpo(texto) if self.b else self.parrafo(texto)
 
+    @_bloque("encabezado")
     def subtitulo(self, texto: str):
         if not self.b:
             return self.parrafo(texto, alinear="i", negrita=True, mantener=True)
@@ -389,7 +409,9 @@ class _Docx:
         self.corridas(par, texto, negrita=True)
         return par
 
+    @_bloque("titulo")
     def titulo(self, texto: str, numerar: bool = True) -> None:
+        self.reg.abrir_seccion(texto)
         etiqueta = ""
         if numerar:
             self.seccion += 1
@@ -415,10 +437,12 @@ class _Docx:
             self.vacio(vacio, mantener=True)
         self.primero = primero
 
+    @_bloque("lista")
     def item(self, texto: str) -> None:
         par = self.doc.add_paragraph(style="List Bullet")
         self.escribir(par, texto, tam=10)
 
+    @_bloque("cita_bloque")
     def cita_bloque(self, texto: str) -> None:
         texto = f"“{' '.join(texto.split())}”"
         if not self.b:
@@ -443,9 +467,28 @@ class _Docx:
             self.citadas.add(id_)
             cv = self.citas.get(id_)
             if cv is not None and cv.estado != "rechazada":
-                self.cita_bloque(cv.texto_citado)
+                with self.reg.como(cita=id_):
+                    self.cita_bloque(cv.texto_citado)
 
-    def prosa(self, texto: str, *, citar: bool = False, esc: int = 100) -> None:
+    def _citas_en(self, texto: str) -> tuple[str, list[tuple[int, int, str]]]:
+        partes: list[str] = []
+        spans: list[tuple[int, int, str]] = []
+        pos = largo = 0
+        for m in _CITA.finditer(texto):
+            previo = texto[pos : m.start()]
+            referencia = self._referencia(m.group(1))
+            spans.append((largo + len(previo), largo + len(previo) + len(referencia), m.group(1)))
+            partes += [previo, referencia]
+            largo += len(previo) + len(referencia)
+            pos = m.end()
+        partes.append(texto[pos:])
+        return "".join(partes), spans
+
+    def prosa(self, texto: str, *, citar: bool = False, esc: int = 100, modelo: bool = False) -> None:
+        with self.reg.como(origen="modelo" if modelo else self.reg.origen):
+            self._prosa(texto, citar=citar, esc=esc)
+
+    def _prosa(self, texto: str, *, citar: bool, esc: int) -> None:
         for bloque in re.split(r"\n\s*\n", texto.strip()):
             bloque = " ".join(bloque.split())
             for i, parte in enumerate(_IMAGEN.split(bloque)):
@@ -456,14 +499,16 @@ class _Docx:
                     else:
                         self.parrafo(marcador, alinear="i")
                 elif parte.strip():
-                    limpio = _CITA.sub(lambda m: self._referencia(m.group(1)), parte.strip())
-                    if self.b:
-                        self.cuerpo(limpio, esc=esc)
-                    else:
-                        self.parrafo(limpio)
+                    limpio, spans = self._citas_en(parte.strip())
+                    with self.reg.como(spans=spans):
+                        if self.b:
+                            self.cuerpo(limpio, esc=esc)
+                        else:
+                            self.parrafo(limpio)
                     if citar:
                         self._bloques_citados(parte)
 
+    @_bloque("tabla")
     def tabla(
         self,
         filas: list[list[str]],
@@ -491,6 +536,7 @@ class _Docx:
                 self.escribir(par, str(valor), negrita=(bool(cabecera) and i == 0) or (etiquetas and j == 0), tam=tam)
         self.parrafo("", tam=4)
 
+    @_bloque("tabla")
     def tabla_encabezado(self, filas: list[tuple[str, str, str]]) -> None:
         tabla = self.doc.add_table(rows=len(filas), cols=2)
         formato_b.anchos_columnas(tabla, ANCHOS_TABLA)
@@ -513,6 +559,28 @@ class _Docx:
         ruta.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(ruta)
         return ruta
+
+    def guardar_con_vista(self, ruta: Path | str, tipo: str) -> Path:
+        ruta = self.guardar(ruta)
+        destino = ruta.parent / vista.ARCHIVOS[tipo]
+        try:
+            self._escribir_vista(ruta, tipo, destino)
+        except Exception:
+            log.exception("No se pudo escribir la vista previa de %s", ruta.name)
+            destino.unlink(missing_ok=True)
+        return ruta
+
+    def _escribir_vista(self, ruta: Path, tipo: str, destino: Path) -> None:
+        bloques = vista.bloques_cuerpo(self.reg, self.doc)
+        citadas = {s["cita_id"] for b in bloques for s in b["segmentos"] if "cita_id" in s}
+        citas = [vista.cita_vista(cv, _referencia(cv)) for cv in self.citas.values()]
+        citas += [
+            {"id": i, "texto": "", "fuente": i, "cobertura": None, "estado": "rechazada", "detalle": None}
+            for i in sorted(citadas - self.citas.keys())
+        ]
+        sha = hashlib.sha256(ruta.read_bytes()).hexdigest()
+        datos = vista.armar(tipo, sha, bloques, vista.textos_pie(self.doc), citas, self.cfg.plantilla_gen)
+        vista.guardar(datos, destino)
 
 
 @dataclass
@@ -621,10 +689,11 @@ def _consideraciones(d: _Docx, c: _Caso) -> None:
     if cons is None:
         d.prosa(_falta("consideraciones"))
     else:
-        d.prosa(cons.procedibilidad, citar=True)
-        for bloque in cons.bloques:
-            d.subtitulo(bloque.titulo)
-            d.prosa(bloque.texto, citar=True)
+        with d.reg.como(origen="modelo"):
+            d.prosa(cons.procedibilidad, citar=True)
+            for bloque in cons.bloques:
+                d.subtitulo(bloque.titulo)
+                d.prosa(bloque.texto, citar=True)
     d.plantilla(formulas.TRANSICION)
 
 
@@ -638,14 +707,14 @@ def _secciones_i_a_v(d: _Docx, c: _Caso) -> None:
     if ap is None:
         d.prosa(_falta("apertura"))
     else:
-        d.prosa(ap.antecedentes_hechos)
+        d.prosa(ap.antecedentes_hechos, modelo=True)
         for contestacion in ap.contestaciones:
-            d.prosa(contestacion.texto)
+            d.prosa(contestacion.texto, modelo=True)
     d.zona("III")
     d.titulo(gen["III"])
-    d.prosa(ap.sentencia_impugnada if ap else _falta("sentencia impugnada"))
+    d.prosa(ap.sentencia_impugnada if ap else _falta("sentencia impugnada"), modelo=ap is not None)
     d.titulo(gen["IV"])
-    d.prosa(ap.impugnacion if ap else _falta("impugnación"), esc=104)
+    d.prosa(ap.impugnacion if ap else _falta("impugnación"), esc=104, modelo=ap is not None)
     _consideraciones(d, c)
 
 
@@ -657,10 +726,11 @@ def _caso_concreto(d: _Docx, c: _Caso) -> None:
     if c.caso is None:
         d.prosa(_falta("caso concreto"))
         return
-    d.prosa(c.caso.problema_juridico)
-    for parrafo in c.caso.parrafos:
-        d.prosa(parrafo.texto)
-    d.prosa(c.caso.conclusion)
+    with d.reg.como(origen="modelo"):
+        d.prosa(c.caso.problema_juridico)
+        for parrafo in c.caso.parrafos:
+            d.prosa(parrafo.texto)
+        d.prosa(c.caso.conclusion)
 
 
 def _otras_determinaciones(d: _Docx, decision: Decision) -> None:
@@ -672,11 +742,13 @@ def _otras_determinaciones(d: _Docx, decision: Decision) -> None:
     d.plantilla(formulas.cierre_otras_determinaciones(compulsa))
 
 
+@_bloque("firma")
 def _firma_juez(d: _Docx) -> None:
     d.parrafo(_o(d.cfg.despacho.juez, "nombre del juez").upper(), alinear="c", negrita=True, antes=40)
     d.parrafo(d.cfg.despacho.cargo_juez, alinear="c", negrita=True)
 
 
+@_bloque("firma")
 def _centrado_b(d: _Docx, texto: str, mantener: bool = False) -> None:
     par = d.par_b(alinear="c", mantener=mantener)
     d.corridas(par, texto, negrita=True)
@@ -690,14 +762,17 @@ def _resolutiva(d: _Docx, c: _Caso) -> None:
     if gen == "A":
         d.titulo("PARTE RESOLUTIVA")
         d.parrafo(f"{formulas.MERITO_ANTES}{nombre}, {GEN[gen]['merito']}")
-        d.parrafo("RESUELVE", alinear="c", negrita=True, antes=10, mantener=True)
-        for i, numeral in enumerate(numerales, 1):
-            par = d.parrafo()
-            d.escribir(par, f"{formulas.ordinal(i)}: ", negrita=True)
-            d.escribir(par, numeral.texto)
-            for linea in numeral.literales:
-                d.parrafo(linea, sangria=1.0)
-        d.parrafo(d.cfg.despacho.cierre_fallo, alinear="c", negrita=True, antes=14)
+        with d.reg.como("encabezado"):
+            d.parrafo("RESUELVE", alinear="c", negrita=True, antes=10, mantener=True)
+        with d.reg.como("resuelve_numeral"):
+            for i, numeral in enumerate(numerales, 1):
+                par = d.parrafo()
+                d.escribir(par, f"{formulas.ordinal(i)}: ", negrita=True)
+                d.escribir(par, numeral.texto)
+                for linea in numeral.literales:
+                    d.parrafo(linea, sangria=1.0)
+        with d.reg.como("firma"):
+            d.parrafo(d.cfg.despacho.cierre_fallo, alinear="c", negrita=True, antes=14)
         _firma_juez(d)
         return
 
@@ -711,7 +786,8 @@ def _resolutiva(d: _Docx, c: _Caso) -> None:
     for i, (texto, negritas) in enumerate(bloques):
         if i:
             d.vacio(1.5)
-        d.cuerpo(texto, esc=104, negritas=negritas, antes=None if i == 0 else 0)
+        with d.reg.como("resuelve_numeral"):
+            d.cuerpo(texto, esc=104, negritas=negritas, antes=None if i == 0 else 0)
     d.par_b(alinear="c", marca=11, mantener=True)
     _centrado_b(d, d.cfg.despacho.cierre_fallo, mantener=True)
     d.par_b(alinear="c", multiple=None, exacto=ALTO_FIRMA, mantener=True)
@@ -762,14 +838,15 @@ def render_previo(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
     cfg = _como(Config, cfg)
     c = _leer(estado)
     d = _Docx(cfg, c.citas_por_id, "Borrador previo", fallo=True)
-    _encabezado(d, c, fecha=None, con_decision=False)
-    d.parrafo("BORRADOR PREVIO A LA DECISIÓN (SECCIONES I A V)", alinear="c", negrita=True)
+    with d.reg.como("encabezado"):
+        _encabezado(d, c, fecha=None, con_decision=False)
+        d.parrafo("BORRADOR PREVIO A LA DECISIÓN (SECCIONES I A V)", alinear="c", negrita=True)
     _secciones_i_a_v(d, c)
     d.titulo("INFORME DE CITAS", numerar=False)
     _tabla_citas(d, c.citas)
     d.titulo("ALERTAS POR NODO", numerar=False)
     _alertas(d, c.alertas)
-    return d.guardar(ruta)
+    return d.guardar_con_vista(ruta, "borrador")
 
 
 def render_fallo(estado: dict, cfg: Config | dict, ruta: Path, hoy: date | None = None) -> Path:
@@ -778,13 +855,14 @@ def render_fallo(estado: dict, cfg: Config | dict, ruta: Path, hoy: date | None 
     if c.decision is None:
         raise ValueError("No hay una decisión humana registrada: no se puede generar el fallo.")
     d = _Docx(cfg, c.citas_por_id, "Fallo de tutela de segunda instancia", fallo=True)
-    _encabezado(d, c, fecha=c.decision.fecha_fallo or (hoy or date.today()).isoformat(), con_decision=True)
+    with d.reg.como("encabezado"):
+        _encabezado(d, c, fecha=c.decision.fecha_fallo or (hoy or date.today()).isoformat(), con_decision=True)
     _secciones_i_a_v(d, c)
     _caso_concreto(d, c)
     if c.decision.compulsa:
         _otras_determinaciones(d, c.decision)
     _resolutiva(d, c)
-    return d.guardar(ruta)
+    return d.guardar_con_vista(ruta, "fallo")
 
 
 def render_informe(estado: dict, cfg: Config | dict, ruta: Path) -> Path:

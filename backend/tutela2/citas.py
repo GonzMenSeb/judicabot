@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 
+from tutela2 import eventos
 from tutela2.config import Config
 from tutela2.models import CitaPropuesta, CitaVerificada
 
@@ -753,7 +754,35 @@ def verificar_citas(
             paginas[url] = texto
         return paginas[url]
 
-    return [_verificar(c, cfg, dataset, pagina) for c in citas]
+    eventos.emitir(
+        "verificacion",
+        "lee",
+        f"Verificación de {len(citas)} citas contra el dataset de la Corte Constitucional ({len(dataset)} sentencias).",
+        {"citas": len(citas), "dataset": len(dataset), "relatoria": cfg.verificar_relatoria},
+    )
+    verificadas = []
+    for c in citas:
+        cv = _verificar(c, cfg, dataset, pagina)
+        verificadas.append(cv)
+        cobertura_txt = f"cobertura {cv.cobertura:.0%}" if cv.cobertura is not None else "sin cobertura medida"
+        motivo = f" {cv.motivos[0]}" if cv.motivos and cv.estado != "ok" else ""
+        eventos.emitir(
+            "verificacion",
+            "verifica",
+            f"Cita {cv.id} ({cv.sentencia_norm or cv.sentencia_original}): {_ETIQUETA_ESTADO[cv.estado]}, {cobertura_txt}.{motivo}",
+            {
+                "id": cv.id,
+                "sentencia": cv.sentencia_norm or cv.sentencia_original,
+                "estado": cv.estado,
+                "cobertura": cv.cobertura,
+                "en_dataset": cv.en_dataset,
+                "motivos": cv.motivos,
+            },
+        )
+    return verificadas
+
+
+_ETIQUETA_ESTADO = {"ok": "verificada", "alerta": "para revisar", "rechazada": "rechazada"}
 
 
 def _verificar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina) -> CitaVerificada:

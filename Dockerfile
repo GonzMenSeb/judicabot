@@ -1,3 +1,14 @@
+FROM node:24-slim AS frontend
+
+RUN corepack enable
+
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY frontend ./
+RUN pnpm build
+
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /usr/local/bin/uv
@@ -14,6 +25,7 @@ RUN uv sync --frozen --no-dev --extra ocr --no-install-project
 
 COPY backend/tutela2 ./tutela2
 RUN uv sync --frozen --no-dev --extra ocr
+COPY --from=frontend /app/backend/tutela2/static/dist ./tutela2/static/dist
 
 ENV PATH="/app/backend/.venv/bin:$PATH" \
     HOST=0.0.0.0 \

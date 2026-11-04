@@ -308,7 +308,7 @@ class Compulsa(BaseModel):
     hechos_ref: str = ""
 
 
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
 
 
 def limpiar_control(v: Any) -> Any:

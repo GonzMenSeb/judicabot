@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from tutela2.models import limpiar_control
 
 NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
@@ -36,6 +38,7 @@ class JevConfig(BaseModel):
 
 class Despacho(BaseModel):
     nombre: str = "JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO DE MEDELLÍN"
+    nombre_corto: str = "JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO"
     nombre_cuerpo: str = "Juzgado Tercero Penal del Circuito con Función de Conocimiento de Medellín"
     ciudad: str = "Medellín"
     juez: str = "SANTIAGO ALEJANDRO CADAVID DUQUE"
@@ -59,6 +62,22 @@ class Despacho(BaseModel):
         "Juzgado Tercero Penal del Circuito con Función de Conocimiento, Edificio José Félix de Restrepo Carrera 52 # 42 – 73, Medellín, Antioquia",
         "Correo Electrónico pcto03med@cendoj.ramajudicial.gov.co, Teléfono 2328525 Ext. 92903",
     ]
+    firma_correo: list[str] = [
+        "Juzgado 3 Penal del Circuito con Funciones",
+        "de Conocimiento de Medellín",
+    ]
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _sin_control(cls, v: Any) -> Any:
+        return limpiar_control(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _nombre_corto_heredado(cls, datos: Any) -> Any:
+        if isinstance(datos, dict) and "nombre_corto" not in datos and isinstance(datos.get("nombre"), str):
+            return {**datos, "nombre_corto": limpiar_control(datos["nombre"]).replace(" DE MEDELLÍN", "")}
+        return datos
 
 
 class Config(BaseModel):
@@ -104,8 +123,13 @@ class Config(BaseModel):
 def cargar(caso_dir: str | Path, entorno: bool = True) -> Config:
     f = Path(caso_dir) / "config.json"
     cfg = Config.model_validate(json.loads(f.read_text(encoding="utf-8"))) if f.exists() else Config()
-    if entorno and (modelo := os.environ.get("TUTELA2_MODELO")):
-        cfg.llm.modelo = modelo
+    if entorno:
+        from tutela2 import preferencias
+
+        preferencias.superponer(cfg, preferencias.desde_entorno())
+        if os.environ.get("TUTELA2_PROVEEDOR", "").strip() == "fake":
+            cfg.llm.proveedor = "fake"
+            cfg.verificar_relatoria = False
     return cfg
 
 

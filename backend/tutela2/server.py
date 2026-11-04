@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import importlib
 import json
 import logging
@@ -9,20 +10,26 @@ import shutil
 import threading
 import unicodedata
 import uuid
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, AsyncIterator, Callable, Literal
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.types import Receive, Scope, Send
 
 from tutela2 import acceso
 from tutela2 import config as cfgmod
 from tutela2.config import Config
+from tutela2.estaticos import SIN_GZIP, CabecerasEstaticas
 from tutela2.jev import clave_valida
 
 log = logging.getLogger("tutela2.server")
@@ -35,10 +42,28 @@ JOBS: dict[str, dict[str, Any]] = {}
 _LOCK = threading.Lock()
 _JOB_ACTUAL: ContextVar[str | None] = ContextVar("job_actual", default=None)
 
-app = FastAPI(title="Tutela 2ª instancia")
+def _calentar_resumenes() -> None:
+    from tutela2 import resumen_caso
+
+    try:
+        resumen_caso.calentar(casos_dir())
+    except Exception:
+        log.warning("No se pudo calentar la caché de resúmenes", exc_info=True)
+
+
+@asynccontextmanager
+async def _ciclo_de_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
+    aplicacion.state.calentamiento = threading.Thread(target=_calentar_resumenes, name="calentar-resumenes", daemon=True)
+    aplicacion.state.calentamiento.start()
+    yield
+
+
+app = FastAPI(title="Tutela 2ª instancia", lifespan=_ciclo_de_vida)
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+app.add_middleware(GZipMiddleware, minimum_size=500, exclude_content_types=SIN_GZIP)
 app.middleware("http")(acceso.compuerta)
+app.add_middleware(CabecerasEstaticas)
 
 
 class RunBody(BaseModel):
@@ -58,6 +83,17 @@ class ApiKeyBody(BaseModel):
 
 class ModeloBody(BaseModel):
     modelo: str
+
+
+class EstadoServidor(BaseModel):
+    api_key: bool
+    jev_key: bool
+    modelo: str
+    modelos: list[str]
+
+
+class JobInicio(BaseModel):
+    job_id: str
 
 
 def casos_dir() -> Path:
@@ -159,6 +195,9 @@ class _JobHandler(logging.Handler):
 
 
 def _ejecutar(job: dict[str, Any], fn: Callable[[], dict[str, Any]]) -> None:
+    from tutela2 import eventos
+
+    buffer = eventos.buffer(job["id"]) or eventos.crear(job["id"])
     logger = logging.getLogger("tutela2")
     if logger.getEffectiveLevel() > logging.INFO:
         logger.setLevel(logging.INFO)
@@ -166,8 +205,10 @@ def _ejecutar(job: dict[str, Any], fn: Callable[[], dict[str, Any]]) -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S"))
     logger.addHandler(handler)
     token = _JOB_ACTUAL.set(job["id"])
+    token_eventos = eventos.activar(buffer)
     estado, error, resultado = "terminado", None, None
     try:
+        eventos.emitir("sistema", "sistema", f"Inicio de «{job['cmd']}» en el caso {job['caso']}.", {"cmd": job["cmd"], "caso": job["caso"]})
         log.info("Inicio de %s", job["cmd"])
         resultado = fn()
         if isinstance(resultado, dict) and resultado.get("ok") is False:
@@ -177,15 +218,19 @@ def _ejecutar(job: dict[str, Any], fn: Callable[[], dict[str, Any]]) -> None:
         log.exception("Falló %s: %s", job["cmd"], exc)
         estado, error = "error", str(exc) or type(exc).__name__
     finally:
+        eventos.desactivar(token_eventos)
         _JOB_ACTUAL.reset(token)
         logger.removeHandler(handler)
     job["resultado"], job["error"] = resultado, error
     job["estado"] = estado
+    eventos.finalizar(buffer, job["cmd"], estado, error)
 
 
 def _comando(cmd: str, caso_dir: Path, decision: dict[str, Any] | None, forzar: bool = False) -> dict[str, Any]:
+    from tutela2 import preferencias
+
     api = _api()
-    os.environ["TUTELA2_MODELO"] = modelo_actual()
+    preferencias.aplicar_entorno(preferencias.leer(_preferencias()))
     if cmd == "nuevo":
         return api.nuevo(caso_dir)
     if cmd == "iniciar":
@@ -217,6 +262,8 @@ def _mensaje_config(e: Any) -> str:
     ctx = e.get("ctx") or {}
     if tipo in ("greater_than", "greater_than_equal") and ctx.get("gt", ctx.get("ge")) is not None:
         return f"debe ser {'mayor que' if tipo == 'greater_than' else 'al menos'} {ctx.get('gt', ctx.get('ge'))}."
+    if tipo in ("string_too_long", "too_long") and ctx.get("max_length") is not None:
+        return f"debe tener como máximo {ctx['max_length']} {'caracteres' if tipo == 'string_too_long' else 'elementos'}."
     if tipo in ("less_than", "less_than_equal") and ctx.get("lt", ctx.get("le")) is not None:
         return f"debe ser {'menor que' if tipo == 'less_than' else 'como máximo'} {ctx.get('lt', ctx.get('le'))}."
     return "tiene un valor no válido."
@@ -231,9 +278,21 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/")
-def indice() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+def _dist() -> Path:
+    return STATIC / "dist"
+
+
+def _shell() -> Path | None:
+    indice_dist = _dist() / "index.html"
+    return indice_dist if indice_dist.is_file() else None
+
+
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+def indice() -> Response:
+    shell = _shell()
+    if shell is None:
+        return PlainTextResponse("Falta compilar el frontend (pnpm build).", status_code=503)
+    return FileResponse(shell)
 
 
 @app.get("/api/config-default")
@@ -251,14 +310,12 @@ def _preferencias() -> Path:
 
 
 def modelo_actual() -> str:
-    try:
-        modelo = json.loads(_preferencias().read_text(encoding="utf-8")).get("modelo")
-    except (OSError, ValueError, AttributeError):
-        modelo = None
-    return modelo if modelo in cfgmod.MODELOS else cfgmod.LLMConfig().modelo
+    from tutela2 import preferencias
+
+    return preferencias.leer(_preferencias()).modelo or cfgmod.LLMConfig().modelo
 
 
-@app.get("/api/estado-servidor")
+@app.get("/api/estado-servidor", response_model=EstadoServidor)
 def estado_servidor() -> dict[str, Any]:
     return {
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
@@ -272,9 +329,9 @@ def estado_servidor() -> dict[str, Any]:
 def elegir_modelo(body: ModeloBody) -> dict[str, str]:
     if body.modelo not in cfgmod.MODELOS:
         raise HTTPException(422, f"Modelo no permitido: {body.modelo}.")
-    _preferencias().parent.mkdir(parents=True, exist_ok=True)
-    _preferencias().write_text(json.dumps({"modelo": body.modelo}), encoding="utf-8")
-    os.environ["TUTELA2_MODELO"] = body.modelo
+    from tutela2 import preferencias
+
+    preferencias.actualizar(_preferencias(), preferencias.Preferencias(modelo=body.modelo))
     return {"modelo": body.modelo}
 
 
@@ -296,56 +353,6 @@ def guardar_jev_key(body: ApiKeyBody) -> dict[str, bool]:
         raise HTTPException(422, "La clave de Jev solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.")
     os.environ["JEV_API_KEY"] = key
     return {"jev_key": True}
-
-
-@app.get("/api/casos")
-def listar_casos() -> list[dict[str, Any]]:
-    raiz = casos_dir()
-    if not raiz.is_dir():
-        return []
-    casos = []
-    for d in sorted(p for p in raiz.iterdir() if p.is_dir() and not p.name.startswith(".")):
-        if _job_activo(d.name):
-            estado = "corriendo"
-        else:
-            try:
-                estado = _api().estado(d).get("estado", "error")
-            except Exception:
-                log.exception("No se pudo leer el estado de %s", d.name)
-                estado = "error"
-        casos.append({"id": d.name, "estado": estado, "n_insumos": _contar_insumos(d)})
-    return casos
-
-
-@app.post("/api/casos")
-def crear_caso(nombre: str = Form(...), files: list[UploadFile] = File(...)) -> dict[str, Any]:
-    nombre = nombre.strip()
-    if not nombre:
-        raise HTTPException(422, "Falta el nombre del caso.")
-    try:
-        rutas = [sanear_ruta(f.filename) for f in files]
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    pares = [(f, r) for f, r in zip(files, rutas) if not any(p.startswith(".") for p in r)]
-    if not pares:
-        raise HTTPException(400, "No se recibió ningún archivo.")
-    rutas_finales = quitar_carpeta_raiz([r for _, r in pares])
-
-    caso_id, caso_dir = _crear_dir_caso(nombre)
-    insumos = (caso_dir / "insumos").resolve()
-    try:
-        for (f, _), ruta in zip(pares, rutas_finales):
-            destino = insumos.joinpath(*ruta)
-            if not destino.resolve().is_relative_to(insumos):
-                raise HTTPException(400, f"Ruta no permitida: {'/'.join(ruta)}")
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            with destino.open("wb") as out:
-                shutil.copyfileobj(f.file, out)
-    except BaseException:
-        shutil.rmtree(caso_dir, ignore_errors=True)
-        raise
-    log.info("Caso %s creado con %d archivos", caso_id, len(pares))
-    return {"id": caso_id, "n_insumos": len(pares)}
 
 
 @app.get("/api/casos/{caso_id}/config")
@@ -381,16 +388,24 @@ def estado_caso(caso_id: str) -> dict[str, Any]:
     return resultado
 
 
-@app.post("/api/casos/{caso_id}/run")
+@app.post("/api/casos/{caso_id}/run", response_model=JobInicio)
 def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
     caso_dir = _dir_caso(caso_id)
     if body.cmd == "decidir" and not body.decision:
         raise HTTPException(422, "Falta la decisión.")
-    job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": [], "resultado": None, "error": None}
+    from collections import deque
+
+    from tutela2 import eventos
+
+    job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": deque(maxlen=200), "resultado": None, "error": None}
     with _LOCK:
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
         JOBS[job["id"]] = job
+        eventos.crear(job["id"])
+        for viejo in [i for i, j in JOBS.items() if j["estado"] != "corriendo"][:-50]:
+            del JOBS[viejo]
+            eventos.olvidar(viejo)
     threading.Thread(
         target=_ejecutar, args=(job, lambda: _comando(body.cmd, caso_dir, body.decision, body.forzar)), daemon=True
     ).start()
@@ -402,7 +417,7 @@ def leer_job(job_id: str) -> dict[str, Any]:
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(404, "Job no encontrado.")
-    return {**job, "log": list(job["log"])}
+    return {**job, "log": list(job["log"])[-200:]}
 
 
 @app.put("/api/casos/{caso_id}/revision")
@@ -444,7 +459,53 @@ def descargar_zip(caso_id: str) -> Response:
     )
 
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+@functools.cache
+def _servidor_assets(directorio: Path) -> StaticFiles:
+    return StaticFiles(directory=directorio)
+
+
+class _Assets:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        directorio = _dist() / "assets"
+        if not directorio.is_dir():
+            raise HTTPException(404, "Not Found")
+        await _servidor_assets(directorio)(scope, receive, send)
+
+
+for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia"):
+    try:
+        _m = importlib.import_module(f"tutela2.{_modulo}")
+    except ModuleNotFoundError as exc:
+        if exc.name != f"tutela2.{_modulo}":
+            raise
+    else:
+        app.include_router(_m.router)
+
+app.mount("/assets", _Assets(), name="assets")
+
+
+def _respuesta_spa(ruta: str) -> FileResponse | None:
+    shell = _shell()
+    if shell is None or any(ruta == p or ruta.startswith(p + "/") for p in ("/api", "/assets")):
+        return None
+    dist = _dist().resolve()
+    try:
+        archivo = (dist / ruta.lstrip("/")).resolve()
+        existe = archivo.is_file() and archivo.is_relative_to(dist)
+    except (ValueError, OSError):
+        existe = False
+    if existe:
+        return FileResponse(archivo)
+    return None if Path(ruta).suffix else FileResponse(shell)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_o_spa(request: Request, exc: StarletteHTTPException) -> Response:
+    if exc.status_code == 404 and request.method in ("GET", "HEAD"):
+        respuesta = _respuesta_spa(request.url.path)
+        if respuesta is not None:
+            return respuesta
+    return await http_exception_handler(request, exc)
 
 
 def main() -> None:

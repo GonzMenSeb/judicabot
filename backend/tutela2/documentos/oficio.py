@@ -67,7 +67,7 @@ def render_oficio(md: Metadatos, fecha: str | None, cfg: Config, ruta: Path) -> 
 
     accionante = _o(md.accionante, "accionante")
     accionadas = _o(", ".join(md.accionadas), "accionado")
-    _par(doc, [(d.nombre.replace(" DE MEDELLÍN", ""), True, True)], alin=C, antes=0,
+    _par(doc, [(d.nombre_corto, True, True)], alin=C, antes=0,
          izq=SANGRIA_TITULO, der=SANGRIA_TITULO)
     _par(doc, [(f"{d.ciudad}, {fecha_larga(fecha)}", None, None)], alin=C, antes=12)
     _par(doc, [("Asunto: ", None, None), ("REMISIÓN EXPEDIENTE DE TUTELA EN REVISIÓN", None, None)],
