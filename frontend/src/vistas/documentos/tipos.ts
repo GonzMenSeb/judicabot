@@ -34,6 +34,7 @@ export interface DocResumen {
   paginas_sin_texto: number;
   ruido: boolean;
   ajeno: boolean;
+  revisar: boolean;
   jev_rol: string | null;
   jev_confianza: number | null;
   jev_umbral: number | null;
@@ -44,6 +45,8 @@ export interface DatosAuto {
   fecha_reparto: string | null;
   accionante: string | null;
   accionada: string | null;
+  firmante: string | null;
+  cargo_firmante: string | null;
 }
 
 export type ClaveAuto = keyof DatosAuto;
@@ -55,6 +58,7 @@ export interface ResumenIngesta {
   esperados_faltantes: string[];
   alertas: string[];
   docs_ajenos: string[];
+  docs_revisar: string[];
   auto: DatosAuto;
 }
 
@@ -93,7 +97,7 @@ export interface SalidaPrevia {
   archivo: string;
 }
 
-export const CLAVES_AUTO: readonly ClaveAuto[] = ["fecha_reparto", "fecha", "accionante", "accionada"];
+export const CLAVES_AUTO: readonly ClaveAuto[] = ["fecha_reparto", "fecha", "accionante", "accionada", "firmante", "cargo_firmante"];
 
 export function ingestaDe(estado: EstadoCaso): ResumenIngesta | null {
   const fuente = estado.ingesta ?? estado.resumen;

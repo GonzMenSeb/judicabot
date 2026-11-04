@@ -292,7 +292,8 @@ def test_llamadas_de_jev_quedan_en_la_ingesta_sin_texto_del_expediente(tmp_path)
     ing = ingest.ingerir(caso, SOMBRA, jev=FakeJev(choice("otro", 0.9)))
     assert len(ing.llamadas_jev) == 2
     assert all(c["proveedor"] == "jev" and c["nodo"] == "roles" for c in ing.llamadas_jev)
-    assert "Lorem" not in json.dumps(ing.llamadas_jev) and "RESUELVE" not in json.dumps(ing.llamadas_jev)
+    volcado = json.dumps(ing.llamadas_jev)
+    assert "Lorem" not in volcado and "TREINTA Y TRES" not in volcado
 
 
 def test_relleno_no_toma_el_rol_unico_que_ya_tiene_otro_documento(tmp_path):

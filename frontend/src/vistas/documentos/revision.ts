@@ -1,5 +1,5 @@
 import { CLAVES_AUTO } from "./tipos";
-import type { ClaveAuto, DatosAuto, RevisionCuerpo } from "./tipos";
+import type { ClaveAuto, DatosAuto, DocResumen, RevisionCuerpo } from "./tipos";
 
 export type CambiosRoles = Record<string, string>;
 export type EdicionAuto = Partial<Record<ClaveAuto, string>>;
@@ -24,3 +24,6 @@ export function cuerpoRevision(roles: CambiosRoles, base: DatosAuto, edicion: Ed
 }
 
 export const hayCambios = (cuerpo: RevisionCuerpo): boolean => Boolean(cuerpo.roles || cuerpo.auto);
+
+export const sinConfirmar = (documentos: readonly DocResumen[], roles: CambiosRoles): DocResumen[] =>
+  documentos.filter((d) => d.revisar && !(d.doc_id in roles));

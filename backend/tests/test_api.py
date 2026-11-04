@@ -40,8 +40,9 @@ def test_flujo_nuevo_revisar_iniciar_decidir(caso):
     assert doc["rol"] == "contestacion" and doc["rol_origen"] == "contenido"
     assert set(doc) == {
         "doc_id", "ruta", "nombre", "rol", "rol_origen", "evidencia", "paginas", "paginas_sin_texto", "ruido", "ajeno",
-        "jev_rol", "jev_confianza", "jev_umbral",
+        "revisar", "jev_rol", "jev_confianza", "jev_umbral",
     }
+    assert doc["ajeno"] is False and doc["revisar"] is False and resumen["docs_revisar"] == []
     assert doc["jev_rol"] is None and doc["jev_confianza"] is None and doc["jev_umbral"] is None
     assert resumen["auto"]["accionante"] == "Marta Ejemplo" and resumen["auto"]["fecha"] == "2026-10-06"
     assert "esperados_faltantes" in resumen and "alertas" in resumen and resumen["metadatos"]["accionante"] == "Marta Ejemplo"
@@ -64,6 +65,32 @@ def test_flujo_nuevo_revisar_iniciar_decidir(caso):
     r = api.revisar(caso, {"1a-003": "contestacion"}, None)
     assert not r["ok"] and r["error"]
     assert api.iniciar(caso)["ok"] is False
+
+
+def test_documento_para_revisar_se_expone_y_no_bloquea_iniciar(caso, monkeypatch):
+    ing = ingesta_sintetica().model_copy(update={"docs_revisar": ["1a-003"]})
+    monkeypatch.setattr(ingest, "ingerir", lambda d, c: ing, raising=False)
+    r = api.nuevo(caso)
+    assert r["ok"] and r["estado"] == "revision", r["error"]
+    marcas = {d["doc_id"]: (d["ajeno"], d["revisar"]) for d in r["resumen"]["documentos"]}
+    assert marcas["1a-003"] == (False, True)
+    assert {k for k, v in marcas.items() if v[1]} == {"1a-003"}
+    assert r["resumen"]["docs_revisar"] == ["1a-003"] and r["resumen"]["docs_ajenos"] == []
+    r = api.iniciar(caso)
+    assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
+
+
+def test_documento_para_revisar_que_es_ruido_no_pide_confirmacion(caso, monkeypatch):
+    ing = ingesta_sintetica()
+    ing.docs_revisar = ["1a-003", "1a-004"]
+    next(d for d in ing.documentos if d.doc_id == "1a-003").ruido = True
+    monkeypatch.setattr(ingest, "ingerir", lambda d, c: ing, raising=False)
+    r = api.nuevo(caso)
+    assert r["ok"], r["error"]
+    docs = {d["doc_id"]: d for d in r["resumen"]["documentos"]}
+    assert (docs["1a-003"]["ruido"], docs["1a-003"]["revisar"]) == (True, False)
+    assert (docs["1a-004"]["ruido"], docs["1a-004"]["revisar"]) == (False, True)
+    assert r["resumen"]["docs_revisar"] == ["1a-004"]
 
 
 def test_revisar_rechaza_documento_o_rol_invalido(caso):
@@ -128,6 +155,70 @@ def test_control_en_decision_no_rompe_el_ensamblado(caso):
     assert r["ok"] and r["estado"] == "terminado", r["error"]
 
 
+def _parrafos_fallo(caso) -> list[str]:
+    from docx import Document
+
+    return [p.text for p in Document(str(caso / "salidas" / FALLO_DOCX)).paragraphs]
+
+
+def test_la_decision_se_normaliza_antes_de_escribir_decision_json(caso):
+    api.nuevo(caso)
+    api.iniciar(caso)
+    d = {
+        **DECISION,
+        "eje": "▎ La entidad no acreditó\n▎ la autorización.",
+        "ordenes": [{**DECISION["ordenes"][0], "conducta": "▎ autorice\n▎ el procedimiento ordenado"}],
+        "numerales_libres": ["▎ CONFIRMAR   en lo demás.\n"],
+        "por_reparo": [{"reparo_id": "R1", "disposicion": "ACOGE", "nota": "▎ la nota\n  del reparo"}],
+        "decidido_por": "  Oficial\nMayor ",
+    }
+    original = json.loads(json.dumps(d))
+    r = api.decidir(caso, d)
+    assert r["ok"] and r["estado"] == "terminado", r["error"]
+    assert d == original
+    guardada = json.loads((caso / "decision.json").read_text(encoding="utf-8"))
+    assert guardada["eje"] == "La entidad no acreditó la autorización."
+    assert guardada["ordenes"][0]["conducta"] == "autorice el procedimiento ordenado"
+    assert guardada["numerales_libres"] == ["CONFIRMAR en lo demás."]
+    assert guardada["por_reparo"][0]["nota"] == "la nota del reparo"
+    assert guardada["decidido_por"] == original["decidido_por"]
+    assert set(guardada) == set(original)
+    texto = "\n".join(_parrafos_fallo(caso))
+    assert "▎" not in texto and "autorice el procedimiento ordenado." in texto
+
+
+def test_improcedente_con_causal_y_advertir_sin_amparar_llega_al_fallo(caso):
+    api.nuevo(caso)
+    api.iniciar(caso)
+    d = {
+        "accion": "decidir",
+        "resultado": "REVOCAR",
+        "sustitutiva": "IMPROCEDENTE",
+        "causal": "COSA_JUZGADA",
+        "eje": "Existe un trámite de tutela previo con identidad de partes, causa y objeto.",
+        "ordenes": [
+            {
+                "verbo": "ADVERTIR",
+                "destinatario": "la señora Marta Ejemplo",
+                "conducta": "en caso de considerar incumplida la orden previa, deberá acudir ante el juzgado que la profirió",
+            }
+        ],
+        "decidido_por": "Oficial Mayor",
+    }
+    r = api.decidir(caso, d)
+    assert r["ok"] and r["estado"] == "terminado", r["error"]
+    parrafos = _parrafos_fallo(caso)
+    assert any(p.startswith("SEGUNDO: DECLARAR IMPROCEDENTE") and "cosa juzgada constitucional" in p for p in parrafos)
+    assert (
+        "TERCERO: ADVERTIR a la señora Marta Ejemplo que en caso de considerar incumplida la orden previa, "
+        "deberá acudir ante el juzgado que la profirió."
+    ) in parrafos
+    from docx import Document
+
+    celdas = [c.text for t in Document(str(caso / "salidas" / FALLO_DOCX)).tables for fila in t.rows for c in fila.cells]
+    assert "REVOCA Y DECLARA IMPROCEDENTE POR COSA JUZGADA" in celdas
+
+
 def test_oficio_sin_fecha_fallo_usa_hoy(caso):
     from datetime import date
 
@@ -163,6 +254,16 @@ def test_error_sin_repr_de_excepcion(caso, monkeypatch):
     r = api.estado(caso)
     assert r["estado"] == "error" and "(No hay credenciales.)" in r["error"]
     assert "ErrorLLM" not in r["error"] and "'No hay" not in r["error"]
+
+
+def test_modelo_fuera_de_la_lista_permitida_no_arranca_el_grafo(caso, monkeypatch):
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-sonnet-5-5")
+    api.nuevo(caso)
+    cfgmod.guardar(caso, Config(llm=LLMConfig(modelo="claude-opus-5-5")))
+    r = api.iniciar(caso)
+    assert r["ok"] is False and r["estado"] == "error"
+    assert "claude-opus-5-5" in r["error"] and "TUTELA2_MODELOS_PERMITIDOS" in r["error"]
+    assert not (caso / "hilo.sqlite").exists()
 
 
 class _Contador:

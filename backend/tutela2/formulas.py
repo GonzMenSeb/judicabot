@@ -11,7 +11,7 @@ from tutela2.models import Compulsa, Decision, Metadatos, Orden, Plazo
 
 SUBTITULO_COMPETENCIA = "Competencia"
 COMPETENCIA_1 = (
-    "Este despacho es competente para conocer y resolver el recurso de impugnación interpuesto "
+    "Este Despacho es competente para conocer y resolver el recurso de impugnación interpuesto "
     "contra la sentencia de tutela de primera instancia, de conformidad con lo dispuesto en el "
     "artículo 32 del Decreto 2591 de 1991 y las normas concordantes de reparto de la acción de "
     "amparo. En su condición de superior funcional, le corresponde adelantar un examen integral "
@@ -34,6 +34,14 @@ MERITO_ANTES = "En mérito de lo expuesto, el "
 MERITO_DESPUES = ", administrando justicia en nombre de la República y por autoridad de la Ley,"
 
 _MOTIVO = "por las razones expuestas en este proveído."
+CAUSALES = {
+    "COSA_JUZGADA": (
+        "por configurarse el fenómeno de la cosa juzgada constitucional, al verificarse identidad de partes, "
+        "causa y objeto con un trámite de tutela resuelto previamente.",
+        "POR COSA JUZGADA",
+    ),
+    "SUBSIDIARIEDAD": ("por no cumplirse el requisito de subsidiariedad.", "POR SUBSIDIARIEDAD"),
+}
 _ORDINALES = ("PRIMERO", "SEGUNDO", "TERCERO", "CUARTO", "QUINTO", "SEXTO", "SÉPTIMO", "OCTAVO", "NOVENO")
 _DECENAS_ORDINALES = ("", "DÉCIMO", "VIGÉSIMO", "TRIGÉSIMO")
 _PLAZOS = {
@@ -111,16 +119,6 @@ def juzgado(md: Metadatos, forma: str) -> str:
     return radicado.nombre_juzgado(j, forma)
 
 
-def competencia_2(md: Metadatos) -> str:
-    plural = len(md.impugnantes) > 1
-    impugnacion = "las impugnaciones presentadas" if plural else "la impugnación presentada"
-    return (
-        f"Este Despacho es competente para resolver {impugnacion} contra la sentencia de "
-        f"tutela proferida el {fecha_corta(md.fechas.fallo_a_quo)} por el {juzgado(md, 'cuerpo')}, "
-        "de conformidad con el artículo 32 del Decreto 2591 de 1991."
-    )
-
-
 def asunto(md: Metadatos) -> str:
     impugnantes = md.impugnantes or ([md.impugnante] if md.impugnante else [])
     quien = formatear_cedulas(_lista_y(impugnantes)) if impugnantes else _falta("impugnante")
@@ -148,6 +146,8 @@ def encabezado_decision(decision: Decision | None) -> str:
     if decision.resultado == "CONFIRMAR" or not decision.sustitutiva:
         return base
     extra = _SUSTITUTIVA_ENCABEZADO[decision.sustitutiva]
+    if decision.sustitutiva == "IMPROCEDENTE" and decision.causal in CAUSALES:
+        extra = f"{extra} {CAUSALES[decision.causal][1]}"
     return f"{base} Y {extra}" if extra else base
 
 
@@ -264,7 +264,8 @@ def _sustitutiva(d: Decision, md: Metadatos) -> Numeral:
         texto = f"NEGAR el amparo solicitado por {trat}{nombre} respecto {objeto} {lista}, {_MOTIVO}"
         return Numeral("sustitutiva", texto, ["NEGAR"])
     if s == "IMPROCEDENTE":
-        texto = f"DECLARAR IMPROCEDENTE la acción de tutela promovida por {trat}{nombre}, {_MOTIVO}"
+        motivo = CAUSALES[d.causal][0] if d.causal in CAUSALES else _MOTIVO
+        texto = f"DECLARAR IMPROCEDENTE la acción de tutela promovida por {trat}{nombre}, {motivo}"
         return Numeral("sustitutiva", texto, ["DECLARAR IMPROCEDENTE"])
     if s in _CARENCIA:
         cabeza = f"DECLARAR LA CARENCIA ACTUAL DE OBJETO POR {_CARENCIA[s]}"

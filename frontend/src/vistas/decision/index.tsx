@@ -10,11 +10,14 @@ import {
   aClaveApi,
   aClaveInterna,
   aDecision,
+  advertenciasLocales,
+  CAUSALES,
   clavesOrdenadas,
   combinar,
+  esPlaceholderDecididoPor,
+  fechaLarga,
   formularioInicial,
   hallazgosLocales,
-  hoyISO,
   idDeCampo,
   moverClave,
   resumenCorto,
@@ -22,7 +25,7 @@ import {
 import { Resuelve } from "./Resuelve";
 import type { Cambiar } from "./Secciones";
 import { Derechos, Ordenes, Otras, QueDecide, Reparos, Salida } from "./Secciones";
-import type { ConfigCaso, Formulario, PayloadDecision, RespuestaEstado } from "./tipos";
+import type { Causal, ConfigCaso, Formulario, PayloadDecision, RespuestaEstado } from "./tipos";
 import { useVistaPrevia } from "./useVistaPrevia";
 import "./estilos.css";
 
@@ -32,6 +35,8 @@ interface Datos {
 }
 
 const codificar = encodeURIComponent;
+
+const CAUSAL_TEXTO: Record<Causal, string> = Object.fromEntries(CAUSALES) as Record<Causal, string>;
 
 function enfocar(id: string | null): boolean {
   const el = id ? document.getElementById(id) : null;
@@ -164,7 +169,7 @@ interface PropsEditor {
 
 function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
   const [f, setF] = useState<Formulario>(
-    () => leerBorrador(caso, payload) ?? formularioInicial(payload, config?.despacho?.juez ?? "", hoyISO()),
+    () => leerBorrador(caso, payload) ?? formularioInicial(payload, config?.despacho?.juez ?? ""),
   );
   const erroresServidor = payload.errores ?? [];
   const [mostrar, setMostrar] = useState(erroresServidor.length > 0);
@@ -184,6 +189,8 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
     [f, vista.pendiente, vista.datos],
   );
   const err = (campo: string) => (mostrar ? hallazgos.find((h) => h.campo === campo)?.mensaje : undefined);
+  const vistaLista = vista.datos && !vista.pendiente && !vista.error ? vista.datos : null;
+  const avisos = useMemo(() => combinar(advertenciasLocales(f), vistaLista?.advertencias ?? []), [f, vistaLista]);
 
   const numerales = useMemo(() => {
     const base = vista.datos?.numerales ?? [];
@@ -258,6 +265,17 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
           </Aviso>
         </div>
       )}
+      {avisos.length > 0 && (
+        <div id="dec-avisos" class="dec-avisos">
+          <Aviso tipo="alerta" titulo="Avisos que no impiden enviar la decisión">
+            <ul>
+              {avisos.map((a) => (
+                <li key={`${a.campo}|${a.mensaje}`}>{a.mensaje}</li>
+              ))}
+            </ul>
+          </Aviso>
+        </div>
+      )}
       {errorEnvio && (
         <Aviso
           tipo="error"
@@ -274,7 +292,7 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
           <Derechos f={f} cambiar={cambiar} err={err} />
           <Ordenes f={f} cambiar={cambiar} err={err} />
           <Otras f={f} cambiar={cambiar} err={err} />
-          <Salida f={f} cambiar={cambiar} err={err} />
+          <Salida f={f} cambiar={cambiar} err={err} fechaHoy={vistaLista?.fecha_por_defecto ? vistaLista.fecha_fallo : undefined} avisaDecididoPor={avisos.some((a) => a.campo === "decidido_por")} />
         </form>
         <Resuelve
           numerales={numerales}
@@ -320,9 +338,42 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
         <ul class="dec-confirmacion">
           {decision.resultado && <li>Resultado: {decision.resultado}</li>}
           {decision.sustitutiva && <li>En su lugar: {decision.sustitutiva.replace(/_/g, " ").toLowerCase()}</li>}
+          {decision.causal && <li>Causal: {CAUSAL_TEXTO[decision.causal]}</li>}
           {decision.ordenes.length > 0 && <li>Órdenes: {decision.ordenes.length}</li>}
-          {vista.datos && !vista.pendiente && <li>Numerales del RESUELVE: {vista.datos.numerales.length}</li>}
+          {vistaLista && <li>Numerales del RESUELVE: {vistaLista.numerales.length}</li>}
+          {vistaLista?.encabezado && (
+            <li>
+              Encabezado: <b>{vistaLista.encabezado}</b>
+            </li>
+          )}
+          {vistaLista && (
+            <li>
+              Fecha del fallo: {fechaLarga(vistaLista.fecha_fallo)}
+              {vistaLista.fecha_por_defecto && <span class="dec-defecto"> (por defecto)</span>}
+            </li>
+          )}
+          {!vistaLista && (
+            <li role="status">{vista.pendiente ? "Calculando el encabezado y la fecha…" : "No se pudo calcular el encabezado ni la fecha efectiva."}</li>
+          )}
+          <li>Formato Factor Calidad: {decision.generar_formato ? "se genera, con los puntajes en blanco" : "no se genera"}</li>
+          <li>
+            Decidido por:{" "}
+            {decision.decidido_por ? (
+              <span class={esPlaceholderDecididoPor(decision.decidido_por) ? "dec-defecto" : undefined}>{decision.decidido_por}</span>
+            ) : (
+              <span class="dec-defecto">sin nombre (constará «no consta»)</span>
+            )}
+          </li>
         </ul>
+        {avisos.length > 0 && (
+          <Aviso tipo="alerta" titulo="Revise antes de enviar">
+            <ul>
+              {avisos.map((a) => (
+                <li key={`${a.campo}|${a.mensaje}`}>{a.mensaje}</li>
+              ))}
+            </ul>
+          </Aviso>
+        )}
       </Dialogo>
     </>
   );

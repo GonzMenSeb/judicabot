@@ -1,11 +1,14 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { Boton } from "../../ui";
+import { Boton, Chip } from "../../ui";
 import {
+  admiteOrdenes,
   agregarDerecho,
   agregarLibre,
   agregarOrden,
   CARENCIAS,
+  CAUSALES,
+  fechaLarga,
   DISPOSICIONES_DERECHO,
   DISPOSICIONES_REPARO,
   elegirSustitutiva,
@@ -15,7 +18,7 @@ import {
   UNIDADES,
   VERBOS,
 } from "./formulario";
-import type { Formulario, OrdenForm, PayloadDecision, SustitutivaForm } from "./tipos";
+import type { Causal, Formulario, OrdenForm, PayloadDecision, SustitutivaForm } from "./tipos";
 
 export type Cambiar = (fn: (f: Formulario) => Formulario) => void;
 
@@ -74,6 +77,8 @@ function Seccion({ titulo, sub, id, children, oculta }: { titulo: string; sub?: 
   );
 }
 
+const OPCIONES_CAUSAL: readonly (readonly [Causal | "", string])[] = [["", "Sin causal"], ...CAUSALES];
+
 export function QueDecide({ f, cambiar, err }: PropsSeccion) {
   const noConfirma = f.resultado !== "" && f.resultado !== "CONFIRMAR";
   const enCarencia = f.sustitutiva === "CARENCIA" || f.sustitutiva.startsWith("CARENCIA_");
@@ -129,6 +134,21 @@ export function QueDecide({ f, cambiar, err }: PropsSeccion) {
                   {texto}
                 </label>
               ))}
+            </div>
+          )}
+          {f.sustitutiva === "IMPROCEDENTE" && (
+            <div class="dec-causal">
+              <p class="dec-etiqueta" id="dec-causal-t">
+                Causal de la improcedencia <small class="sub">(opcional; se refleja en el motivo y en el encabezado)</small>
+              </p>
+              <div class="dec-carencias" role="radiogroup" aria-labelledby="dec-causal-t" id="dec-causal">
+                {OPCIONES_CAUSAL.map(([valor, texto]) => (
+                  <label key={valor} class={f.causal === valor ? "activa" : ""}>
+                    <input type="radio" name="dec-causal" class="solo-lectura" value={valor} checked={f.causal === valor} onChange={() => cambiar((x) => ({ ...x, causal: valor }))} />
+                    {texto}
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -285,8 +305,12 @@ function TarjetaOrden({ o, i, cambiar, err }: { o: OrdenForm; i: number; cambiar
 
 export function Ordenes({ f, cambiar, err }: PropsSeccion) {
   const errGeneral = err("ordenes");
+  const sub =
+    sustitutivaEfectiva(f) === "AMPARAR"
+      ? "Qué debe hacer cada destinatario y en cuánto tiempo."
+      : "Opcionales si no se ampara: por ejemplo, ADVERTIR o PREVENIR a un destinatario (elija el verbo en «Más opciones»).";
   return (
-    <Seccion id="dec-ordenes" titulo="Órdenes" sub="Qué debe hacer cada destinatario y en cuánto tiempo." oculta={sustitutivaEfectiva(f) !== "AMPARAR"}>
+    <Seccion id="dec-ordenes" titulo="Órdenes" sub={sub} oculta={!admiteOrdenes(f)}>
       {f.ordenes.map((o, i) => (
         <TarjetaOrden key={o.id} o={o} i={i} cambiar={cambiar} err={err} />
       ))}
@@ -358,17 +382,37 @@ export function Otras({ f, cambiar, err }: PropsSeccion) {
   );
 }
 
-export function Salida({ f, cambiar, err }: PropsSeccion) {
+export function Salida({ f, cambiar, err, fechaHoy, avisaDecididoPor }: PropsSeccion & { fechaHoy?: string; avisaDecididoPor: boolean }) {
   const eFecha = err("fecha_fallo");
   const eOficio = err("fecha_oficio");
+  const porDefecto = f.fechaFallo === "";
+  const ayudaFecha = porDefecto
+    ? `Si no la cambia, se usa la fecha de hoy${fechaHoy ? ` (${fechaLarga(fechaHoy)})` : ""}.`
+    : "Fecha elegida por usted.";
   return (
     <Seccion id="dec-salida" titulo="Fecha y documentos de salida">
       <div class="dec-fila-2">
-        <Campo id="dec-fecha-fallo" etiqueta="Fecha del fallo" ayuda="Por defecto, la de hoy." error={eFecha}>
-          <input {...atributos("dec-fecha-fallo", eFecha, true)} type="date" value={f.fechaFallo} onInput={(e) => cambiar((x) => ({ ...x, fechaFallo: e.currentTarget.value }))} />
+        <Campo id="dec-fecha-fallo" etiqueta="Fecha del fallo" ayuda={ayudaFecha} error={eFecha}>
+          <div class="dec-fecha">
+            <input {...atributos("dec-fecha-fallo", eFecha, true)} type="date" value={f.fechaFallo} onInput={(e) => cambiar((x) => ({ ...x, fechaFallo: e.currentTarget.value }))} />
+            {porDefecto ? (
+              <Chip tono="alerta">hoy (por defecto)</Chip>
+            ) : (
+              <Boton variante="fantasma" onClick={() => cambiar((x) => ({ ...x, fechaFallo: "" }))}>
+                Usar la de hoy
+              </Boton>
+            )}
+          </div>
         </Campo>
         <Campo id="dec-por" etiqueta="Decidido por" ayuda="Queda en la declaración de uso de IA.">
-          <input id="dec-por" aria-describedby="dec-por-ayuda" type="text" value={f.decididoPor} onInput={(e) => cambiar((x) => ({ ...x, decididoPor: e.currentTarget.value }))} />
+          <input
+            id="dec-por"
+            class={avisaDecididoPor ? "dec-con-aviso" : undefined}
+            aria-describedby={avisaDecididoPor ? "dec-por-ayuda dec-avisos" : "dec-por-ayuda"}
+            type="text"
+            value={f.decididoPor}
+            onInput={(e) => cambiar((x) => ({ ...x, decididoPor: e.currentTarget.value }))}
+          />
         </Campo>
       </div>
       <Casilla id="dec-formato" checked={f.generarFormato} onChange={(v) => cambiar((x) => ({ ...x, generarFormato: v }))}>

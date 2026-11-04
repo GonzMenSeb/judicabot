@@ -45,6 +45,13 @@ def _mensaje(e: dict[str, Any]) -> str:
     from tutela2.server import _mensaje_config
 
     tipo = e["type"]
+    if tipo == "modelo_no_permitido":
+        permitidos = e["ctx"]["permitidos"]
+        if not permitidos:
+            return f"no hay modelos permitidos en este servidor ({cfgmod.VARIABLE_MODELOS_PERMITIDOS})."
+        *cabeza, cola = permitidos
+        opciones = f"{', '.join(cabeza)} o {cola}" if cabeza else cola
+        return f"debe ser uno de: {opciones}."
     if tipo == "literal_error":
         opciones = str((e.get("ctx") or {}).get("expected", "")).replace("'", "").replace(" or ", " o ")
         return f"debe ser uno de: {opciones}."
@@ -95,7 +102,7 @@ def _estado() -> IAEstado:
     claves = server.estado_servidor()
     return IAEstado(
         modelo=_o(guardadas.modelo, llm.modelo),
-        modelos=list(cfgmod.MODELOS),
+        modelos=list(cfgmod.modelos_permitidos()),
         api_key=claves["api_key"],
         jev_key=claves["jev_key"],
         jev=IAJev(modo=_o(guardadas.jev.modo, jev.modo), umbral=_o(guardadas.jev.umbral, jev.umbral_confianza)),

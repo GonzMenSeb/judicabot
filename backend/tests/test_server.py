@@ -487,6 +487,18 @@ def test_modelo_global_se_elige_persiste_y_aplica(cliente, tmp_path, monkeypatch
     assert [c["id"] for c in cliente.get("/api/casos").json()] == ["c1"]
 
 
+def test_modelos_permitidos_restringen_la_lista_y_la_eleccion(cliente, tmp_path, monkeypatch):
+    monkeypatch.delenv("TUTELA2_MODELO", raising=False)
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-sonnet-5-5, claude-haiku-5-5")
+    assert cliente.get("/api/estado-servidor").json()["modelos"] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
+    r = cliente.post("/api/modelo", json={"modelo": "claude-opus-5-5"})
+    assert r.status_code == 422
+    assert "claude-opus-5-5" in r.json()["detail"] and "claude-sonnet-5-5, claude-haiku-5-5" in r.json()["detail"]
+    assert not (tmp_path / "casos" / ".preferencias.json").exists()
+    assert cliente.post("/api/modelo", json={"modelo": "claude-haiku-5-5"}).json() == {"modelo": "claude-haiku-5-5"}
+    monkeypatch.delenv("TUTELA2_MODELO")
+
+
 def test_sirve_la_interfaz_compilada(cliente, tmp_path, monkeypatch):
     static = tmp_path / "static"
     (static / "dist").mkdir(parents=True)

@@ -113,6 +113,31 @@ _CITA = re.compile(r"\[\[CITA:\s*([^\]\s]+)\s*\]\]")
 _IMAGEN = re.compile(r"\[\[IMAGEN([^\]]*)\]\]")
 _MARCA = re.compile(r"(⟦[^⟧]*⟧)")
 
+_MAX_TEXTO_CITA = 220
+_MAX_PALABRAS_CITA_CASO = 80
+_FIN_FRASE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ“\"¿¡(\[])")
+_SECCION_ES = {"mayoria": "mayoría", "salvamento": "salvamento", "desconocida": "desconocida"}
+_AVISO_SALVAMENTO = "el pasaje está en un salvamento de voto, no en la decisión mayoritaria"
+_FALTA_JURISPRUDENCIA = (
+    "ATENCIÓN: falta jurisprudencia verificada. Ninguna de las citas de jurisprudencia quedó en estado OK "
+    "contra el texto de la relatoría; revise a mano cada sentencia citada antes de firmar."
+)
+
+
+class _Revisar(str):
+    pass
+
+
+def _margen_celdas(tabla, pt: float) -> None:
+    margenes = OxmlElement("w:tblCellMar")
+    for lado in ("left", "right"):
+        m = OxmlElement(f"w:{lado}")
+        m.set(qn("w:w"), str(round(pt * 20)))
+        m.set(qn("w:type"), "dxa")
+        margenes.append(m)
+    formato_b._tbl_pr_insertar(tabla, margenes)
+
+
 _ALINEACION = {
     "j": WD_ALIGN_PARAGRAPH.JUSTIFY,
     "c": WD_ALIGN_PARAGRAPH.CENTER,
@@ -160,6 +185,22 @@ def _referencia(cv: CitaVerificada) -> str:
     except ImportError:
         return _referencia_local(cv)
     return formatear_referencia(cv)
+
+
+def _compactar(texto: str, maximo: int = _MAX_PALABRAS_CITA_CASO, minimo: int = 0) -> str:
+    plano = " ".join(texto.split())
+    if len(plano.split()) <= maximo:
+        return plano
+    elegidas: list[str] = []
+    palabras = 0
+    for frase in _FIN_FRASE.split(plano):
+        n = len(frase.split())
+        if palabras + n > maximo:
+            break
+        elegidas.append(frase)
+        palabras += n
+    corto = " ".join(elegidas) if palabras >= max(minimo, 1) else " ".join(plano.split()[:maximo])
+    return f"{corto} […]"
 
 
 
@@ -226,6 +267,7 @@ class _Docx:
         self.cfg = cfg
         self.citas = citas or {}
         self.citadas: set[str] = set()
+        self.en_caso = False
         self.seccion = 0
         self.b = fallo and cfg.plantilla_gen == "B"
         self.zona_actual = ZONAS["I"]
@@ -275,7 +317,16 @@ class _Docx:
         primero.alignment = WD_ALIGN_PARAGRAPH.CENTER
         self.escribir(primero, self.cfg.despacho.pie, tam=9)
 
-    def escribir(self, par, texto: str, *, negrita: bool = False, cursiva: bool = False, tam: float | None = None) -> None:
+    def escribir(
+        self,
+        par,
+        texto: str,
+        *,
+        negrita: bool = False,
+        cursiva: bool = False,
+        tam: float | None = None,
+        resaltar: bool = False,
+    ) -> None:
         for trozo in _MARCA.split(texto):
             if not trozo:
                 continue
@@ -285,7 +336,7 @@ class _Docx:
             run.italic = cursiva or None
             if tam:
                 run.font.size = Pt(tam)
-            if trozo.startswith("⟦"):
+            if resaltar or trozo.startswith("⟦"):
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
     def parrafo(
@@ -454,10 +505,9 @@ class _Docx:
 
     def _referencia(self, id_: str) -> str:
         cv = self.citas.get(id_)
-        if cv is None:
-            return f"⟦CITA NO VERIFICADA: {id_}⟧"
-        if cv.estado == "rechazada":
-            return f"⟦CITA NO VERIFICADA: {cv.sentencia_original}⟧"
+        if cv is None or cv.estado == "rechazada":
+            nombre = id_ if cv is None else cv.sentencia_original
+            return _falta(f"cita verificada {nombre}") if self.en_caso else f"⟦CITA NO VERIFICADA: {nombre}⟧"
         return _referencia(cv)
 
     def _bloques_citados(self, texto: str) -> None:
@@ -468,7 +518,9 @@ class _Docx:
             cv = self.citas.get(id_)
             if cv is not None and cv.estado != "rechazada":
                 with self.reg.como(cita=id_):
-                    self.cita_bloque(cv.texto_citado)
+                    self.cita_bloque(
+                        _compactar(cv.texto_citado, minimo=self.cfg.min_palabras_cita) if self.en_caso else cv.texto_citado
+                    )
 
     def _citas_en(self, texto: str) -> tuple[str, list[tuple[int, int, str]]]:
         partes: list[str] = []
@@ -518,11 +570,14 @@ class _Docx:
         bordes: bool = True,
         tam: float = 10,
         etiquetas: bool = False,
+        margen_pt: float | None = None,
     ) -> None:
         todas = ([cabecera] if cabecera else []) + filas
         tabla = self.doc.add_table(rows=len(todas), cols=len(anchos))
         if bordes:
             tabla.style = "Table Grid"
+        if margen_pt is not None:
+            _margen_celdas(tabla, margen_pt)
         tabla.autofit = False
         for columna, ancho in zip(tabla.columns, anchos):
             columna.width = Cm(ancho)
@@ -533,7 +588,13 @@ class _Docx:
                 par = celda.paragraphs[0]
                 par.paragraph_format.space_after = Pt(2)
                 par.paragraph_format.line_spacing = 1.0
-                self.escribir(par, str(valor), negrita=(bool(cabecera) and i == 0) or (etiquetas and j == 0), tam=tam)
+                self.escribir(
+                    par,
+                    str(valor),
+                    negrita=(bool(cabecera) and i == 0) or (etiquetas and j == 0),
+                    tam=tam,
+                    resaltar=isinstance(valor, _Revisar),
+                )
         self.parrafo("", tam=4)
 
     @_bloque("tabla")
@@ -680,7 +741,6 @@ def _consideraciones(d: _Docx, c: _Caso) -> None:
         d.zona("V_plantilla")
         d.subtitulo(formulas.SUBTITULO_COMPETENCIA)
         d.plantilla(formulas.COMPETENCIA_1)
-        d.plantilla(formulas.competencia_2(c.md))
         d.subtitulo(formulas.SUBTITULO_PROCEDIBILIDAD)
         d.plantilla(formulas.PROCEDIBILIDAD_P1)
         d.plantilla(formulas.PROCEDIBILIDAD_P2)
@@ -726,11 +786,15 @@ def _caso_concreto(d: _Docx, c: _Caso) -> None:
     if c.caso is None:
         d.prosa(_falta("caso concreto"))
         return
-    with d.reg.como(origen="modelo"):
-        d.prosa(c.caso.problema_juridico)
-        for parrafo in c.caso.parrafos:
-            d.prosa(parrafo.texto)
-        d.prosa(c.caso.conclusion)
+    previas, d.citadas, d.en_caso = d.citadas, set(), True
+    try:
+        with d.reg.como(origen="modelo"):
+            d.prosa(c.caso.problema_juridico, citar=True)
+            for parrafo in c.caso.parrafos:
+                d.prosa(parrafo.texto, citar=True)
+            d.prosa(c.caso.conclusion, citar=True)
+    finally:
+        d.citadas, d.en_caso = previas, False
 
 
 def _otras_determinaciones(d: _Docx, decision: Decision) -> None:
@@ -795,33 +859,80 @@ def _resolutiva(d: _Docx, c: _Caso) -> None:
     _centrado_b(d, d.cfg.despacho.cargo_juez)
 
 
+def _acotar(texto: str, limite: int = _MAX_TEXTO_CITA) -> str:
+    plano = " ".join(texto.split())
+    if not plano:
+        return "—"
+    if len(plano) <= limite:
+        return f"“{plano}”"
+    return f"“{plano[:limite].rsplit(' ', 1)[0]}” […]"
+
+
+def _corta(cv: CitaVerificada, minimo: int) -> bool:
+    return cv.estado != "rechazada" and 0 < cv.n_palabras < minimo
+
+
+def _en_salvamento(cv: CitaVerificada) -> bool:
+    return cv.estado != "rechazada" and cv.seccion == "salvamento"
+
+
+def _a_revisar(cv: CitaVerificada, minimo: int) -> list[str]:
+    avisos = []
+    if _corta(cv, minimo):
+        avisos.append(f"{cv.n_palabras} palabra{'' if cv.n_palabras == 1 else 's'} (mínimo {minimo})")
+    if _en_salvamento(cv):
+        avisos.append(_AVISO_SALVAMENTO)
+    return avisos
+
+
+def _fila_cita(cv: CitaVerificada, minimo: int) -> list[str]:
+    palabras = _Revisar(f"{cv.n_palabras} (mín. {minimo})") if _corta(cv, minimo) else str(cv.n_palabras or "—")
+    seccion = _SECCION_ES.get(cv.seccion, "—")
+    return [
+        cv.sentencia_norm or cv.sentencia_original,
+        cv.estado.upper(),
+        f"{cv.cobertura * 100:.0f} %" if cv.cobertura is not None else "—",
+        palabras,
+        _Revisar(seccion) if _en_salvamento(cv) else seccion,
+        cv.mp_dataset or "—",
+        cv.url or "—",
+        _acotar(cv.texto_citado),
+        "; ".join(cv.motivos) or "—",
+    ]
+
+
+def _falta_jurisprudencia(citas: list[CitaVerificada], cfg: Config) -> bool:
+    return cfg.verificar_relatoria and not any(c.estado == "ok" for c in citas)
+
+
 def _tabla_citas(d: _Docx, citas: list[CitaVerificada]) -> None:
     if not citas:
         d.parrafo("No hay citas de jurisprudencia.", alinear="i")
+    else:
+        conteo = {e: sum(1 for x in citas if x.estado == e) for e in ("ok", "alerta", "rechazada")}
+        d.parrafo(
+            f"{len(citas)} citas: {conteo['ok']} ok, {conteo['alerta']} con alerta, "
+            f"{conteo['rechazada']} {'rechazada' if conteo['rechazada'] == 1 else 'rechazadas'}.",
+            alinear="i",
+        )
+    if _falta_jurisprudencia(citas, d.cfg):
+        d.parrafo(_FALTA_JURISPRUDENCIA, alinear="i", negrita=True)
+    if not citas:
         return
-    conteo = {e: sum(1 for x in citas if x.estado == e) for e in ("ok", "alerta", "rechazada")}
-    d.parrafo(
-        f"{len(citas)} citas: {conteo['ok']} ok, {conteo['alerta']} con alerta, "
-        f"{conteo['rechazada']} {'rechazada' if conteo['rechazada'] == 1 else 'rechazadas'}.",
-        alinear="i",
-    )
-    filas = [
-        [
-            cv.sentencia_norm or cv.sentencia_original,
-            cv.estado.upper(),
-            f"{cv.cobertura * 100:.0f} %" if cv.cobertura is not None else "—",
-            cv.mp_dataset or "—",
-            cv.url or "—",
-            "; ".join(cv.motivos) or "—",
-        ]
-        for cv in citas
-    ]
+    minimo = d.cfg.min_palabras_cita
     d.tabla(
-        filas,
-        [2.8, 1.9, 1.8, 3.0, 3.6, 3.0],
-        cabecera=["Sentencia", "Estado", "Cobertura", "M.P. (dataset)", "URL", "Motivos"],
-        tam=8,
+        [_fila_cita(cv, minimo) for cv in citas],
+        [1.5, 1.9, 1.6, 1.25, 1.55, 1.5, 1.7, 2.8, 2.3],
+        cabecera=["Sentencia", "Estado", "Cobertura", "Palabras", "Sección", "M.P. (dataset)", "URL", "Texto citado", "Motivos"],
+        tam=7,
+        margen_pt=2.5,
     )
+    revisar = [(cv.sentencia_norm or cv.sentencia_original, _a_revisar(cv, minimo)) for cv in citas]
+    revisar = [(nombre, avisos) for nombre, avisos in revisar if avisos]
+    if revisar:
+        d.parrafo("A revisar a mano (resaltadas en la tabla):", alinear="i", negrita=True, mantener=True)
+        for nombre, avisos in revisar:
+            d.item(f"{nombre}: {'; '.join(avisos)}.")
 
 
 def _alertas(d: _Docx, alertas: dict[str, list[str]]) -> None:
@@ -865,7 +976,20 @@ def render_fallo(estado: dict, cfg: Config | dict, ruta: Path, hoy: date | None 
     return d.guardar_con_vista(ruta, "fallo")
 
 
-def render_informe(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
+def _bloqueantes(c: _Caso) -> list[str]:
+    de_alertas = (m for mensajes in c.alertas.values() for m in mensajes if m.startswith("BLOQUEA:"))
+    return list(dict.fromkeys([*c.errores, *de_alertas]))
+
+
+def _pendientes(d: _Docx, pendientes: list[str] | None) -> None:
+    lineas = list(dict.fromkeys(p.strip() for p in pendientes or [] if p and p.strip()))
+    if not lineas:
+        d.parrafo("Sin pendientes registrados.", alinear="i")
+    for linea in lineas:
+        d.item(linea)
+
+
+def render_informe(estado: dict, cfg: Config | dict, ruta: Path, pendientes: list[str] | None = None) -> Path:
     cfg = _como(Config, cfg)
     c = _leer(estado)
     d = _Docx(cfg, c.citas_por_id, "Informe de verificación")
@@ -879,11 +1003,20 @@ def render_informe(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
     d.titulo("ALERTAS POR NODO")
     _alertas(d, c.alertas)
     d.titulo("ERRORES BLOQUEANTES VIGENTES")
-    if c.errores:
-        for error in c.errores:
+    bloqueantes = _bloqueantes(c)
+    if bloqueantes:
+        for error in bloqueantes:
             d.item(error)
+    elif _falta_jurisprudencia(c.citas, cfg):
+        d.parrafo(
+            "No hay errores bloqueantes registrados, pero falta jurisprudencia verificada "
+            "(véase CITAS DE JURISPRUDENCIA).",
+            alinear="i",
+        )
     else:
         d.parrafo("No hay errores bloqueantes vigentes.", alinear="i")
+    d.titulo("PENDIENTES Y VALORES POR DEFECTO")
+    _pendientes(d, pendientes)
     d.titulo("BITÁCORA DE LLAMADAS A LA IA")
     if not c.bitacora:
         d.parrafo("No se registraron llamadas a la IA.", alinear="i")
@@ -911,12 +1044,17 @@ def render_informe(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
 
 
 def _modelos_usados(c: Any, cfg: Config, proveedor: str | None = None) -> list[str]:
+    llamadas = [b for b in c.bitacora if proveedor in (None, b.proveedor)]
+    resueltos = {
+        b.modelo_pedido
+        for b in llamadas
+        if b.modelo_efectivo and b.modelo_efectivo != b.modelo_pedido and b.modelo_pedido.endswith(_SUFIJO_ALIAS)
+    }
     usados = list(
         dict.fromkeys(
             m
-            for b in c.bitacora
-            if proveedor in (None, b.proveedor)
-            for m in (b.modelo_pedido, b.modelo_efectivo)
+            for b in llamadas
+            for m in (None if b.modelo_pedido in resueltos else b.modelo_pedido, b.modelo_efectivo)
             if m
         )
     )
@@ -983,6 +1121,8 @@ def _version() -> str:
 
 
 PROVEEDORES = {"anthropic": "Anthropic PBC", "jev": "TypeSafe AI"}
+HERRAMIENTA = "Judicabot"
+_SUFIJO_ALIAS = "-latest"
 USO_IA = (
     "Redacción de antecedentes, síntesis de la sentencia impugnada y de la impugnación, "
     "marco doctrinal de las consideraciones y desarrollo del caso concreto"
@@ -1008,6 +1148,34 @@ def _uso_ia(c: Any) -> str:
     )
 
 
+def _agrupar(bitacora: list[LlamadaIA], clave) -> list[list[LlamadaIA]]:
+    grupos: dict[tuple, list[LlamadaIA]] = {}
+    for b in bitacora:
+        grupos.setdefault(clave(b), []).append(b)
+    return list(grupos.values())
+
+
+def _fila_llamadas(lote: list[LlamadaIA]) -> list[str]:
+    b = lote[0]
+    fechas = sorted(x.fecha for x in lote)
+    return [
+        b.nodo,
+        f"{b.proveedor} / {b.modelo_efectivo or b.modelo_pedido}" + (f"\nFalló: {b.error}" if b.error else ""),
+        str(len(lote)),
+        fechas[0] if fechas[0] == fechas[-1] else f"{fechas[0]}\na {fechas[-1]}",
+        b.prompt_id,
+        "\n".join(dict.fromkeys(x.sha256_instrucciones for x in lote)),
+    ]
+
+
+def _titulo_llamadas(lote: list[LlamadaIA]) -> str:
+    b = lote[0]
+    intentos = sorted({x.intento for x in lote})
+    rotulo = f"intento{'s' if len(intentos) > 1 else ''} {', '.join(map(str, intentos))}"
+    detalle = rotulo if len(lote) == 1 else f"{len(lote)} llamadas, {rotulo}"
+    return f"{b.nodo} ({detalle}), prompt {b.prompt_id}"
+
+
 def _anexo_prompts(d: "_Docx", c: Any, cfg: Config) -> None:
     d.titulo("ANEXO: PROMPTS E INSTRUCCIONES UTILIZADAS")
     d.parrafo(
@@ -1017,14 +1185,21 @@ def _anexo_prompts(d: "_Docx", c: Any, cfg: Config) -> None:
         alinear="i",
     )
     vistos: set[str] = set()
-    for b in c.bitacora:
-        d.parrafo(f"{b.nodo} (intento {b.intento}), prompt {b.prompt_id}", alinear="i", negrita=True, mantener=True, antes=8)
+    lotes = _agrupar(c.bitacora, lambda b: (b.nodo, b.proveedor, b.prompt_id, b.sha256_instrucciones, b.instrucciones))
+    for lote in lotes:
+        b = lote[0]
+        d.parrafo(_titulo_llamadas(lote), alinear="i", negrita=True, mantener=True, antes=8)
         if b.proveedor == "jev":
             d.parrafo(
-                "Modelo de decisión que no genera texto: las preguntas cerradas enviadas constan por su huella sha256 en la bitácora.",
+                "Modelo de decisión que no genera texto: las preguntas cerradas enviadas constan por su huella sha256 en la bitácora."
+                if b.instrucciones is None
+                else "Modelo de decisión que no genera texto. Preguntas cerradas enviadas (sin el texto de los documentos):",
                 alinear="i",
                 tam=9,
+                mantener=b.instrucciones is not None,
             )
+            for linea in filter(str.strip, (b.instrucciones or "").splitlines()):
+                d.parrafo(linea, alinear="i", tam=8)
             continue
         if b.prompt_id in vistos:
             d.parrafo("Instrucciones del sistema: las mismas ya transcritas para este prompt.", alinear="i", tam=9)
@@ -1066,7 +1241,12 @@ def _mapa_secciones(gen: str, hay_compulsa: bool) -> list[list[str]]:
         [t["IV"], "IA", "Redactado a partir del escrito de impugnación"],
         [f"{t['V']}: competencia y transición", "plantilla", "Bloques fijos"],
         [f"{t['V']}: procedibilidad y bloques temáticos", "IA", "Marco doctrinal sin aplicación al caso"],
-        [f"{t['V']}: referencias de jurisprudencia", "plantilla", "Magistrado ponente y fecha tomados del dataset oficial por código"],
+        [
+            f"{t['V']} y CASO CONCRETO: referencias y fragmentos de jurisprudencia",
+            "plantilla",
+            "Magistrado ponente y fecha tomados del dataset oficial por código; el fragmento transcrito lo propone la IA "
+            "y el código lo verifica contra el texto de la relatoría",
+        ],
         ["CASO CONCRETO", "IA", "Desarrolla la decisión y el eje fijados por el humano"],
     ]
     if hay_compulsa:
@@ -1110,7 +1290,7 @@ def render_declaracion_ia(estado: dict, cfg: Config | dict, ruta: Path, hoy: dat
     )
     d.tabla(
         [
-            ["Herramienta", f"tutela2, versión {_version()}"],
+            ["Herramienta", f"{HERRAMIENTA}, versión {_version()}"],
             ["Uso", _uso_ia(c)],
             ["Empresa proveedora", "; ".join(nombres)],
             ["Modelos usados", modelos],
@@ -1121,20 +1301,20 @@ def render_declaracion_ia(estado: dict, cfg: Config | dict, ruta: Path, hoy: dat
     )
     if c.bitacora:
         d.parrafo("Llamadas realizadas:", alinear="i", negrita=True, mantener=True)
+        lotes = _agrupar(
+            c.bitacora, lambda b: (b.nodo, b.proveedor, b.modelo_efectivo or b.modelo_pedido, b.prompt_id, b.error or "")
+        )
         d.tabla(
-            [
-                [
-                    f"{b.nodo} (intento {b.intento})",
-                    f"{b.proveedor} / {b.modelo_efectivo or b.modelo_pedido}" + (f"\nFalló: {b.error}" if b.error else ""),
-                    b.fecha,
-                    b.prompt_id,
-                    b.sha256_instrucciones,
-                ]
-                for b in c.bitacora
-            ],
-            [2.4, 3.6, 2.8, 3.0, 4.3],
-            cabecera=["Nodo", "Proveedor / modelo", "Fecha", "Prompt", "sha256 de las instrucciones"],
+            [_fila_llamadas(lote) for lote in lotes],
+            [2.2, 3.4, 1.5, 2.6, 2.8, 3.6],
+            cabecera=["Nodo", "Proveedor / modelo", "Llamadas", "Fecha", "Prompt", "sha256 de las instrucciones"],
             tam=7,
+        )
+        d.parrafo(
+            "Las llamadas con el mismo nodo, proveedor, modelo y prompt se agrupan con su conteo. El detalle por "
+            "llamada (intento, tokens y huellas de entrada y salida) consta en el informe de verificación.",
+            alinear="i",
+            tam=9,
         )
     else:
         d.parrafo("No se registraron llamadas a la IA.", alinear="i")

@@ -88,17 +88,29 @@ export function FilaDoc({ doc, rol, tocado, editable, abierto, onRol, onConserva
               </>
             )}
           </small>
-          {(doc.ajeno || doc.ruido) && (
+          {(doc.ajeno || doc.ruido || doc.revisar) && (
             <span class="docs-etiquetas">
               {doc.ajeno && (
                 <Chip tono="mal" title="Sus CUIs no corresponden a este caso; no se usa.">
                   Ajeno
                 </Chip>
               )}
+              {doc.revisar && (
+                <Chip tono="alerta" title="Su encabezado es de otro radicado, pero el texto nombra a las partes de este caso. Se usa, con una marca para el modelo.">
+                  Para revisar
+                </Chip>
+              )}
               {doc.ruido && (
                 <Chip title="Certificado de existencia o duplicado exacto; no se usa.">Ruido</Chip>
               )}
             </span>
+          )}
+          {doc.revisar && (
+            <small class="docs-motivo">
+              {tocado
+                ? "Confirmado al guardar: se entrega al modelo sin marca."
+                : "Su encabezado es de otro radicado, pero el texto nombra a las partes de este caso: se entrega al modelo con una marca."}
+            </small>
           )}
         </div>
         <div class="docs-rol-col">
@@ -115,9 +127,10 @@ export function FilaDoc({ doc, rol, tocado, editable, abierto, onRol, onConserva
               </option>
             ))}
           </select>
-          {doc.ajeno && editable && (
+          {(doc.ajeno || doc.revisar) && editable && (
             <label class="docs-conservar">
-              <input type="checkbox" checked={tocado} onChange={(e) => onConservar(doc, e.currentTarget.checked)} /> No es ajeno: conservar
+              <input type="checkbox" checked={tocado} onChange={(e) => onConservar(doc, e.currentTarget.checked)} />{" "}
+              {doc.revisar ? "Es de este caso: confirmar" : "No es ajeno: conservar"}
             </label>
           )}
         </div>

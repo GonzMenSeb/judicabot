@@ -27,10 +27,26 @@ export interface MetadatosCaso {
 
 export type AlertasApi = Record<string, string[]> | string[];
 
+export interface LlamadaBitacora {
+  nodo: string;
+  intento?: number;
+  proveedor?: string;
+  modelo_pedido?: string;
+  modelo_efectivo?: string | null;
+}
+
+export interface Redaccion {
+  nodo: string;
+  secciones: string;
+  modelo: string;
+  pedido: string | null;
+}
+
 export interface ResumenEstado {
   metadatos?: MetadatosCaso | null;
   jev_metadatos?: JevMetadatos | null;
   alertas?: AlertasApi | null;
+  bitacora?: LlamadaBitacora[] | null;
 }
 
 export interface EstadoCaso {

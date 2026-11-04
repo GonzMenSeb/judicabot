@@ -5,6 +5,7 @@
 .ia-sec h2 { font-size: 1.15rem; font-weight: 600; }
 .ia-sec > .sub { font-size: 0.92rem; margin: 0.15rem 0 1rem; }
 
+.ia-aviso-modelo { margin-bottom: 1rem; }
 .ia-tarjetas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; min-width: 0; margin: 0; padding: 0; border: 0; }
 .ia-op { position: relative; display: grid; gap: 0.25rem; align-content: start; padding: 0.9rem 1rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; cursor: pointer; }
 .ia-op:hover { border-color: var(--acento); }

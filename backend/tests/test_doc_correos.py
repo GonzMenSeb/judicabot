@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from docx import Document
 
 from tutela2.config import Config
@@ -224,3 +225,78 @@ def test_destinatario_truncado_ignora_documento_con_ruido():
     c.ruido = True
     ing = Ingesta(documentos=[doc("n.pdf", "notificacion", NOTIF_CORTADA), c])
     assert "persona.apellido@ejemplo.gov.co" not in correos.destinatarios_propuestos(ing)
+
+
+def _con_posterior(variante: str) -> Ingesta:
+    valida = doc("a/001.pdf", "notificacion", "De: Juzgado Uno <juz01@ejemplo.gov.co>\nPara: valido@ejemplo.com\n")
+    posterior = doc("a/009.pdf", "notificacion", "De: Otro Juzgado <otro@ejemplo.gov.co>\nPara: ajeno@ejemplo.com\n")
+    kw = {}
+    if variante == "ajeno":
+        kw["docs_ajenos"] = [posterior.doc_id]
+    elif variante == "revisar":
+        kw["docs_revisar"] = [posterior.doc_id]
+    else:
+        posterior.ruido = True
+    return Ingesta(documentos=[valida, posterior], **kw)
+
+
+@pytest.mark.parametrize("variante", ["ajeno", "revisar", "ruido"])
+def test_notificacion_posterior_no_confiable_no_gana(variante):
+    assert correos.destinatarios_propuestos(_con_posterior(variante)) == ["juz01@ejemplo.gov.co", "valido@ejemplo.com"]
+
+
+@pytest.mark.parametrize("variante", ["ajeno", "revisar", "ruido"])
+def test_unica_notificacion_no_confiable_deja_destinatarios_en_falta(variante, tmp_path):
+    ing = _con_posterior(variante)
+    ing.documentos = ing.documentos[1:]
+    assert correos.destinatarios_propuestos(ing) == []
+    ruta = correos.render_notificacion(md(), ing, Config(), "f.pdf", tmp_path / "n.docx")
+    assert "⟦FALTA: destinatarios⟧" in textos(Document(ruta))[1]
+
+
+def test_notificacion_confiable_filtra_por_doc_id():
+    d = doc("a/001.pdf", "notificacion", "Para: x@ejemplo.com")
+    assert correos.es_confiable(Ingesta(documentos=[d]), d)
+    assert not correos.es_confiable(Ingesta(documentos=[d], docs_revisar=[d.doc_id]), d)
+
+
+@pytest.mark.parametrize(
+    "dado,esperado",
+    [
+        ("003FalloSegunda202600001.docx", "003FalloSegunda202600001.pdf"),
+        ("003FalloSegunda202600001.DOCX", "003FalloSegunda202600001.pdf"),
+        ("003Fallo.pdf", "003Fallo.pdf"),
+        ("a.docx.txt", "a.docx.txt"),
+    ],
+)
+def test_adjuntos_se_nombran_con_pdf(dado, esperado, tmp_path):
+    ing = Ingesta(documentos=[doc("a/002.pdf", "notificacion", NOTIF)])
+    for i, render in enumerate((
+        lambda r: correos.render_notificacion(md(), ing, Config(), dado, r),
+        lambda r: correos.render_envio_formato(md(), Config(), dado, r, para="a@b.co"),
+        lambda r: correos.render_compulsa(
+            md(), Decision(accion="decidir", compulsa=Compulsa(respecto_de="x", organo="y")), Config(), dado, r
+        ),
+    )):
+        assert textos(Document(render(tmp_path / f"{i}.docx")))[3] == f"Adjunto: {esperado}"
+
+
+def test_adjunto_sin_numero_firme_queda_en_falta(tmp_path):
+    ing = Ingesta(documentos=[doc("a/002.pdf", "notificacion", NOTIF)])
+    dec = Decision(accion="decidir", compulsa=Compulsa(respecto_de="x", organo="y"))
+    rutas = (
+        (correos.render_notificacion(md(), ing, Config(), None, tmp_path / "n.docx"), "fallo"),
+        (correos.render_compulsa(md(), dec, Config(), None, tmp_path / "c.docx"), "fallo"),
+        (correos.render_envio_formato(md(), Config(), None, tmp_path / "e.docx", para="a@b.co"), "formato"),
+    )
+    for ruta, que in rutas:
+        d = Document(ruta)
+        assert textos(d)[3] == f"Adjunto: ⟦FALTA: número definitivo del {que}⟧"
+        assert f"⟦FALTA: número definitivo del {que}⟧" in [r.text for p in d.paragraphs for r in p.runs if r.font.highlight_color]
+
+
+def test_destinatario_truncado_ignora_documentos_para_revisar():
+    c = doc("c.pdf", "contestacion", "persona.apellido@ejemplo.gov.co")
+    ing = Ingesta(documentos=[doc("n.pdf", "notificacion", NOTIF_CORTADA), c], docs_revisar=["c.pdf"])
+    assert "persona.apellido@ejemplo.gov.co" not in correos.destinatarios_propuestos(ing)
+

@@ -85,4 +85,4 @@ def vista_decision(
         return decision_vista.decision_vista(cuerpo, md)
     except Exception:
         log.exception("Falló la vista del RESUELVE de %s", caso_id)
-        return {"numerales": [], "faltantes": [], "errores": [decision_vista.ERROR_INTERNO]}
+        return decision_vista.vista_error(decision_vista.ERROR_INTERNO)

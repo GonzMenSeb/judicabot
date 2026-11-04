@@ -37,6 +37,9 @@
 .bor-hoja .bor-tabla td { padding: 0.3rem 0.5rem; border: 1px solid var(--linea-papel); vertical-align: top; overflow-wrap: anywhere; }
 .bor-hoja .bor-tabla td:first-child { font-weight: 600; }
 .bor-hoja .bor-tabla-2 td:first-child { width: 8.5rem; }
+.bor-hoja .bor-tabla-ancha { min-width: calc(var(--columnas, 4) * 7rem); hyphens: none; }
+.bor-hoja .bor-tabla-ancha td { min-width: 6.25rem; }
+.bor-tabla-caja[tabindex="0"]:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
 .bor-pie { margin-top: 1.6rem; padding-top: 0.8rem; border-top: 1px solid var(--linea-papel); color: var(--suave); font-size: 0.8rem; line-height: 1.5; text-align: center; }
 .bor-pie p { margin: 0; text-align: center; }
 .bor-origen .bor-tpl { background: rgba(30, 90, 110, 0.09); box-shadow: -0.5rem 0 0 rgba(30, 90, 110, 0.09), 0.5rem 0 0 rgba(30, 90, 110, 0.09); border-radius: 2px; }
@@ -62,6 +65,10 @@
 .bor-origen-opcion input { flex: none; width: 1.15rem; height: 1.15rem; margin-top: 0.15rem; accent-color: var(--acento); }
 .bor-origen-nota { margin-top: 0.4rem; color: var(--suave); font-size: 0.84rem; }
 .bor-leyenda { display: inline-block; width: 0.8rem; height: 0.8rem; margin-right: 0.4rem; border-radius: 2px; background: rgba(30, 90, 110, 0.18); vertical-align: -0.1rem; }
+.bor-redaccion { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; font-size: 0.92rem; }
+.bor-redaccion li { display: grid; gap: 0.1rem; }
+.bor-redaccion b { font-weight: 600; }
+.bor-redaccion small { color: var(--suave); font-size: 0.84rem; }
 .bor-conteo { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.7rem; }
 .bor-lista-rev { display: grid; gap: 0.7rem; margin: 0 0 0.5rem; padding: 0; list-style: none; }
 .bor-lista-rev li { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; font-size: 0.92rem; }

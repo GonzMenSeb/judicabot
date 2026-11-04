@@ -320,7 +320,7 @@ def test_guardia_p3_nombres_de_una_palabra_o_parciales_no_cuentan():
 def _cv(id_: str, sentencia: str, estado: str = "ok", tipo="T", numero=200, anio=2022) -> CitaVerificada:
     return CitaVerificada(
         id=id_, sentencia_original=sentencia, sentencia_norm=f"{tipo}-{numero:03d}/{anio % 100:02d}", tipo=tipo,
-        numero=numero, anio=anio, texto_citado="x", estado=estado,
+        numero=numero, anio=anio, texto_citado=f"fragmento literal propio de la cita {id_}", estado=estado,
     )
 
 
@@ -359,6 +359,32 @@ def test_subconjunto_citas_marcador_mal_formado(marcador):
     assert len(_bloquea(msgs)) == 1 and "mal formado" in msgs[0]
 
 
+MARCADORES_SIN_CERRAR = ["[[CITA:c1]", "[CITA:c1]", "[[CITA:c1", "[CITA:c1", "[CITA:c1]]", "[[CITA", "[ cita : c1 ]"]
+
+
+@pytest.mark.parametrize("marcador", MARCADORES_SIN_CERRAR)
+def test_subconjunto_citas_marcador_sin_cerrar_bloquea(marcador):
+    msgs = lint.subconjunto_citas(_caso(f"Texto {marcador} más texto."), CITAS)
+    assert len(_bloquea(msgs)) == len(msgs) == 1
+    assert "mal formado" in msgs[0] and marcador in msgs[0] and "use exactamente [[CITA:id]]" in msgs[0]
+
+
+@pytest.mark.parametrize("campo", ["problema", "conclusion"])
+def test_subconjunto_citas_marcador_sin_cerrar_en_problema_y_conclusion_bloquea(campo):
+    caso = _caso("Párrafo [[CITA:c1]].", **{("problema" if campo == "problema" else "conclusion"): "Texto [CITA:c1 roto."})
+    msgs = lint.subconjunto_citas(caso, CITAS)
+    assert len(_bloquea(msgs)) == 1 and "mal formado" in msgs[0]
+
+
+def test_subconjunto_citas_marcador_sin_cerrar_seguido_de_uno_valido_se_informa_una_vez():
+    msgs = lint.subconjunto_citas(_caso("Uno [[CITA:c1 y dos [[CITA:c2]]."), CITAS)
+    assert len(_bloquea(msgs)) == len(msgs) == 1 and "mal formado" in msgs[0]
+
+
+def test_subconjunto_citas_corchetes_de_prosa_con_la_palabra_cita_no_son_marcadores():
+    assert lint.subconjunto_citas(_caso("La [cita] y el [Cita omitida] son texto; véase [[CITA:c1]]."), CITAS) == []
+
+
 def test_subconjunto_citas_menciones_sueltas():
     caso = _caso(
         "Según la Sentencia T-892 de 2011 el asunto es claro.",
@@ -388,6 +414,20 @@ def test_marcadores_consideraciones_correctas():
     assert lint.marcadores_consideraciones(cons) == []
 
 
+@pytest.mark.parametrize("marcador", MARCADORES_SIN_CERRAR)
+@pytest.mark.parametrize("donde", ["procedibilidad", "bloque"])
+def test_marcadores_consideraciones_sin_cerrar_bloquean(marcador, donde):
+    roto = f"Marco {marcador} y [[CITA:c1]]."
+    cons = (
+        _cons_con_citas(roto, ("Bloque [[CITA:c2]].",), ("c1", "c2"))
+        if donde == "procedibilidad"
+        else _cons_con_citas("Marco [[CITA:c1]].", (f"Bloque {marcador} y [[CITA:c2]].",), ("c1", "c2"))
+    )
+    msgs = lint.marcadores_consideraciones(cons)
+    assert len(_bloquea(msgs)) == len(msgs) == 1
+    assert "mal formado" in msgs[0] and "use exactamente [[CITA:id]]" in msgs[0]
+
+
 def test_marcadores_consideraciones_defectos():
     cons = _cons_con_citas(
         "Marco [[CITA:c1]] y [[CITA:c7]].",
@@ -402,6 +442,205 @@ def test_marcadores_consideraciones_defectos():
     assert "[[CITA:c7]] no corresponde" in texto
     assert "La cita c2" in texto and "no se usa" in texto
     assert "T-200/22" in texto and "T-300" in texto
+
+
+def _cvs(*estados: str) -> list[CitaVerificada]:
+    return [_cv(f"c{i}", "T-200 de 2022", e) for i, e in enumerate(estados, 1)]
+
+
+def test_minimo_citas_ok_suficientes_no_dice_nada():
+    assert lint.minimo_citas_ok(_cvs("ok", "ok", "alerta", "rechazada"), 2, 25) == []
+
+
+@pytest.mark.parametrize("estados", [(), ("rechazada", "rechazada"), ("ok", "alerta", "rechazada")])
+def test_minimo_citas_ok_insuficientes_bloquea_con_la_regla(estados):
+    msgs = lint.minimo_citas_ok(_cvs(*estados), 2, 25)
+    assert len(msgs) == 1 and msgs[0].startswith("BLOQUEA: ")
+    texto = msgs[0]
+    assert "al menos 2" in texto and "25 palabras" in texto
+    assert "ratio decidendi" in texto and "salvamento" in texto
+    assert "Constitución" in texto and "no acorte" in texto
+    assert f"propuestas: {len(estados)}" in texto
+
+
+def test_minimo_citas_ok_cuenta_solo_las_ok():
+    msgs = lint.minimo_citas_ok(_cvs("ok", "alerta", "alerta", "rechazada"), 2, 14)
+    assert "tienen 1 cita verificada;" in msgs[0]
+    assert "rechazadas: 1" in msgs[0] and "para revisar: 2" in msgs[0]
+    assert "14 palabras" in msgs[0]
+
+
+def _cv_con_texto(id_: str, texto: str, estado: str = "ok") -> CitaVerificada:
+    return _cv(id_, "T-200 de 2022", estado).model_copy(update={"texto_citado": texto})
+
+
+REGLA_A = "La subsidiariedad exige agotar los mecanismos ordinarios de defensa antes de acudir al juez constitucional."
+REGLA_B = "El perjuicio irremediable debe ser grave e inminente y requiere medidas urgentes e impostergables."
+
+
+def test_minimo_citas_ok_no_cuenta_la_misma_cita_repetida():
+    repetidas = [_cv_con_texto("c1", REGLA_A), _cv_con_texto("c2", REGLA_A.upper().replace(".", ","))]
+    (texto,) = lint.minimo_citas_ok(repetidas, 2, 25)
+    assert texto.startswith("BLOQUEA: ") and "tienen 1 cita verificada distinta; se exigen al menos 2" in texto
+    assert "repetidas o contenidas en otra cita verificada: c2," in texto
+    assert lint.minimo_citas_ok(repetidas, 1, 25) == []
+
+
+@pytest.mark.parametrize("orden", [(0, 1), (1, 0)])
+def test_minimo_citas_ok_no_cuenta_la_cita_contenida_en_otra(orden):
+    larga = f"{REGLA_A} {REGLA_B}"
+    citas = [_cv_con_texto("c1", larga), _cv_con_texto("c2", REGLA_B.lower().rstrip("."))]
+    (texto,) = lint.minimo_citas_ok([citas[i] for i in orden], 2, 25)
+    assert "tienen 1 cita verificada distinta; se exigen al menos 2" in texto
+    assert "repetidas o contenidas en otra cita verificada: c2," in texto
+
+
+def test_minimo_citas_ok_cuenta_las_citas_distintas():
+    distintas = [_cv_con_texto("c1", REGLA_A), _cv_con_texto("c2", REGLA_B)]
+    assert lint.minimo_citas_ok(distintas, 2, 25) == []
+    solapadas = [_cv_con_texto("c1", f"{REGLA_A} Esto no se repite."), _cv_con_texto("c2", f"{REGLA_B} Esto no se repite.")]
+    assert lint.minimo_citas_ok(solapadas, 2, 25) == []
+
+
+def test_minimo_citas_ok_la_contencion_es_por_palabras_completas():
+    citas = [_cv_con_texto("c1", "La reacción previa del despacho fue suficiente."), _cv_con_texto("c2", "acción previa del despacho")]
+    assert lint.minimo_citas_ok(citas, 2, 25) == []
+
+
+def test_minimo_citas_ok_los_incisos_y_marcas_del_citante_no_hacen_distinta_una_cita():
+    citas = [
+        _cv_con_texto("c1", f"{REGLA_A} (subrayado fuera de texto)"),
+        _cv_con_texto("c2", f"{REGLA_A} (Cfr. sentencia T-1 de 1990)"),
+    ]
+    (texto,) = lint.minimo_citas_ok(citas, 2, 25)
+    assert "tienen 1 cita verificada distinta; se exigen al menos 2" in texto
+
+
+def test_minimo_citas_ok_citas_repetidas_que_no_son_ok_no_suman_a_las_repetidas():
+    citas = [_cv_con_texto("c1", REGLA_A), _cv_con_texto("c2", REGLA_A, "alerta"), _cv_con_texto("c3", REGLA_B, "rechazada")]
+    (texto,) = lint.minimo_citas_ok(citas, 2, 25)
+    assert "tienen 1 cita verificada; se exigen al menos 2" in texto and "repetidas o contenidas" not in texto
+
+
+def test_minimo_citas_ok_cero_con_minimo_cero_alerta_sin_bloquear():
+    msgs = lint.minimo_citas_ok(_cvs("alerta"), 0, 25)
+    assert len(msgs) == 1 and msgs[0].startswith("ALERTA: ") and "ninguna cita verificada" in msgs[0]
+    assert lint.minimo_citas_ok(_cvs("ok"), 0, 25) == []
+
+
+PASAJE_CERCANO = (
+    "El perjuicio ha de ser grave, lo que equivale a la gran intensidad del daño o menoscabo material o moral en el "
+    "haber jurídico de la persona."
+)
+MOTIVO_PASAJE = (
+    f"El pasaje más cercano en la sentencia T-225/93 dice textualmente: «{PASAJE_CERCANO}». Si lo usa, cópielo sin "
+    "ningún cambio y con al menos 25 palabras."
+)
+MOTIVO_REGLA = "Regla de las citas: cada cita es un pasaje literal de la ratio decidendi de la mayoría."
+
+
+def _cv_con_motivos(id_: str, estado: str, motivos: list[str], pasaje: str | None = None, sentencia: str = "T-225 de 1993"):
+    return _cv(id_, sentencia, estado, "T", 225, 1993).model_copy(update={"motivos": motivos, "pasaje_cercano": pasaje})
+
+
+def _citas_con_motivos():
+    return [
+        _cv_con_motivos("c1", "ok", []),
+        _cv_con_motivos(
+            "c2", "alerta", ["Solo el 77% del texto citado aparece literalmente. Compárelo con la relatoría.", MOTIVO_PASAJE],
+            PASAJE_CERCANO,
+        ),
+        _cv_con_motivos(
+            "c3", "rechazada", ["Solo el 0% del texto citado aparece literalmente; el pasaje no se localizó.", MOTIVO_REGLA],
+            sentencia="SU-961 de 1999",
+        ),
+    ]
+
+
+def test_minimo_citas_ok_lista_cada_cita_que_no_cuenta_con_id_sentencia_y_motivos():
+    (texto,) = lint.minimo_citas_ok(_citas_con_motivos(), 2, 25)
+    assert texto.startswith("BLOQUEA: ") and "tienen 1 cita verificada; se exigen al menos 2" in texto
+    assert "Cita c2" in texto and "T-225/93" in texto and "para revisar" in texto
+    assert "Cita c3" in texto and "SU-961 de 1999" in texto and "rechazada" in texto
+    assert "Cita c1" not in texto
+    assert "Solo el 77%" in texto and "no se localizó" in texto
+
+
+def test_minimo_citas_ok_incluye_el_pasaje_cercano_y_la_instruccion_de_copiarlo():
+    (texto,) = lint.minimo_citas_ok(_citas_con_motivos(), 2, 25)
+    assert f"dice textualmente: «{PASAJE_CERCANO}»" in texto
+    assert "cópielo sin ningún cambio" in texto and "al menos 25 palabras" in texto
+    assert texto.count(PASAJE_CERCANO) == 1
+
+
+def test_minimo_citas_ok_no_repite_la_regla_ni_deja_puntuacion_doble():
+    (texto,) = lint.minimo_citas_ok(_citas_con_motivos(), 2, 25)
+    assert "Regla de las citas:" not in texto and texto.count("ratio decidendi") == 1
+    assert ".;" not in texto and ".." not in texto and "; ;" not in texto
+
+
+def test_minimo_citas_ok_acota_el_largo_de_cada_cita_pero_conserva_el_pasaje():
+    largo = "Detalle muy extenso del verificador. " * 200
+    citas = [
+        _cv_con_motivos("c1", "alerta", [largo, MOTIVO_PASAJE], PASAJE_CERCANO),
+        _cv_con_motivos("c2", "rechazada", [largo, MOTIVO_REGLA]),
+    ]
+    (texto,) = lint.minimo_citas_ok(citas, 2, 25)
+    lineas = [ln for ln in texto.split("\n") if ln.startswith("- Cita ")]
+    assert len(lineas) == 2 and all(len(ln) <= lint.MAX_CHARS_CITA_EN_MINIMO + 120 for ln in lineas)
+    assert f"dice textualmente: «{PASAJE_CERCANO}»" in texto and "cópielo sin ningún cambio" in texto
+
+
+def test_minimo_citas_ok_cita_sin_motivos_dice_sin_detalle():
+    (texto,) = lint.minimo_citas_ok([_cv_con_motivos("c1", "alerta", [])], 2, 25)
+    assert "Cita c1" in texto and "sin detalle" in texto
+
+
+@pytest.mark.parametrize(
+    "oracion",
+    [
+        "La jurisprudencia constitucional ha decantado de manera pacífica que el plazo debe ser razonable.",
+        "En todo caso, la jurisprudencia ha dicho que la tutela es residual.",
+        "Por su parte, la jurisprudencia de la Corte Constitucional ha sostenido que el daño debe ser inminente.",
+        "LA JURISPRUDENCIA CONSTITUCIONAL HA SEÑALADO que procede el amparo.",
+        "La jurisprudencia constitucional, de manera reiterada, ha precisado la regla.",
+        "La jurisprudencia pacífica ha entendido que el término es razonable.",
+    ],
+)
+def test_jurisprudencia_sin_cita_alerta(oracion):
+    msgs = lint.jurisprudencia_sin_cita(oracion, "consideraciones, bloque 1")
+    assert len(msgs) == 1 and msgs[0].startswith("ALERTA: ")
+    assert "consideraciones, bloque 1" in msgs[0] and "[[CITA:id]]" in msgs[0]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "La jurisprudencia constitucional ha decantado que el plazo debe ser razonable, según la [[CITA:c1]].",
+        "En la [[CITA:c1]], la Corte precisó la regla. La jurisprudencia ha dicho lo mismo [[CITA:c2]].",
+        "La tutela es un mecanismo residual y subsidiario.",
+        "Según la jurisprudencia, el plazo debe ser razonable.",
+        "La jurisprudencia constitucional establece que el plazo debe ser razonable.",
+        "Hay jurisprudencia que ha dicho lo contrario.",
+    ],
+)
+def test_jurisprudencia_sin_cita_con_marcador_o_sin_formula_no_alerta(texto):
+    assert lint.jurisprudencia_sin_cita(texto, "x") == []
+
+
+def test_jurisprudencia_sin_cita_el_marcador_debe_estar_en_la_misma_oracion():
+    texto = "La jurisprudencia constitucional ha sostenido que el plazo es razonable. En la [[CITA:c1]], la Corte lo reiteró."
+    assert len(lint.jurisprudencia_sin_cita(texto, "x")) == 1
+
+
+def test_jurisprudencia_sin_cita_no_parte_oraciones_en_abreviaturas_ni_marcadores():
+    texto = "Conforme al art. 86 superior, la jurisprudencia ha dicho que procede según la [[CITA:c1]]."
+    assert lint.jurisprudencia_sin_cita(texto, "x") == []
+
+
+def test_jurisprudencia_sin_cita_limita_los_mensajes():
+    texto = " ".join(f"La jurisprudencia ha dicho la regla {i}." for i in range(20))
+    assert len(lint.jurisprudencia_sin_cita(texto, "x")) == lint.MAX_LINEAS_CITADAS
 
 
 def _decision(resultado=None, sustitutiva=None, accion="decidir") -> Decision:
@@ -863,3 +1102,250 @@ def test_coherencia_decision_negar_lo_demas_sigue_bloqueando_si_se_decidio_impro
     conclusion = "Se revocará el fallo, se amparará el derecho y se negarán las demás pretensiones."
     msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "IMPROCEDENTE"))
     assert any("AMPARAR" in m for m in msgs)
+
+
+TEXTO_CITA = (
+    "La carencia actual de objeto por hecho superado se configura cuando desaparece la afectación que dio origen "
+    "a la acción de tutela y la pretensión queda satisfecha por una conducta voluntaria de la entidad accionada."
+)
+
+
+def _cita_con_texto(id_: str = "c1", estado: str = "ok") -> CitaVerificada:
+    return _cv(id_, "T-200 de 2022", estado).model_copy(update={"texto_citado": TEXTO_CITA})
+
+
+def test_cita_verificada_en_caso_con_marcador_ok_no_bloquea():
+    caso = _caso("El hecho consta; por eso el reparo no prospera, como lo explicó la [[CITA:c1]].")
+    assert lint.cita_verificada_en_caso(caso, CITAS, False) == []
+
+
+def test_cita_verificada_en_caso_sin_marcador_bloquea_con_la_regla_y_lista_las_citas_utilizables():
+    msgs = lint.cita_verificada_en_caso(_caso("El reparo no prospera por las razones expuestas."), CITAS, False)
+    assert len(_bloquea(msgs)) == len(msgs) == 1
+    assert "Ningún párrafo del caso concreto contiene un marcador" in msgs[0] and "[[CITA:id]]" in msgs[0] and "no lo transcriba" in msgs[0]
+    assert "[[CITA:c1]]" in msgs[0] and "T-200 de 2022" in msgs[0]
+    assert "c2" not in msgs[0] and "c3" not in msgs[0]
+
+
+def test_cita_verificada_en_caso_el_marcador_debe_estar_en_los_parrafos():
+    caso = _caso("Sin marcador.", problema="Corresponde determinar [[CITA:c1]].", conclusion="Se revocará [[CITA:c1]].")
+    assert len(_bloquea(lint.cita_verificada_en_caso(caso, CITAS, False))) == 1
+
+
+def test_cita_verificada_en_caso_una_cita_en_alerta_solo_cuenta_si_no_se_verifica_la_relatoria():
+    caso = _caso("Esto se apoya en la [[CITA:c2]].")
+    msgs = lint.cita_verificada_en_caso(caso, CITAS, False)
+    assert len(_bloquea(msgs)) == 1 and "[[CITA:c1]]" in msgs[0] and "[[CITA:c2]]" not in msgs[0]
+    assert lint.cita_verificada_en_caso(caso, CITAS, True) == []
+
+
+def test_cita_verificada_en_caso_un_marcador_rechazado_no_cuenta():
+    caso = _caso("Esto se apoya en la [[CITA:c3]].")
+    assert len(_bloquea(lint.cita_verificada_en_caso(caso, CITAS, True))) == 1
+
+
+def test_cita_verificada_en_caso_sin_citas_utilizables_alerta_y_no_bloquea():
+    caso = _caso("Sin marcador.")
+    msgs = lint.cita_verificada_en_caso(caso, _cvs("rechazada", "alerta"), False)
+    assert len(_alerta(msgs)) == len(msgs) == 1 and "ninguna cita verificada" in msgs[0]
+    assert lint.cita_verificada_en_caso(caso, [], True)[0].startswith("ALERTA: ")
+    assert len(_bloquea(lint.cita_verificada_en_caso(caso, _cvs("rechazada", "alerta"), True))) == 1
+
+
+def _ing_con(*textos: str) -> Ingesta:
+    return Ingesta(documentos=[_doc(f"2a-{i:03d}", t) for i, t in enumerate(textos, 1)])
+
+
+def test_pasajes_entre_comillas_del_expediente_no_bloquean():
+    caso = _caso(
+        "La accionante afirma que «desde el mes de enero la entidad no le ha entregado el medicamento formulado» "
+        "y el Despacho lo tiene por cierto."
+    )
+    assert lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO), CITAS) == []
+
+
+def test_pasajes_entre_comillas_cortos_o_terminos_no_bloquean():
+    caso = _caso("Se trata de un «perjuicio irremediable» y de la «carencia actual de objeto» alegada.")
+    assert lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO), CITAS) == []
+
+
+@pytest.mark.parametrize(
+    "abre,cierra",
+    [("«", "»"), ("“", "”"), ('"', '"')],
+)
+def test_pasajes_entre_comillas_que_reproducen_una_cita_bloquean_y_senalan_el_marcador(abre, cierra):
+    caso = _caso(f"Como lo dijo la Corte, {abre}{TEXTO_CITA}{cierra}.")
+    msgs = lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO), [_cita_con_texto()])
+    assert len(_bloquea(msgs)) == len(msgs) == 1
+    assert "c1" in msgs[0] and "[[CITA:c1]]" in msgs[0] and "Caso concreto, párrafo 1" in msgs[0]
+
+
+def test_pasajes_entre_comillas_que_no_constan_en_el_expediente_bloquean():
+    caso = _caso(
+        "Dijo el juez «la entidad estaba obligada a entregar el insumo sin demora alguna ni condicionamientos» en su fallo."
+    )
+    msgs = lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO), [_cita_con_texto()])
+    assert len(_bloquea(msgs)) == 1 and "no consta en el expediente" in msgs[0] and "[[CITA:id]]" in msgs[0]
+
+
+def test_pasajes_entre_comillas_de_la_decision_o_de_cualquier_documento_no_bloquean():
+    eje = "La entidad no acreditó la autorización del procedimiento y la demora compromete la salud de la accionante"
+    caso = _caso(f"Para el Despacho «{eje}», de modo que prospera.", conclusion=f"Se revocará: «{IMPUGNACION[:90]}».")
+    assert lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO, IMPUGNACION, eje), CITAS) == []
+
+
+def test_pasajes_entre_comillas_revisa_problema_y_conclusion_y_limita_los_mensajes():
+    inventado = "uno dos tres cuatro cinco seis siete ocho"
+    caso = _caso(
+        *[f"Texto «{inventado} {i}»." for i in range(8)],
+        problema=f"Corresponde «{inventado} p»",
+        conclusion=f"Se revocará «{inventado} c»",
+    )
+    msgs = lint.pasajes_entre_comillas(caso, _ing_con(ESCRITO), CITAS)
+    assert len(msgs) == lint.MAX_LINEAS_CITADAS and msgs[0].startswith("BLOQUEA: ")
+    solo = _caso("Hecho.", problema=f"Corresponde «{inventado} p»", conclusion=f"Se revocará «{inventado} c»")
+    campos = " ".join(lint.pasajes_entre_comillas(solo, _ing_con(ESCRITO), CITAS))
+    assert "problema jurídico" in campos and "conclusión" in campos
+
+
+CONCLUSION = (
+    "En consecuencia, el Despacho considera que debe revocar el fallo de primera instancia y amparar los derechos "
+    "fundamentales al mínimo vital y a la seguridad social de la accionante, ordenando a la entidad que pague las "
+    "incapacidades que cumplan los requisitos legales."
+)
+RELLENO = (
+    "El Despacho advierte que la accionante estuvo incapacitada de manera continua desde el veinte de mayo, que la "
+    "entidad reconoció las primeras prórrogas y que la última fue rechazada por un defecto en el certificado de "
+    "incapacidad expedido por la institución prestadora del servicio, circunstancia que la entidad califica de "
+    "insubsanable mientras la afiliada sostiene que depende de la institución y no de ella. "
+)
+
+
+RELLENO_B = (
+    "Respecto de la inmediatez, la última negativa de pago ocurrió pocas semanas antes de presentarse el escrito y la "
+    "vulneración persiste en el tiempo, lo cual descarta cualquier inactividad; en cuanto a la subsidiariedad, el medio "
+    "ordinario ante la Superintendencia carece de idoneidad cuando el subsidio constituye el único ingreso del hogar. "
+)
+
+
+def test_duplicados_con_contencion_detecta_la_repeticion_dentro_de_un_texto_mas_largo():
+    largo = RELLENO + RELLENO_B + CONCLUSION
+    assert lint.duplicados([largo, CONCLUSION], 0.5) == []
+    msgs = lint.duplicados([largo, CONCLUSION], 0.5, contencion=lint.UMBRAL_CONTENCION)
+    assert len(_alerta(msgs)) == len(msgs) == 1 and "contención 100%" in msgs[0] and "1 y 2" in msgs[0]
+
+
+def test_duplicados_con_contencion_no_marca_parrafos_distintos_de_la_misma_causa():
+    otro = (
+        "En cuanto a la inmediatez, el Despacho encuentra que la tutela se interpuso en un plazo razonable, porque la "
+        "última negativa de pago ocurrió pocas semanas antes de la presentación del escrito y la vulneración persiste."
+    )
+    assert lint.duplicados([RELLENO, otro, CONCLUSION], 0.5, contencion=lint.UMBRAL_CONTENCION) == []
+
+
+def test_duplicados_sin_contencion_conserva_el_mensaje_y_el_resultado_de_siempre():
+    msgs = lint.duplicados([P1, P3, P2], 0.5)
+    assert msgs == ["ALERTA: Los párrafos 1 y 3 son casi idénticos (similitud 89%)."]
+
+
+def test_duplicados_con_etiquetas_nombra_cada_texto():
+    msgs = lint.duplicados(
+        [P1, P3, P2], 0.5, etiquetas=["el problema jurídico", "el párrafo 1", "la conclusión"]
+    )
+    assert msgs == ["ALERTA: El problema jurídico y la conclusión son casi idénticos (similitud 89%)."]
+
+
+def test_duplicados_caso_conclusion_repetida_en_el_ultimo_parrafo_bloquea():
+    caso = _caso("Primer argumento distinto sobre la subsidiariedad del reclamo.", RELLENO + CONCLUSION, conclusion=CONCLUSION)
+    msgs = lint.duplicados_caso(caso, 0.5)
+    assert len(_bloquea(msgs)) == len(msgs) == 1
+    assert "último párrafo" in msgs[0] and "párrafo 2" in msgs[0] and "solo en el campo conclusion" in msgs[0]
+
+
+def test_duplicados_caso_conclusion_repetida_con_poca_similitud_de_jaccard_pero_alta_contencion():
+    largo = RELLENO + RELLENO_B + CONCLUSION
+    assert lint.duplicados([largo, CONCLUSION], 0.5) == []
+    msgs = lint.duplicados_caso(_caso(largo, conclusion=CONCLUSION), 0.5)
+    assert len(_bloquea(msgs)) == 1
+
+
+def test_duplicados_caso_conclusion_repetida_en_otro_parrafo_solo_alerta():
+    caso = _caso(RELLENO + CONCLUSION, "Último párrafo con otro contenido sobre el plazo y la inmediatez del reclamo.", conclusion=CONCLUSION)
+    msgs = lint.duplicados_caso(caso, 0.5)
+    assert len(_alerta(msgs)) == len(msgs) == 1 and "párrafo 1 y la conclusión" in msgs[0]
+
+
+def test_duplicados_caso_incluye_el_problema_juridico():
+    problema = "Corresponde al Despacho determinar si la entidad vulneró el derecho a la salud de la accionante al negar el procedimiento"
+    caso = _caso("Argumento previo sobre otra cosa muy distinta del asunto, la inmediatez y el plazo del reclamo.", problema + ", como se verá.", problema=problema)
+    msgs = lint.duplicados_caso(caso, 0.5)
+    assert len(_alerta(msgs)) == len(msgs) == 1 and "el problema jurídico y el párrafo 2" in msgs[0]
+
+
+def test_duplicados_caso_textos_distintos_o_sin_parrafos_no_marcan():
+    assert lint.duplicados_caso(_caso(RELLENO, conclusion=CONCLUSION), 0.5) == []
+    assert lint.duplicados_caso(_caso(conclusion=CONCLUSION), 0.5) == []
+
+
+def _decision_con(*ordenes: Orden) -> Decision:
+    return Decision(accion="decidir", resultado="REVOCAR", sustitutiva="AMPARAR", eje="x", ordenes=list(ordenes))
+
+
+def _orden(destinatario: str = "la entidad", **kw) -> Orden:
+    return Orden(destinatario=destinatario, conducta="pague las incapacidades", **kw)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "La entidad deberá cumplir dentro de las cuarenta y ocho (48) horas hábiles siguientes.",
+        "El término de 48 horas resulta proporcional.",
+        "Se fija un plazo de cuarenta y ocho horas para cumplir.",
+    ],
+)
+def test_plazos_en_caso_menciona_el_plazo_de_la_orden(texto):
+    assert lint.plazos_en_caso(_caso(texto), _decision_con(_orden())) == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "La entidad debe pagar las incapacidades.",
+        "El plazo es de cuarenta y ocho días.",
+        "Se otorgan 72 horas para cumplir.",
+    ],
+)
+def test_plazos_en_caso_sin_el_plazo_alerta_y_no_bloquea(texto):
+    msgs = lint.plazos_en_caso(_caso(texto), _decision_con(_orden()))
+    assert len(_alerta(msgs)) == len(msgs) == 1
+    assert "48 horas hábiles" in msgs[0] and "orden 1" in msgs[0] and "alcance y el plazo" in msgs[0]
+
+
+def test_plazos_en_caso_solo_cuenta_los_parrafos():
+    caso = _caso("Sin plazo.", conclusion="Se amparará y la entidad cumplirá en 48 horas.")
+    assert len(lint.plazos_en_caso(caso, _decision_con(_orden()))) == 1
+
+
+def test_plazos_en_caso_solo_ordenar_con_plazo_propio():
+    d = _decision_con(
+        _orden(verbo="PREVENIR"), _orden(verbo="ADVERTIR"), _orden(mismo_termino=True)
+    )
+    assert lint.plazos_en_caso(_caso("Nada."), d) == []
+    assert lint.plazos_en_caso(_caso("Nada."), _decision_con()) == []
+
+
+def test_plazos_en_caso_unidades_singular_y_dias():
+    uno = _decision_con(_orden(plazo={"n": 1, "unidad": "dias_habiles"}))
+    assert lint.plazos_en_caso(_caso("Cumplirá en un (1) día hábil."), uno) == []
+    assert "1 día hábil" in lint.plazos_en_caso(_caso("Nada."), uno)[0]
+    cinco = _decision_con(_orden(plazo={"n": 5, "unidad": "dias"}))
+    assert lint.plazos_en_caso(_caso("Dentro de cinco (5) días siguientes."), cinco) == []
+    assert lint.plazos_en_caso(_caso("Dentro de 5 horas."), cinco)
+
+
+def test_plazos_en_caso_agrupa_las_ordenes_con_el_mismo_plazo():
+    d = _decision_con(_orden("la entidad uno"), _orden("la entidad dos"), _orden("la entidad tres", plazo={"n": 3, "unidad": "dias"}))
+    msgs = lint.plazos_en_caso(_caso("Nada."), d)
+    assert len(msgs) == 2
+    assert "órdenes 1 y 2" in msgs[0] and "48 horas hábiles" in msgs[0]
+    assert "orden 3" in msgs[1] and "3 días" in msgs[1]

@@ -132,7 +132,7 @@ const pagina2: Bloque[] = [
     "parrafo",
     "plantilla",
     "consideraciones",
-    "Este Despacho es competente para resolver la impugnación presentada contra la sentencia de tutela proferida el veintiocho (28) de septiembre de dos mil veintiséis (2026) por el Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín, de conformidad con el artículo 32 del Decreto 2591 de 1991.",
+    "Este Despacho es competente para conocer y resolver el recurso de impugnación interpuesto contra la sentencia de tutela de primera instancia, de conformidad con lo dispuesto en el artículo 32 del Decreto 2591 de 1991 y las normas concordantes de reparto de la acción de amparo. En su condición de superior funcional, le corresponde adelantar un examen integral de la providencia recurrida a la luz de los postulados de la Carta Política y de la doctrina fijada por la Corte Constitucional.",
   ),
   bloque("consideraciones-3", "encabezado", "plantilla", "consideraciones", t("Presupuestos generales de procedibilidad de la acción de tutela", { negrita: true })),
   bloque(
@@ -208,8 +208,11 @@ const pagina3: Bloque[] = [
     t("Sentencia", { negrita: true }),
     t("Estado", { negrita: true }),
     t("Cobertura", { negrita: true }),
-    t("M.P.", { negrita: true }),
+    t("Palabras", { negrita: true }),
+    t("Sección", { negrita: true }),
+    t("M.P. (dataset)", { negrita: true }),
     t("URL", { negrita: true }),
+    t("Texto citado", { negrita: true }),
     t("Motivos", { negrita: true }),
   ),
   bloque(
@@ -220,8 +223,11 @@ const pagina3: Bloque[] = [
     "T-760 de 2008",
     "OK",
     "98 %",
+    "11",
+    "mayoría",
     "Manuel José Cepeda Espinosa",
     "https://www.corteconstitucional.gov.co/relatoria/2008/t-760-08.htm",
+    "“la salud tiene doble connotación: derecho fundamental y servicio público esencial”",
     "—",
   ),
   bloque(
@@ -232,8 +238,11 @@ const pagina3: Bloque[] = [
     "SU-508 de 2020",
     "ALERTA",
     "71 %",
+    "14",
+    "mayoría",
     "—",
     "https://www.corteconstitucional.gov.co/relatoria/2020/su508-20.htm",
+    "“la garantía de continuidad de los tratamientos en curso hace parte del núcleo esencial”",
     "La cobertura del fragmento citado es 71 %.",
   ),
   bloque("alertas-por-nodo", "titulo", "plantilla", "alertas-por-nodo", t("ALERTAS POR NODO", { negrita: true })),
@@ -289,6 +298,12 @@ export const ESTADO_BORRADOR: EstadoCaso = {
       },
       coincide: { sentido: false, rol_impugnante: true },
     },
+    bitacora: [
+      { nodo: "roles", intento: 1, proveedor: "jev", modelo_pedido: "jev-1", modelo_efectivo: "jev-1" },
+      { nodo: "apertura", intento: 1, proveedor: "anthropic", modelo_pedido: "claude-sonnet-5-5", modelo_efectivo: "claude-sonnet-5-5" },
+      { nodo: "metadatos", intento: 1, proveedor: "jev", modelo_pedido: "jev-1", modelo_efectivo: "jev-1" },
+      { nodo: "consideraciones", intento: 1, proveedor: "anthropic", modelo_pedido: "claude-sonnet-5-5", modelo_efectivo: "claude-sonnet-5-5" },
+    ],
     alertas: {
       ingesta: ["El documento 009.pdf tiene 2 páginas sin texto."],
       apertura: [

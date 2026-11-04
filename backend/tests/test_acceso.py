@@ -26,6 +26,13 @@ def test_healthz_no_exige_contrasena(cliente):
     assert cliente.get("/healthz").status_code == 200
 
 
+def test_healthz_informa_la_revision_solo_si_la_imagen_la_trae(cliente, monkeypatch):
+    monkeypatch.delenv("JUDICABOT_REVISION", raising=False)
+    assert cliente.get("/healthz").json() == {"status": "ok"}
+    monkeypatch.setenv("JUDICABOT_REVISION", "abc1234")
+    assert cliente.get("/healthz").json() == {"status": "ok", "revision": "abc1234"}
+
+
 def test_login_correcto_da_acceso(cliente):
     r = cliente.post("/login", content="password=clave-de-prueba", headers={"content-type": "application/x-www-form-urlencoded"})
     assert r.status_code == 303 and acceso.COOKIE in r.headers["set-cookie"]

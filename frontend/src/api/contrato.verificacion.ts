@@ -28,6 +28,7 @@ export type VerificacionContrato = [
   Vista: Afirmar<Igual<C.Vista, S["Vista"]>>,
   NumeralVista: Afirmar<Igual<C.NumeralVista, S["NumeralVista"]>>,
   DecisionVistaRespuesta: Afirmar<Igual<C.DecisionVistaRespuesta, S["DecisionVistaRespuesta"]>>,
+  DecisionVistaAdvertencia: Afirmar<Igual<C.DecisionVistaRespuesta["advertencias"][number], S["FaltanteDecision"]>>,
   ModoJev: Afirmar<Igual<C.ModoJev, S["IAJev"]["modo"]>>,
   Effort: Afirmar<Igual<C.Effort, S["IAEstado"]["effort"]>>,
   PreferenciasIa: Afirmar<Igual<Sin<C.PreferenciasIa, "modelo">, Sin<S["IAEstado"], "modelo">>>,

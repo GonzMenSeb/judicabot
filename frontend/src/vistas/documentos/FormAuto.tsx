@@ -7,6 +7,8 @@ const CAMPOS: Record<ClaveAuto, { etiqueta: string; tipo: "date" | "text" }> = {
   fecha_reparto: { etiqueta: "Fecha de reparto", tipo: "date" },
   accionante: { etiqueta: "Accionante", tipo: "text" },
   accionada: { etiqueta: "Accionada", tipo: "text" },
+  firmante: { etiqueta: "Firmante", tipo: "text" },
+  cargo_firmante: { etiqueta: "Cargo del firmante", tipo: "text" },
 };
 
 const ORDEN: readonly ClaveAuto[] = ["fecha", ...CLAVES_AUTO.filter((c) => c !== "fecha")];
@@ -41,9 +43,12 @@ export function FormAuto({ base, edicion, editable, onCambio }: PropsFormAuto) {
         })}
       </div>
       {editable && (
-        <p class="docs-ayuda">
-          Si deja vacía la fecha del auto, al guardar se propone el siguiente día hábil después del reparto (sin fines de semana ni festivos).
-        </p>
+        <>
+          <p class="docs-ayuda">
+            Si deja vacía la fecha del auto, al guardar se propone el siguiente día hábil después del reparto (sin fines de semana ni festivos).
+          </p>
+          <p class="docs-ayuda">Si deja vacíos el firmante y su cargo, el auto sale firmado por el juez y el cargo configurados para el despacho.</p>
+        </>
       )}
     </section>
   );

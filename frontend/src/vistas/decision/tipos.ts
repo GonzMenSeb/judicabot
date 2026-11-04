@@ -9,6 +9,7 @@ export type SustitutivaApi =
 export type SustitutivaForm = SustitutivaApi | "CARENCIA" | "";
 export type DisposicionReparo = "ACOGE" | "DESESTIMA" | "ACOGE_PARCIAL" | "REFORMULA" | "ABSORBIDO";
 export type DisposicionDerecho = "AMPARA" | "NIEGA" | "SIN_PRONUNCIAMIENTO";
+export type Causal = "COSA_JUZGADA" | "SUBSIDIARIEDAD";
 export type Verbo = "ORDENAR" | "PREVENIR" | "ADVERTIR";
 export type Unidad = "horas_habiles" | "dias_habiles" | "horas" | "dias";
 
@@ -74,6 +75,7 @@ export interface ReparoForm {
 export interface Formulario {
   resultado: Resultado | "";
   sustitutiva: SustitutivaForm;
+  causal: Causal | "";
   eje: string;
   decididoPor: string;
   reparos: ReparoForm[];
@@ -111,6 +113,7 @@ export interface DecisionCuerpo {
   accion: "decidir";
   resultado: Resultado | null;
   sustitutiva: SustitutivaApi | null;
+  causal: Causal | null;
   eje: string;
   por_reparo: { reparo_id: string; disposicion: DisposicionReparo; nota: string }[];
   derechos: { derecho: string; disposicion: DisposicionDerecho }[];

@@ -105,6 +105,7 @@ class Metadatos(BaseModel):
 class Ingesta(BaseModel):
     documentos: list[Doc]
     docs_ajenos: list[str] = []
+    docs_revisar: list[str] = []
     faltantes: list[str] = []
     alertas: list[str] = []
     esperados_faltantes: list[str] = []
@@ -260,8 +261,11 @@ class CitaVerificada(BaseModel):
     url: Optional[str] = None
     pagina_ok: bool = False
     cobertura: Optional[float] = None
+    n_palabras: int = 0
+    seccion: Optional[Literal["mayoria", "salvamento", "desconocida"]] = None
     estado: Literal["ok", "alerta", "rechazada"] = "rechazada"
     motivos: list[str] = []
+    pasaje_cercano: Optional[str] = None
 
 
 class ParrafoLLM(BaseModel):
@@ -333,6 +337,8 @@ class DatosAuto(_SinControl):
     fecha_reparto: Optional[str] = None
     accionante: Optional[str] = None
     accionada: Optional[str] = None
+    firmante: Optional[str] = None
+    cargo_firmante: Optional[str] = None
 
     @field_validator("fecha", "fecha_reparto", mode="before")
     @classmethod
@@ -360,6 +366,48 @@ class NumeralesEstandar(BaseModel):
     remitir_corte: bool = True
 
 
+_BLOQUE_CITADO = "▎"
+_ESPACIOS = re.compile(r"\s+")
+_SEPARADORES = re.compile(r"[\s_\-]+")
+_SIN_TILDES = str.maketrans("áéíóúü", "aeiouu")
+DECIDIDO_POR_PLACEHOLDERS = frozenset({"john doe", "prueba", "caso sintetico"})
+MSG_DECIDIDO_POR_VACIO = "Decidido por está vacío: en la declaración de uso de IA constará «no consta»."
+MSG_DECIDIDO_POR_PLACEHOLDER = "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide."
+
+
+def colapsar_texto(v: Any) -> Any:
+    if not isinstance(v, str):
+        return v
+    return _ESPACIOS.sub(" ", limpiar_control(v).replace(_BLOQUE_CITADO, " ")).strip()
+
+
+def _colapsar_en(items: Any, clave: str) -> Any:
+    if not isinstance(items, list):
+        return items
+    return [{**x, clave: colapsar_texto(x[clave])} if isinstance(x, dict) and clave in x else x for x in items]
+
+
+def normalizar_decision(d: Any) -> Any:
+    if not isinstance(d, dict):
+        return d
+    salida = dict(d)
+    for campo in ("eje", "instruccion"):
+        if campo in salida:
+            salida[campo] = colapsar_texto(salida[campo])
+    if isinstance(salida.get("numerales_libres"), list):
+        salida["numerales_libres"] = [colapsar_texto(t) for t in salida["numerales_libres"]]
+    for campo, clave in (("por_reparo", "nota"), ("ordenes", "conducta")):
+        if campo in salida:
+            salida[campo] = _colapsar_en(salida[campo], clave)
+    return salida
+
+
+def _colapsado(item: Any, campo: str) -> Any:
+    actual = getattr(item, campo)
+    nuevo = colapsar_texto(actual)
+    return item if nuevo == actual else item.model_copy(update={campo: nuevo})
+
+
 class Decision(_SinControl):
     accion: Literal["decidir", "rehacer_apertura", "rehacer_consideraciones"]
     instruccion: str = ""
@@ -374,6 +422,7 @@ class Decision(_SinControl):
             "CARENCIA_SOBREVINIENTE",
         ]
     ] = None
+    causal: Optional[str] = None
     eje: str = ""
     por_reparo: list[DisposicionReparo] = []
     derechos: list[DisposicionDerecho] = []
@@ -390,6 +439,33 @@ class Decision(_SinControl):
     fecha_fallo: Optional[str] = None
     fecha_oficio: Optional[str] = None
     etiqueta_encabezado: str = ""
+
+    @model_validator(mode="after")
+    def _normalizar_textos(self) -> Decision:
+        for campo in ("eje", "instruccion"):
+            actual = getattr(self, campo)
+            nuevo = colapsar_texto(actual)
+            if nuevo != actual:
+                setattr(self, campo, nuevo)
+        libres = [colapsar_texto(t) for t in self.numerales_libres]
+        if libres != self.numerales_libres:
+            self.numerales_libres = libres
+        for campo, clave in (("ordenes", "conducta"), ("por_reparo", "nota")):
+            vieja = getattr(self, campo)
+            nueva = [_colapsado(x, clave) for x in vieja]
+            if any(a is not b for a, b in zip(nueva, vieja)):
+                setattr(self, campo, nueva)
+        return self
+
+    def advertencias(self) -> list[str]:
+        if self.accion != "decidir":
+            return []
+        nombre = self.decidido_por.strip()
+        if not nombre:
+            return [MSG_DECIDIDO_POR_VACIO]
+        if _SEPARADORES.sub(" ", nombre.lower().translate(_SIN_TILDES)).strip() in DECIDIDO_POR_PLACEHOLDERS:
+            return [MSG_DECIDIDO_POR_PLACEHOLDER]
+        return []
 
     def _clave_valida(self, k: str) -> bool:
         if k in CLAVES_NUMERAL:

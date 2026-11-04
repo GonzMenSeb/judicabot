@@ -64,6 +64,14 @@ class Preferencias(_Estricto):
             datos.pop("jev", None)
         return datos
 
+    @field_validator("modelo", mode="before")
+    @classmethod
+    def _modelo_permitido(cls, valor: Any) -> Any:
+        permitidos = cfgmod.modelos_permitidos()
+        if isinstance(valor, str) and valor not in permitidos:
+            raise PydanticCustomError("modelo_no_permitido", "modelo no permitido", {"permitidos": list(permitidos)})
+        return valor
+
     @field_validator("max_tokens", "max_retries", mode="before")
     @classmethod
     def _sin_booleanos(cls, valor: Any) -> Any:

@@ -6,20 +6,26 @@ import shutil
 from datetime import date
 from pathlib import Path
 
+from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.oxml.ns import qn
+
 from tutela2 import radicado, render, salidas
 from tutela2.config import Config
 from tutela2.documentos import auto as doc_auto
 from tutela2.documentos import correos, formato, oficio
 from tutela2.festivos import siguiente_habil
-from tutela2.letras import _a_fecha
+from tutela2.letras import _a_fecha, fecha_corta
 from tutela2.models import DatosAuto, Decision, Ingesta, Metadatos
 
 _CORREO = re.compile(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+")
 _REMITENTE = re.compile(r"^\s*(?:De|Desde)\s*:?(?:\s+|$)", re.IGNORECASE)
+_FALTA = re.compile(r"⟦FALTA[^⟧]*⟧")
+_PARTES_CON_TEXTO = (RT.HEADER, RT.FOOTER)
 
 
-def numerados(nombres: list[str]) -> list[str]:
-    return [f"{i:03d}{n}" for i, n in enumerate(nombres, 1)]
+def numerados(nombres: list[str | None]) -> list[str]:
+    return [f"{i:03d}{n}" for i, n in enumerate(nombres, 1) if n is not None]
 
 
 def auto_efectivo(caso_dir: Path, md: Metadatos, guardado: DatosAuto | None = None) -> DatosAuto:
@@ -43,19 +49,16 @@ def _corto(md: Metadatos) -> str:
 
 def _acta(caso_dir: Path, ing: Ingesta):
     for d in ing.documentos:
-        if d.rol == "acta_reparto_2a" and not d.ruido and d.doc_id not in ing.docs_ajenos:
+        if d.rol == "acta_reparto_2a" and correos.es_confiable(ing, d):
             origen = Path(caso_dir) / "insumos" / d.ruta
             if origen.is_file():
                 return origen
     return None
 
 
-def _nombres_previos(origen: Path | None, md: Metadatos) -> list[str]:
-    nombres = []
-    if origen is not None:
-        nombres.append(f"ActaRepartoSegunda{origen.suffix.lower()}")
-    nombres.append(f"AutoAsumeSegunda{_corto(md)}.docx")
-    return nombres
+def _nombres_previos(origen: Path | None, md: Metadatos) -> list[str | None]:
+    acta = f"ActaRepartoSegunda{origen.suffix.lower()}" if origen is not None else None
+    return [acta, f"AutoAsumeSegunda{_corto(md)}.docx"]
 
 
 def generar_previos(caso_dir: Path, ing: Ingesta, cfg: Config, auto: DatosAuto) -> list[str]:
@@ -79,7 +82,9 @@ def generar_previos(caso_dir: Path, ing: Ingesta, cfg: Config, auto: DatosAuto) 
 
 
 def _buzon_juzgado(ing: Ingesta) -> str | None:
-    docs = sorted((d for d in ing.documentos if d.rol == "notificacion"), key=lambda d: d.ruta)
+    docs = sorted(
+        (d for d in ing.documentos if d.rol == "notificacion" and correos.es_confiable(ing, d)), key=lambda d: d.ruta
+    )
     if not docs:
         return None
     lineas = docs[-1].texto().splitlines()
@@ -94,6 +99,56 @@ def _buzon_juzgado(ing: Ingesta) -> str | None:
 
 def _sha(ruta: Path) -> str:
     return hashlib.sha256(ruta.read_bytes()).hexdigest()
+
+
+def _faltas_en(ruta: Path) -> list[str]:
+    doc = Document(str(ruta))
+    raices = [doc.element.body]
+    raices += [r.target_part.element for r in doc.part.rels.values() if r.reltype in _PARTES_CON_TEXTO]
+    textos = ("".join(t.text or "" for t in p.iter(qn("w:t"))) for raiz in raices for p in raiz.iter(qn("w:p")))
+    return list(dict.fromkeys(m for texto in textos for m in _FALTA.findall(texto)))
+
+
+def _pendientes_fijos(decision: Decision, ing: Ingesta, hay_acta: bool, fecha_fallo: str) -> list[str]:
+    pendientes = []
+    if not decision.fecha_fallo:
+        linea = f"Fecha del fallo: no se indicó; se usó la fecha de hoy ({fecha_corta(fecha_fallo)})."
+        if not decision.fecha_oficio:
+            linea += " El oficio a la Corte Constitucional usa la misma fecha."
+        pendientes.append(linea)
+    if decision.generar_formato:
+        pendientes.append("Formato de calidad: se generó sin puntajes ni motivación; los completa quien evalúa.")
+    pendientes += decision.advertencias()
+    if not hay_acta or "acta_reparto_2a" in ing.esperados_faltantes:
+        pendientes.append(
+            "Acta de reparto de segunda instancia: no se encontró; el expediente se generó sin ella "
+            "y la numeración empieza en 002."
+        )
+    docs = {d.doc_id: d for d in ing.documentos}
+
+    def nombre(doc_id: str) -> str:
+        return docs[doc_id].nombre if doc_id in docs else doc_id
+
+    for doc_id in ing.docs_revisar:
+        d = docs.get(doc_id)
+        if d is None or d.ruido or doc_id in ing.docs_ajenos or d.rol == "producto_despacho":
+            pendientes.append(f"Documento para revisar excluido del análisis: {nombre(doc_id)}.")
+        else:
+            pendientes.append(
+                f"Documento para revisar incluido en el análisis con una marca de advertencia: {nombre(doc_id)}."
+            )
+    pendientes += [f"Documento ajeno excluido del análisis: {nombre(doc_id)}." for doc_id in ing.docs_ajenos]
+    return pendientes
+
+
+def _calcular_pendientes(raiz: Path, generados: list[str], fijos: list[str]) -> list[str]:
+    faltas = [
+        f"{Path(rel).name}: {marca}"
+        for rel in generados
+        if rel.endswith(".docx")
+        for marca in _faltas_en(raiz / rel)
+    ]
+    return list(dict.fromkeys([*fijos, *faltas]))
 
 
 def generar_final(caso_dir: Path, estado: dict, cfg: Config) -> dict[str, str]:
@@ -144,8 +199,10 @@ def generar_final(caso_dir: Path, estado: dict, cfg: Config) -> dict[str, str]:
         generados.append("borradores_correo/RemisionCompulsaCopias.docx")
 
     trabajo = salidas.trabajo(caso_dir)
-    render.render_informe(estado, cfg, trabajo / "informe_verificacion.docx")
     render.render_declaracion_ia(estado, cfg, trabajo / "declaracion_ia.docx")
+    fijos = _pendientes_fijos(decision, ing, origen is not None, fecha_fallo)
+    pendientes = _calcular_pendientes(raiz, [*generados, "trabajo/declaracion_ia.docx"], fijos)
+    render.render_informe(estado, cfg, trabajo / "informe_verificacion.docx", pendientes=pendientes)
     generados += ["trabajo/informe_verificacion.docx", "trabajo/declaracion_ia.docx"]
 
     return {rel: _sha(raiz / rel) for rel in generados}

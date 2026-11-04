@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, ValidationError
 
-from tutela2 import citas, eventos, expediente, fallos, ingest, lint, prompts
+from tutela2 import citas, eventos, expediente, fallos, formulas, ingest, lint, prompts
 from tutela2.config import Config
 from tutela2.jev import JevClient, cliente_jev
 from tutela2.jev_metadatos import verificar_apertura
@@ -103,12 +103,14 @@ def _ultima_decision(state: Estado) -> dict | None:
 
 def _correcciones(state: Estado, nodo: str, rehacer: str | None, previa: str | None = None) -> list[str]:
     partes = []
-    if state.get("intentos", {}).get(nodo, 0) > 0 and state.get("errores"):
-        if state.get(previa or ""):
-            partes.append(seccion("SALIDA ANTERIOR", _json(state[previa])))
-        partes.append(seccion("ERRORES", "\n".join(f"- {e}" for e in state["errores"])))
     d = _ultima_decision(state)
-    if rehacer and d and d["accion"] == rehacer and d.get("instruccion"):
+    rehaciendo = bool(rehacer and d and d["accion"] == rehacer)
+    reintento = state.get("intentos", {}).get(nodo, 0) > 0 and bool(state.get("errores"))
+    if (reintento or rehaciendo) and state.get(previa or ""):
+        partes.append(seccion("SALIDA ANTERIOR", _json(state[previa])))
+    if reintento:
+        partes.append(seccion("ERRORES", "\n".join(f"- {e}" for e in state["errores"])))
+    if rehaciendo and d.get("instruccion"):
         partes.append(seccion("INSTRUCCION", d["instruccion"]))
     return partes
 
@@ -327,19 +329,30 @@ def nodo_validar_apertura(state: Estado, cfg: Config, jev: JevClient | None = No
 def nodo_consideraciones(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
     ap = AperturaLLM.model_validate(state["apertura"])
     md = Metadatos.model_validate(state["metadatos"])
+    limites = f"Máximo de bloques temáticos: {cfg.max_bloques_tematicos}"
+    if cfg.verificar_relatoria:
+        limites += (
+            f"\nMínimo de citas verificadas: {cfg.min_citas_ok}"
+            f"\nMínimo de palabras por cita: {cfg.min_palabras_cita}"
+        )
     user = "\n".join(
         [
             seccion("REPAROS", _json([{"id": r.id, "sintesis": r.sintesis} for r in ap.reparos])),
             seccion("DERECHOS", _json(md.derechos_invocados)),
             seccion("SENTENCIA IMPUGNADA", ap.sentencia_impugnada),
             seccion("IMPUGNACION", ap.impugnacion),
-            seccion("LIMITES", f"Máximo de bloques temáticos: {cfg.max_bloques_tematicos}"),
+            seccion("LIMITES", limites),
             seccion("EXTENSION", _extension(cfg, ("consideraciones",))),
             *_correcciones(state, "consideraciones", "rehacer_consideraciones", "consideraciones"),
         ]
     )
     cons, llamada, intentos = _llamar(cliente, cfg, state, "consideraciones", user, ConsideracionesLLM)
     return {"consideraciones": cons.model_dump(mode="json"), "intentos": intentos, "bitacora": [llamada]}
+
+
+def _unir_motivos(motivos: list[str]) -> str:
+    texto = " ".join(m.strip() for m in motivos) or "sin detalle"
+    return texto if texto.endswith((".", "!", "?")) else f"{texto}."
 
 
 def nodo_verificar_consideraciones(state: Estado, cfg: Config) -> dict:
@@ -356,21 +369,27 @@ def nodo_verificar_consideraciones(state: Estado, cfg: Config) -> dict:
         por_estado,
     )
     mensajes: list[str] = []
+    minimo = lint.minimo_citas_ok(verificadas, cfg.min_citas_ok, cfg.min_palabras_cita) if cfg.verificar_relatoria else []
+    detalle_en_minimo = any(m.startswith("BLOQUEA:") for m in minimo)
     for cv in verificadas:
-        detalle = "; ".join(cv.motivos) or "sin detalle"
         if cv.estado == "rechazada":
-            mensajes.append(
-                f"BLOQUEA: La cita {cv.id} ({cv.sentencia_original}) fue rechazada: {detalle}. {REGLA_DE_ORO}"
+            detalle = (
+                "su detalle está en la lista de citas que no cuentan del error del mínimo de citas verificadas."
+                if detalle_en_minimo
+                else _unir_motivos(cv.motivos)
             )
+            mensajes.append(f"BLOQUEA: La cita {cv.id} ({cv.sentencia_original}) fue rechazada: {detalle} {REGLA_DE_ORO}")
         elif cv.estado == "alerta":
-            mensajes.append(f"ALERTA: La cita {cv.id} ({cv.sentencia_original}) requiere revisión: {detalle}.")
+            mensajes.append(f"ALERTA: La cita {cv.id} ({cv.sentencia_original}) requiere revisión: {_unir_motivos(cv.motivos)}")
 
+    mensajes += minimo
     mensajes += lint.marcadores_consideraciones(cons)
     mensajes += lint.guardia_p3(cons, md)
     textos = {"procedibilidad": cons.procedibilidad, **{f"bloque {i}": b.texto for i, b in enumerate(cons.bloques, 1)}}
     for campo, texto in textos.items():
         mensajes += lint.lint_prosa(texto, f"consideraciones, {campo}")
         mensajes += lint.residuos(texto)
+        mensajes += lint.jurisprudencia_sin_cita(texto, f"consideraciones, {campo}")
     mensajes += lint.extension("\n\n".join(textos.values()), cfg.rango_palabras["consideraciones"], "consideraciones")
     mensajes += lint.duplicados(
         [p for texto in textos.values() for p in texto.split("\n\n") if p.strip()], cfg.jaccard_duplicados
@@ -509,6 +528,18 @@ def _documentos_caso(ing: Ingesta, cfg: Config) -> tuple[str, list[str]]:
     return "\n\n".join(bloques), alertas
 
 
+_CLAVES_DETERMINACIONES = ("prevenir", "desvincular", "compulsa")
+
+
+def _ordenes_renderizadas(decision: Decision, md: Metadatos) -> str:
+    lineas = [
+        "- " + "\n  ".join([n.texto, *n.literales])
+        for n in formulas.numerales(decision, md)
+        if n.clave.startswith(("orden:", "libre:")) or n.clave in _CLAVES_DETERMINACIONES
+    ]
+    return "\n".join(lineas)
+
+
 def nodo_caso_concreto(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
     ap = AperturaLLM.model_validate(state["apertura"])
     cons = ConsideracionesLLM.model_validate(state["consideraciones"])
@@ -538,6 +569,7 @@ def nodo_caso_concreto(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
     user = "\n".join(
         [
             seccion("DECISION", _json(decision.model_dump(mode="json", exclude=excluidos))),
+            seccion("ORDENES", _ordenes_renderizadas(decision, md) or "Ninguna"),
             seccion("REPAROS", _json(_reparos_con_disposicion(ap, decision))),
             seccion("METADATOS", _json(md.model_dump(mode="json"))),
             seccion("ANTECEDENTES", ap.antecedentes_hechos + "\n\n" + contestaciones),
@@ -559,7 +591,7 @@ def nodo_caso_concreto(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
     return {"caso": caso.model_dump(mode="json"), "intentos": intentos, "bitacora": [llamada], "alertas": alertas}
 
 
-def _ingesta_con_decision(ing: Ingesta, decision: Decision) -> Ingesta:
+def _ingesta_con_decision(ing: Ingesta, decision: Decision, ordenes: str = "") -> Ingesta:
     texto = json.dumps(decision.model_dump(mode="json", exclude={"previo_sha256"}), ensure_ascii=False)
     fuente = Doc(
         doc_id="decision",
@@ -568,7 +600,7 @@ def _ingesta_con_decision(ing: Ingesta, decision: Decision) -> Ingesta:
         instancia="2a",
         rol="otro",
         sha256=_sha(texto),
-        paginas=[Pagina(n=1, texto=texto)],
+        paginas=[Pagina(n=1, texto=texto), *([Pagina(n=2, texto=ordenes)] if ordenes else [])],
     )
     return ing.model_copy(update={"documentos": [*ing.documentos, fuente]})
 
@@ -577,7 +609,8 @@ def nodo_validar_caso(state: Estado, cfg: Config) -> dict:
     caso = CasoConcretoLLM.model_validate(state["caso"])
     ap = AperturaLLM.model_validate(state["apertura"])
     decision = Decision.model_validate(_ultima_decision(state))
-    ing = _ingesta_con_decision(Ingesta.model_validate(state["ingesta"]), decision)
+    md = Metadatos.model_validate(state["metadatos"])
+    ing = _ingesta_con_decision(Ingesta.model_validate(state["ingesta"]), decision, _ordenes_renderizadas(decision, md))
     verificadas = [CitaVerificada.model_validate(c) for c in state.get("citas") or []]
 
     textos = {"problema jurídico": caso.problema_juridico, "conclusión": caso.conclusion}
@@ -588,10 +621,13 @@ def nodo_validar_caso(state: Estado, cfg: Config) -> dict:
         mensajes += lint.datos_ajenos(texto, ing)
         mensajes += lint.residuos(texto)
     mensajes += lint.subconjunto_citas(caso, verificadas)
+    mensajes += lint.cita_verificada_en_caso(caso, verificadas, not cfg.verificar_relatoria)
+    mensajes += lint.pasajes_entre_comillas(caso, ing, verificadas)
     mensajes += lint.coherencia_decision(caso, decision)
+    mensajes += lint.plazos_en_caso(caso, decision)
     mensajes += lint.cobertura_reparos([p.reparo_ids for p in caso.parrafos], ap.reparos, decision)
     mensajes += lint.extension("\n\n".join(textos.values()), cfg.rango_palabras["caso_concreto"], "caso concreto")
-    mensajes += lint.duplicados([p.texto for p in caso.parrafos], cfg.jaccard_duplicados)
+    mensajes += lint.duplicados_caso(caso, cfg.jaccard_duplicados)
     return _cierre_validacion(state, cfg, "caso_concreto", mensajes)
 
 

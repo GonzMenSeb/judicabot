@@ -1,4 +1,5 @@
 import type {
+  Causal,
   DecisionCuerpo,
   DisposicionDerecho,
   DisposicionReparo,
@@ -30,6 +31,11 @@ export const CARENCIAS: readonly (readonly [SustitutivaApi, string])[] = [
   ["CARENCIA_HECHO_SUPERADO", "Hecho superado"],
   ["CARENCIA_DANO_CONSUMADO", "Daño consumado"],
   ["CARENCIA_SOBREVINIENTE", "Situación sobreviniente"],
+];
+
+export const CAUSALES: readonly (readonly [Causal, string])[] = [
+  ["COSA_JUZGADA", "Cosa juzgada constitucional"],
+  ["SUBSIDIARIEDAD", "Subsidiariedad"],
 ];
 
 export const DISPOSICIONES_REPARO: readonly (readonly [DisposicionReparo, string])[] = [
@@ -65,7 +71,25 @@ export const MSG = {
   plazo: "El plazo de cada orden debe ser mayor que cero.",
   libreVacio: "Hay un numeral libre vacío.",
   compulsa: "La compulsa de copias necesita indicar respecto de quién.",
+  decididoPorVacio: "Decidido por está vacío: en la declaración de uso de IA constará «no consta».",
+  decididoPorPlaceholder: "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide.",
 } as const;
+
+const DECIDIDO_POR_PLACEHOLDERS = new Set(["john doe", "prueba", "caso sintetico"]);
+const TILDES: Record<string, string> = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u" };
+
+export function esPlaceholderDecididoPor(nombre: string): boolean {
+  const normal = nombre
+    .toLowerCase()
+    .replace(/[áéíóúü]/g, (c) => TILDES[c] ?? c)
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+  return DECIDIDO_POR_PLACEHOLDERS.has(normal);
+}
+
+export function limpiarTexto(texto: string): string {
+  return texto.replace(/\u258E/g, " ").replace(/\s+/g, " ").trim();
+}
 
 const ORDINALES = ["PRIMERO", "SEGUNDO", "TERCERO", "CUARTO", "QUINTO", "SEXTO", "SÉPTIMO", "OCTAVO", "NOVENO"];
 const DECENAS = ["", "DÉCIMO", "VIGÉSIMO", "TRIGÉSIMO"];
@@ -83,10 +107,11 @@ export const lineas = (texto: string): string[] =>
     .map((l) => l.trim())
     .filter(Boolean);
 
-export function hoyISO(ahora: Date = new Date()): string {
-  const mes = String(ahora.getMonth() + 1).padStart(2, "0");
-  const dia = String(ahora.getDate()).padStart(2, "0");
-  return `${ahora.getFullYear()}-${mes}-${dia}`;
+export function fechaLarga(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const fecha = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return fecha.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export function ordenNueva(id: number): OrdenForm {
@@ -103,7 +128,7 @@ export function ordenNueva(id: number): OrdenForm {
   };
 }
 
-export function formularioInicial(payload: PayloadDecision | null, juez: string, hoy: string): Formulario {
+export function formularioInicial(payload: PayloadDecision | null, juez: string): Formulario {
   const derechos = (payload?.derechos_invocados ?? []).map((nombre, i) => ({
     id: i + 1,
     nombre,
@@ -113,8 +138,9 @@ export function formularioInicial(payload: PayloadDecision | null, juez: string,
   return {
     resultado: "",
     sustitutiva: "",
+    causal: "",
     eje: "",
-    decididoPor: juez,
+    decididoPor: esPlaceholderDecididoPor(juez) ? "" : juez,
     reparos: (payload?.reparos ?? []).map((r) => ({ id: r.id, disposicion: "ACOGE", nota: "" })),
     derechos,
     ordenes: [],
@@ -127,7 +153,7 @@ export function formularioInicial(payload: PayloadDecision | null, juez: string,
     notificar: true,
     remitir: true,
     generarFormato: true,
-    fechaFallo: payload?.fecha_hoy ?? hoy,
+    fechaFallo: "",
     fechaOficio: "",
     etiqueta: "",
     libres: [],
@@ -143,10 +169,17 @@ export function sustitutivaEfectiva(f: Formulario): SustitutivaForm {
 
 const esApi = (s: SustitutivaForm): s is SustitutivaApi => s !== "" && s !== "CARENCIA";
 
+const ordenEnBlanco = (o: OrdenForm) => !o.destinatario.trim() && !o.conducta.trim();
+
+export const admiteOrdenes = (f: Formulario): boolean => sustitutivaEfectiva(f) !== "";
+
 export function elegirSustitutiva(f: Formulario, s: SustitutivaForm): Formulario {
-  const siguiente = { ...f, sustitutiva: s };
+  const siguiente: Formulario = { ...f, sustitutiva: s, causal: s === "IMPROCEDENTE" ? f.causal : "" };
   if (s === "AMPARAR" && f.ordenes.length === 0) {
     return { ...siguiente, ordenes: [ordenNueva(f.siguienteId)], siguienteId: f.siguienteId + 1 };
+  }
+  if (s !== "AMPARAR" && f.sustitutiva === "AMPARAR") {
+    return { ...siguiente, ordenes: f.ordenes.filter((o) => !ordenEnBlanco(o)) };
   }
   return siguiente;
 }
@@ -169,7 +202,7 @@ export function agregarDerecho(f: Formulario, nombre: string): Formulario {
 export function clavesVigentes(f: Formulario): string[] {
   const k = ["resultado"];
   if (f.resultado && f.resultado !== "CONFIRMAR") k.push("sustitutiva");
-  if (sustitutivaEfectiva(f) === "AMPARAR") f.ordenes.forEach((o) => k.push(`orden#${o.id}`));
+  if (admiteOrdenes(f)) f.ordenes.forEach((o) => k.push(`orden#${o.id}`));
   if (lineas(f.prevenir).length) k.push("prevenir");
   if (lineas(f.desvincular).length) k.push("desvincular");
   if (f.compulsa) k.push("compulsa");
@@ -217,24 +250,24 @@ export function moverClave(f: Formulario, interna: string, destino: string | num
 
 export function aDecision(f: Formulario): DecisionCuerpo {
   const sustitutiva = sustitutivaEfectiva(f);
-  const amparar = sustitutiva === "AMPARAR";
-  const aplicanDerechos = amparar || sustitutiva === "NEGAR";
+  const aplicanDerechos = sustitutiva === "AMPARAR" || sustitutiva === "NEGAR";
   const respecto = f.respectoDe.trim();
   const organo = f.organo.trim();
   return {
     accion: "decidir",
     resultado: f.resultado || null,
     sustitutiva: esApi(sustitutiva) ? sustitutiva : null,
-    eje: f.eje.trim(),
-    por_reparo: f.reparos.map((r) => ({ reparo_id: r.id, disposicion: r.disposicion, nota: r.nota.trim() })),
+    causal: sustitutiva === "IMPROCEDENTE" && f.causal ? f.causal : null,
+    eje: limpiarTexto(f.eje),
+    por_reparo: f.reparos.map((r) => ({ reparo_id: r.id, disposicion: r.disposicion, nota: limpiarTexto(r.nota) })),
     derechos: aplicanDerechos ? f.derechos.map((d) => ({ derecho: d.nombre, disposicion: d.disposicion })) : [],
-    ordenes: amparar
+    ordenes: admiteOrdenes(f)
       ? f.ordenes.map((o) => ({
           mismo_termino: o.mismo,
           verbo: o.verbo,
           destinatario: o.destinatario.trim(),
           via_representante: o.via,
-          conducta: o.conducta.trim(),
+          conducta: limpiarTexto(o.conducta),
           plazo: { n: Number(o.n) || 0, unidad: o.unidad },
           condicion: o.condicion.trim(),
         }))
@@ -250,7 +283,7 @@ export function aDecision(f: Formulario): DecisionCuerpo {
     fecha_fallo: f.fechaFallo || null,
     fecha_oficio: f.fechaOficio || null,
     etiqueta_encabezado: f.etiqueta.trim(),
-    numerales_libres: f.libres.map((l) => l.texto.trim()),
+    numerales_libres: f.libres.map((l) => limpiarTexto(l.texto)),
     orden_numerales: f.reordenado ? clavesOrdenadas(f).map((k) => aClaveApi(f, k)) : [],
   };
 }
@@ -279,6 +312,13 @@ export function hallazgosLocales(f: Formulario): Hallazgo[] {
     return hallazgos.map((h) => (h.campo === "sustitutiva" ? { ...h, mensaje: MSG.carencia } : h));
   }
   return hallazgos;
+}
+
+export function advertenciasLocales(f: Formulario): Hallazgo[] {
+  const nombre = f.decididoPor.trim();
+  if (!nombre) return [{ campo: "decidido_por", mensaje: MSG.decididoPorVacio }];
+  if (esPlaceholderDecididoPor(nombre)) return [{ campo: "decidido_por", mensaje: MSG.decididoPorPlaceholder }];
+  return [];
 }
 
 export function combinar(locales: Hallazgo[], servidor: Hallazgo[]): Hallazgo[] {
@@ -341,5 +381,6 @@ export function sanear(crudo: unknown, payload: PayloadDecision | null): Formula
   const reparos = (payload?.reparos ?? []).map(
     (r) => f.reparos.find((x) => x.id === r.id) ?? { id: r.id, disposicion: "ACOGE" as const, nota: "" },
   );
-  return { ...f, reparos };
+  const causal = CAUSALES.some(([c]) => c === f.causal) ? f.causal : "";
+  return { ...f, causal, reparos };
 }

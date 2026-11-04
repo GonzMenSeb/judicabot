@@ -45,6 +45,7 @@ function doc(n: number, rol: DocResumen["rol"], extra: Partial<DocResumen> = {})
     paginas_sin_texto: 0,
     ruido: false,
     ajeno: false,
+    revisar: false,
     jev_rol: rol,
     jev_confianza: 0.97,
     jev_umbral: 0.9,
@@ -60,7 +61,15 @@ function ingesta(documentos: DocResumen[], extra: Partial<ResumenIngesta> = {}):
     esperados_faltantes: [],
     alertas: [],
     docs_ajenos: [],
-    auto: { fecha: "2026-10-22", fecha_reparto: "2026-10-21", accionante: "MARTA QUINTERO", accionada: "EPS HORIZONTE" },
+    docs_revisar: [],
+    auto: {
+      fecha: "2026-10-22",
+      fecha_reparto: "2026-10-21",
+      accionante: "MARTA QUINTERO",
+      accionada: "EPS HORIZONTE",
+      firmante: null,
+      cargo_firmante: null,
+    },
     ...extra,
   };
 }
@@ -332,5 +341,230 @@ describe("Documentos", () => {
     expect(rol.disabled).toBe(true);
     expect(screen.getByRole("link", { name: "Ver el borrador" }).getAttribute("href")).toBe("#/segunda/c1/borrador");
     expect(screen.queryByRole("button", { name: "Iniciar redacción" })).toBeNull();
+  });
+});
+
+const SIN_JEV = { jev_rol: null, jev_confianza: null, jev_umbral: null };
+const paraRevisar = (n: number, extra: Partial<DocResumen> = {}) => doc(n, "otro", { revisar: true, evidencia: "Cartas del a quo", ...SIN_JEV, ...extra });
+const conRevisar = (ids: number[] = [5]) =>
+  ingesta([...DOCS, ...ids.map((n) => paraRevisar(n))], { docs_revisar: ids.map((n) => `d${n}`) });
+const filaDe = (nombre: string) => screen.getByLabelText(`Rol de ${nombre}`).closest("li") as HTMLElement;
+const dialogoRevisar = async () =>
+  (await screen.findByRole("heading", { name: "Hay documentos para revisar" })).closest("dialog") as HTMLElement;
+const CONFIRMAR = { name: "Es de este caso: confirmar" };
+
+describe("Documentos para revisar", () => {
+  it("marca «Para revisar» distinto de «Ajeno»: el documento sigue incluido, con su rol, y explica el motivo", async () => {
+    const res = ingesta([...DOCS, paraRevisar(5), doc(6, "otro", { ajeno: true, ...SIN_JEV })], { docs_revisar: ["d5"], docs_ajenos: ["d6"] });
+    base(estadoRevision(res));
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    const revisar = within(filaDe("005.pdf"));
+    expect(revisar.getByText("Para revisar")).toBeTruthy();
+    expect(revisar.queryByText("Ajeno")).toBeNull();
+    expect(revisar.getByText(/encabezado es de otro radicado.*nombra a las partes.*marca/)).toBeTruthy();
+    expect((screen.getByLabelText("Rol de 005.pdf") as HTMLSelectElement).disabled).toBe(false);
+    expect((screen.getByLabelText("Rol de 005.pdf") as HTMLSelectElement).value).toBe("otro");
+    expect(revisar.getByRole("checkbox", CONFIRMAR)).toBeTruthy();
+
+    const ajeno = within(filaDe("006.pdf"));
+    expect(ajeno.getByText("Ajeno")).toBeTruthy();
+    expect(ajeno.queryByText("Para revisar")).toBeNull();
+    expect(ajeno.queryByRole("checkbox", CONFIRMAR)).toBeNull();
+    expect(within(filaDe("001.pdf")).queryByText("Para revisar")).toBeNull();
+  });
+
+  it("confirmar reenvía el rol del documento y, al guardar, deja de estar para revisar", async () => {
+    const confirmado = ingesta([...DOCS, paraRevisar(5, { rol_origen: "usuario", revisar: false })]);
+    const llamadas = base(estadoRevision(conRevisar()), { "PUT /api/casos/c1/revision": () => ok(estadoRevision(confirmado)) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR));
+    expect((within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/1 rol cambiado/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(within(filaDe("005.pdf")).queryByText("Para revisar")).toBeNull());
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ roles: { d5: "otro" } });
+    expect(within(filaDe("005.pdf")).queryByRole("checkbox", CONFIRMAR)).toBeNull();
+  });
+
+  it("desmarcar la confirmación deshace el cambio", async () => {
+    base(estadoRevision(conRevisar()));
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    const casilla = within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR) as HTMLInputElement;
+    fireEvent.click(casilla);
+    fireEvent.click(casilla);
+    expect(casilla.checked).toBe(false);
+    expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+  });
+
+  it("elegir el rol que ya tenía también confirma el documento", async () => {
+    base(estadoRevision(conRevisar()));
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.change(screen.getByLabelText("Rol de 005.pdf"), { target: { value: "anexo" } });
+    fireEvent.change(screen.getByLabelText("Rol de 005.pdf"), { target: { value: "otro" } });
+    expect((within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("al iniciar con documentos sin confirmar pide confirmación, los lista y no bloquea", async () => {
+    const llamadas = base(estadoRevision(conRevisar([5, 6])), { "POST /api/casos/c1/run": () => ok({ job_id: "j1" }) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = within(await dialogoRevisar());
+    expect(dialogo.getByText("005.pdf")).toBeTruthy();
+    expect(dialogo.getByText("006.pdf")).toBeTruthy();
+    expect(dialogo.queryByText("001.pdf")).toBeNull();
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+
+    fireEvent.click(dialogo.getByRole("button", { name: "Continuar de todos modos" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(llamadas.find((l) => l.ruta === "/api/casos/c1/run")?.cuerpo).toEqual({ cmd: "iniciar" });
+    expect(llamadas.some((l) => l.metodo === "PUT")).toBe(false);
+  });
+
+  it("«Volver a revisar» cierra el diálogo sin iniciar", async () => {
+    const llamadas = base(estadoRevision(conRevisar()));
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = await dialogoRevisar();
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Volver a revisar" }));
+
+    await waitFor(() => expect(dialogo.hasAttribute("open")).toBe(false));
+    expect(screen.queryByRole("heading", { name: "Hay documentos para revisar" })).toBeNull();
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+  });
+
+  it("solo lista los que siguen sin confirmar", async () => {
+    base(estadoRevision(conRevisar([5, 6])), { "PUT /api/casos/c1/revision": () => ok(estadoRevision(conRevisar([6]))) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR));
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = within(await dialogoRevisar());
+    expect(dialogo.getByText("006.pdf")).toBeTruthy();
+    expect(dialogo.queryByText("005.pdf")).toBeNull();
+  });
+
+  it("si todos los documentos para revisar están confirmados no pregunta: guarda y redacta", async () => {
+    const llamadas = base(estadoRevision(conRevisar()), {
+      "PUT /api/casos/c1/revision": () => ok(estadoRevision(ingesta([...DOCS, paraRevisar(5, { revisar: false, rol_origen: "usuario" })]))),
+      "POST /api/casos/c1/run": () => ok({ job_id: "j1" }),
+    });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(within(filaDe("005.pdf")).getByRole("checkbox", CONFIRMAR));
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(screen.queryByRole("heading", { name: "Hay documentos para revisar" })).toBeNull();
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ roles: { d5: "otro" } });
+  });
+
+  it("sin documentos para revisar inicia directamente", async () => {
+    const llamadas = base(estadoRevision(), { "POST /api/casos/c1/run": () => ok({ job_id: "j1" }) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(screen.queryByRole("heading", { name: "Hay documentos para revisar" })).toBeNull();
+    expect(llamadas.some((l) => l.ruta === "/api/casos/c1/run")).toBe(true);
+  });
+
+  it("tras confirmar el diálogo, la clave faltante se pide una sola vez y no se vuelve a preguntar por los documentos", async () => {
+    let clave = false;
+    const llamadas = base(estadoRevision(conRevisar()), {
+      "GET /api/estado-servidor": () => ok({ ...servidor, api_key: clave }),
+      "POST /api/api-key": () => {
+        clave = true;
+        return ok({ api_key: true });
+      },
+      "POST /api/casos/c1/run": () => ok({ job_id: "j2" }),
+    });
+    estadoServidor.value = { ...servidor, api_key: false };
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 005.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    fireEvent.click(within(await dialogoRevisar()).getByRole("button", { name: "Continuar de todos modos" }));
+    const campo = await screen.findByLabelText("Clave de la API");
+    fireEvent.input(campo, { target: { value: "sk-ant-prueba" } });
+    fireEvent.click(within(campo.closest("dialog") as HTMLElement).getByRole("button", { name: "Guardar y continuar" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(llamadas.filter((l) => l.ruta === "/api/casos/c1/run")).toHaveLength(1);
+  });
+});
+
+describe("Datos del auto: firma", () => {
+  it("muestra firmante y cargo del firmante, vacíos si no se fijaron, y explica el valor por defecto", async () => {
+    base(estadoRevision());
+    render(<Documentos caso="c1" />);
+
+    const firmante = (await screen.findByLabelText("Firmante")) as HTMLInputElement;
+    const cargo = screen.getByLabelText("Cargo del firmante") as HTMLInputElement;
+    expect(firmante.value).toBe("");
+    expect(cargo.value).toBe("");
+    expect(firmante.disabled).toBe(false);
+    expect(screen.getByText(/Si deja vacíos el firmante y su cargo/)).toBeTruthy();
+  });
+
+  it("precarga los valores guardados", async () => {
+    const res = ingesta(DOCS);
+    res.auto = { ...res.auto, firmante: "ANA PÉREZ", cargo_firmante: "JUEZA" };
+    base(estadoRevision(res));
+    render(<Documentos caso="c1" />);
+
+    expect(((await screen.findByLabelText("Firmante")) as HTMLInputElement).value).toBe("ANA PÉREZ");
+    expect((screen.getByLabelText("Cargo del firmante") as HTMLInputElement).value).toBe("JUEZA");
+  });
+
+  it("guarda firmante y cargo con la revisión del auto", async () => {
+    const llamadas = base(estadoRevision(), { "PUT /api/casos/c1/revision": () => ok(estadoRevision()) });
+    render(<Documentos caso="c1" />);
+
+    fireEvent.input(await screen.findByLabelText("Firmante"), { target: { value: "  Ana Pérez  " } });
+    fireEvent.input(screen.getByLabelText("Cargo del firmante"), { target: { value: "Jueza" } });
+    expect(screen.getByText(/datos del auto editados/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(llamadas.some((l) => l.metodo === "PUT")).toBe(true));
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ auto: { firmante: "Ana Pérez", cargo_firmante: "Jueza" } });
+  });
+
+  it("vaciar un firmante guardado lo envía como null para volver al valor por defecto", async () => {
+    const res = ingesta(DOCS);
+    res.auto = { ...res.auto, firmante: "ANA PÉREZ" };
+    const llamadas = base(estadoRevision(res), { "PUT /api/casos/c1/revision": () => ok(estadoRevision()) });
+    render(<Documentos caso="c1" />);
+
+    fireEvent.input(await screen.findByLabelText("Firmante"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(llamadas.some((l) => l.metodo === "PUT")).toBe(true));
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ auto: { firmante: null } });
+  });
+
+  it("en solo lectura los campos de firma están deshabilitados", async () => {
+    base({ ...estadoRevision(), estado: "esperando_decision", ingesta: ingesta(DOCS), resumen: { alertas: [] } as EstadoCaso["resumen"] });
+    render(<Documentos caso="c1" />);
+
+    expect(((await screen.findByLabelText("Firmante")) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Cargo del firmante") as HTMLInputElement).disabled).toBe(true);
   });
 });

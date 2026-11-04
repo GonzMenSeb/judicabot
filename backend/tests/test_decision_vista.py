@@ -8,6 +8,8 @@ import random
 import shutil
 import sqlite3
 import time
+from copy import deepcopy
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,7 @@ from test_graph import DECISION, Verificador, ingesta_sintetica
 from tutela2 import api, decision_vista, formulas, ingest, salidas, server
 from tutela2 import citas as citas_real
 from tutela2.config import Config, LLMConfig
-from tutela2.models import Decision, Metadatos
+from tutela2.models import Decision, DisposicionReparo, Metadatos, Orden, colapsar_texto, normalizar_decision
 
 SEMILLA = 20261103
 VALIDAS_RESULTADO = ("CONFIRMAR", "REVOCAR", "MODIFICAR")
@@ -31,6 +33,25 @@ VALIDAS_SUSTITUTIVA = (
     "CARENCIA_SOBREVINIENTE",
 )
 URL = "/api/casos/{}/decision/vista"
+HOY = date(2026, 11, 4)
+CLAVES_VISTA = {"numerales", "faltantes", "errores", "advertencias", "encabezado", "fecha_fallo", "fecha_por_defecto"}
+BASE = {
+    "accion": "decidir",
+    "resultado": "REVOCAR",
+    "sustitutiva": "AMPARAR",
+    "eje": "x",
+    "ordenes": [{"destinatario": "la EPS", "conducta": "autorice"}],
+    "decidido_por": "Oficial Mayor",
+}
+VISTA_ERROR = {
+    "numerales": [],
+    "faltantes": [],
+    "errores": [decision_vista.ERROR_INTERNO],
+    "advertencias": [],
+    "encabezado": "",
+    "fecha_fallo": "",
+    "fecha_por_defecto": False,
+}
 
 
 def _plano(numerales: list[formulas.Numeral]) -> list[dict]:
@@ -309,7 +330,7 @@ def test_la_red_de_seguridad_responde_200_con_errores(cliente, monkeypatch):
     monkeypatch.setattr(decision_vista, "decision_vista", falla)
     r = cliente.post(URL.format("caso-api"), json=DECISION)
     assert r.status_code == 200
-    assert r.json() == {"numerales": [], "faltantes": [], "errores": [decision_vista.ERROR_INTERNO]}
+    assert r.json() == VISTA_ERROR
 
 
 def test_si_fallan_los_metadatos_se_degrada_y_se_responde(cliente, monkeypatch):
@@ -328,7 +349,8 @@ def test_openapi_documenta_la_ruta():
     assert operacion["requestBody"]["content"]["application/json"]["schema"]["type"] == "object"
     assert {"404", "413", "422"} <= set(operacion["responses"])
     componentes = esquema["components"]["schemas"]
-    assert set(componentes["DecisionVistaRespuesta"]["properties"]) == {"numerales", "faltantes", "errores"}
+    assert set(componentes["DecisionVistaRespuesta"]["properties"]) == CLAVES_VISTA
+    assert set(componentes["DecisionVistaRespuesta"]["required"]) == CLAVES_VISTA
     assert set(componentes["NumeralVista"]["properties"]) == {"clave", "texto", "negritas"}
     assert set(componentes["FaltanteDecision"]["properties"]) == {"campo", "mensaje"}
 
@@ -342,11 +364,7 @@ def test_decision_vacia_reporta_lo_que_falta_y_aun_arma_numerales(rapido):
     assert {f["campo"] for f in salida["faltantes"]} == {"resultado", "sustitutiva", "eje"}
     assert NUMERALES_MINIMOS <= {n["clave"] for n in salida["numerales"]}
     assert salida["errores"] == list(dict.fromkeys(f["mensaje"] for f in salida["faltantes"]))
-    assert decision_vista.decision_vista([], md) == {
-        "numerales": [],
-        "faltantes": [],
-        "errores": ["La decisión debe ser un objeto."],
-    }
+    assert decision_vista.decision_vista([], md) == {**VISTA_ERROR, "errores": ["La decisión debe ser un objeto."]}
 
 
 def test_mensajes_de_validacion_coinciden_con_los_de_la_interfaz():
@@ -370,13 +388,229 @@ def test_mensajes_de_validacion_coinciden_con_los_de_la_interfaz():
     assert "⟦FALTA: respecto de quién⟧" in texto["compulsa"]
 
 
+def _vista(**cambios) -> dict:
+    return decision_vista.decision_vista({**BASE, **cambios}, Metadatos(), HOY)
+
+
+def _texto_de(salida: dict, clave: str) -> str:
+    return next(n["texto"] for n in salida["numerales"] if n["clave"] == clave)
+
+
+def test_la_vista_expone_encabezado_y_si_la_fecha_es_por_defecto():
+    salida = _vista()
+    assert salida["encabezado"] == "REVOCA"
+    assert salida["fecha_fallo"] == "2026-11-04" and salida["fecha_por_defecto"] is True
+    for sin_fecha in ({"fecha_fallo": None}, {"fecha_fallo": ""}, {"fecha_fallo": "   "}):
+        assert _vista(**sin_fecha)["fecha_por_defecto"] is True
+    propia = _vista(fecha_fallo="2026-10-20")
+    assert propia["fecha_fallo"] == "2026-10-20" and propia["fecha_por_defecto"] is False
+    assert _vista(resultado="REVOCAR", sustitutiva="NEGAR", ordenes=[])["encabezado"] == "REVOCA Y NIEGA"
+    assert _vista(etiqueta_encabezado="CONFIRMA CON MODIFICACIONES")["encabezado"] == "CONFIRMA CON MODIFICACIONES"
+    assert _vista(resultado=None)["encabezado"] == "⟦FALTA: decisión⟧"
+
+
+def test_la_fecha_por_defecto_sigue_a_date_today(monkeypatch):
+    class Falsa(date):
+        @classmethod
+        def today(cls):
+            return cls(2031, 1, 2)
+
+    monkeypatch.setattr(decision_vista, "date", Falsa)
+    salida = decision_vista.decision_vista(BASE, Metadatos())
+    assert salida["fecha_fallo"] == "2031-01-02" and salida["fecha_por_defecto"] is True
+
+
+def test_la_causal_alimenta_el_segundo_y_la_etiqueta():
+    base = {"resultado": "REVOCAR", "sustitutiva": "IMPROCEDENTE", "ordenes": []}
+    con = _vista(**base, causal="COSA_JUZGADA")
+    assert con["faltantes"] == [] and con["errores"] == []
+    assert con["encabezado"] == "REVOCA Y DECLARA IMPROCEDENTE POR COSA JUZGADA"
+    assert "cosa juzgada constitucional" in _texto_de(con, "sustitutiva")
+    sin = _vista(**base)
+    assert sin["encabezado"] == "REVOCA Y DECLARA IMPROCEDENTE"
+    assert _texto_de(sin, "sustitutiva").endswith("por las razones expuestas en este proveído.")
+    assert _vista(**base, causal="")["encabezado"] == sin["encabezado"]
+
+
+def test_causal_invalida_se_reporta_y_no_cambia_el_texto():
+    salida = _vista(resultado="REVOCAR", sustitutiva="IMPROCEDENTE", ordenes=[], causal="INVENTADA")
+    assert [f["campo"] for f in salida["faltantes"]] == ["causal"]
+    assert "COSA_JUZGADA" in salida["faltantes"][0]["mensaje"] and "SUBSIDIARIEDAD" in salida["faltantes"][0]["mensaje"]
+    assert salida["encabezado"] == "REVOCA Y DECLARA IMPROCEDENTE"
+
+
+def test_causal_sin_improcedente_se_ignora_sin_error():
+    salida = _vista(resultado="REVOCAR", sustitutiva="NEGAR", ordenes=[], causal="COSA_JUZGADA")
+    assert salida["faltantes"] == [] and salida["errores"] == []
+    assert salida["encabezado"] == "REVOCA Y NIEGA"
+    assert "cosa juzgada" not in _texto_de(salida, "sustitutiva")
+
+
+@pytest.mark.parametrize(
+    "sustitutiva,causal", [("NEGAR", None), ("IMPROCEDENTE", None), ("IMPROCEDENTE", "COSA_JUZGADA"), ("CARENCIA_HECHO_SUPERADO", None)]
+)
+def test_advertir_y_prevenir_sin_amparar_no_se_rechazan(sustitutiva, causal):
+    ordenes = [
+        {"verbo": "ADVERTIR", "destinatario": "la señora Ana", "conducta": "deberá acudir ante el juzgado de conocimiento"},
+        {"verbo": "PREVENIR", "destinatario": "el Banco X", "conducta": "responda oportunamente"},
+    ]
+    extra = {"causal": causal} if causal else {}
+    salida = _vista(resultado="REVOCAR", sustitutiva=sustitutiva, ordenes=ordenes, **extra)
+    assert salida["faltantes"] == [] and salida["errores"] == []
+    assert [n["clave"] for n in salida["numerales"]] == ["resultado", "sustitutiva", "orden:0", "orden:1", "notificar", "remitir"]
+    assert _texto_de(salida, "orden:0") == "ADVERTIR a la señora Ana que deberá acudir ante el juzgado de conocimiento."
+    assert _texto_de(salida, "orden:1") == "PREVENIR al Banco X para que responda oportunamente."
+
+
+MSG_VACIO = "Decidido por está vacío: en la declaración de uso de IA constará «no consta»."
+MSG_PLACEHOLDER = "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide."
+
+
+@pytest.mark.parametrize(
+    "nombre,mensaje",
+    [
+        ("", MSG_VACIO),
+        ("   ", MSG_VACIO),
+        (None, MSG_VACIO),
+        ("John Doe", MSG_PLACEHOLDER),
+        ("JOHN DOE", MSG_PLACEHOLDER),
+        ("  john   doe ", MSG_PLACEHOLDER),
+        ("prueba", MSG_PLACEHOLDER),
+        ("Prueba", MSG_PLACEHOLDER),
+        ("caso_sintetico", MSG_PLACEHOLDER),
+        ("CASO-SINTETICO", MSG_PLACEHOLDER),
+        ("caso sintético", MSG_PLACEHOLDER),
+    ],
+)
+def test_decidido_por_vacio_o_de_prueba_advierte_sin_bloquear(nombre, mensaje):
+    salida = _vista(decidido_por=nombre)
+    assert salida["advertencias"] == [{"campo": "decidido_por", "mensaje": mensaje}]
+    assert salida["faltantes"] == [] and salida["errores"] == []
+    assert Decision.model_validate(decision_vista._limpiar({**BASE, "decidido_por": nombre}, [])).errores() == []
+
+
+@pytest.mark.parametrize("nombre", ["Oficial Mayor", "SANTIAGO ALEJANDRO CADAVID DUQUE", "Juan Prueba Pérez", "John Doe Jr."])
+def test_decidido_por_real_no_advierte(nombre):
+    assert _vista(decidido_por=nombre)["advertencias"] == []
+
+
+def test_advertencias_solo_al_decidir_y_el_valor_existe_en_el_modelo():
+    assert _vista(accion="rehacer_apertura", instruccion="x", decidido_por="")["advertencias"] == []
+    assert Decision(accion="decidir", decidido_por="prueba").advertencias() == [MSG_PLACEHOLDER]
+    assert Decision(accion="decidir").advertencias() == [MSG_VACIO]
+    assert Decision(accion="rehacer_apertura", instruccion="x").advertencias() == []
+
+
+def test_mensajes_de_advertencia_llevan_prefijo_que_los_asigna_a_su_campo():
+    d = Decision(accion="decidir")
+    for mensaje in (MSG_VACIO, MSG_PLACEHOLDER):
+        assert decision_vista._campos_del_error(mensaje, d) == ["decidido_por"]
+
+
+def test_colapsar_texto():
+    assert colapsar_texto("▎ Línea uno\n▎ Línea dos") == "Línea uno Línea dos"
+    assert colapsar_texto("  a   b \t\n c ") == "a b c"
+    assert colapsar_texto("a\u00a0b\u2028c") == "a b c"
+    assert colapsar_texto("a\x0bb") == "ab"
+    assert colapsar_texto("▎") == "" and colapsar_texto("▎\n  ▎ ") == ""
+    assert colapsar_texto(colapsar_texto("▎ x\n y")) == "x y"
+    assert colapsar_texto(5) == 5 and colapsar_texto(None) is None
+
+
+CRUDA = {
+    "accion": "decidir",
+    "eje": "▎ La entidad no\n▎ acreditó la autorización.",
+    "instruccion": "  corrija\n la cita ",
+    "por_reparo": [{"reparo_id": "R1", "disposicion": "ACOGE", "nota": "▎ nota\n\n dos"}, None, 3],
+    "numerales_libres": ["▎ CONFIRMAR   en lo demás.\n", 5],
+    "ordenes": [{"destinatario": "la  EPS\n", "conducta": "▎ entregue\n▎ el medicamento", "literales": ["a\n b"]}, "x"],
+    "decidido_por": "  Oficial\n Mayor ",
+}
+
+
+def test_normalizar_decision_cruda_toca_solo_los_campos_de_texto_libre():
+    original = deepcopy(CRUDA)
+    salida = normalizar_decision(CRUDA)
+    assert CRUDA == original
+    assert salida["eje"] == "La entidad no acreditó la autorización."
+    assert salida["instruccion"] == "corrija la cita"
+    assert salida["por_reparo"][0] == {"reparo_id": "R1", "disposicion": "ACOGE", "nota": "nota dos"}
+    assert salida["por_reparo"][1:] == [None, 3]
+    assert salida["numerales_libres"] == ["CONFIRMAR en lo demás.", 5]
+    assert salida["ordenes"][0] == {"destinatario": "la  EPS\n", "conducta": "entregue el medicamento", "literales": ["a\n b"]}
+    assert salida["ordenes"][1] == "x"
+    assert salida["decidido_por"] == CRUDA["decidido_por"]
+    assert normalizar_decision(salida) == salida
+
+
+@pytest.mark.parametrize(
+    "basura",
+    [
+        [1, 2],
+        "x",
+        None,
+        {"eje": 5, "instruccion": None, "por_reparo": "x", "numerales_libres": None, "ordenes": {"a": 1}},
+        {"por_reparo": [{"nota": 5}], "ordenes": [{"conducta": None}, {}]},
+    ],
+)
+def test_normalizar_decision_cruda_tolera_cualquier_forma(basura):
+    assert normalizar_decision(basura) == basura
+
+
+def test_decision_normaliza_al_validar_desde_dict_y_desde_instancias():
+    limpia = {**CRUDA, "por_reparo": CRUDA["por_reparo"][:1], "numerales_libres": CRUDA["numerales_libres"][:1]}
+    d = Decision.model_validate({**limpia, "ordenes": CRUDA["ordenes"][:1]})
+    assert d.eje == "La entidad no acreditó la autorización." and d.instruccion == "corrija la cita"
+    assert d.por_reparo[0].nota == "nota dos" and d.numerales_libres == ["CONFIRMAR en lo demás."]
+    assert d.ordenes[0].conducta == "entregue el medicamento"
+    pasada = Orden(destinatario="x", conducta="▎ a\n▎ b")
+    nota = DisposicionReparo(reparo_id="R1", nota="n\n▎ m")
+    d = Decision(accion="decidir", eje="▎ u\nv", numerales_libres=["▎ w\n z"], ordenes=[pasada], por_reparo=[nota])
+    assert (d.eje, d.numerales_libres, d.ordenes[0].conducta, d.por_reparo[0].nota) == ("u v", ["w z"], "a b", "n m")
+    assert pasada.conducta == "▎ a\n▎ b" and nota.nota == "n\n▎ m"
+    assert d.model_fields_set == {"accion", "eje", "numerales_libres", "ordenes", "por_reparo"}
+
+
+def test_la_vista_colapsa_los_textos_y_marca_lo_que_queda_vacio():
+    salida = _vista(
+        eje="▎ Porque\n▎ sí.",
+        ordenes=[{"destinatario": "la EPS", "conducta": "▎ entregue\n▎ el medicamento"}],
+        numerales_libres=["▎ NOTIFICAR   algo\n"],
+        por_reparo=[{"reparo_id": "R1", "disposicion": "ACOGE", "nota": "▎ a\n b"}],
+    )
+    assert salida["faltantes"] == []
+    assert _texto_de(salida, "orden:0").endswith("entregue el medicamento.")
+    assert _texto_de(salida, "libre:0") == "NOTIFICAR algo"
+    assert "▎" not in json.dumps(salida, ensure_ascii=False)
+    vacia = _vista(eje="▎\n  ▎ ", ordenes=[{"destinatario": "la EPS", "conducta": "▎"}])
+    assert {f["campo"] for f in vacia["faltantes"]} == {"eje", "ordenes.0.conducta"}
+
+
+def test_el_limite_de_largo_se_mide_despues_de_colapsar():
+    largo = "palabra " * (decision_vista.MAX_TEXTO // 8 - 1)
+    espaciado = "▎ " + largo.replace(" ", "   ")
+    assert len(espaciado) > decision_vista.MAX_TEXTO
+    assert _vista(eje=espaciado)["faltantes"] == []
+
+
 def _t(valor, *campos):
     return valor, set(campos)
 
 
 RESULTADOS = [_t(None), _t("CONFIRMAR"), _t("REVOCAR"), _t("MODIFICAR"), _t("revocar", "resultado"), _t(7, "resultado"), _t([], "resultado"), _t("")]
 SUSTITUTIVAS = [_t(None), _t(""), *[_t(s) for s in VALIDAS_SUSTITUTIVA], _t("INVENTADA", "sustitutiva"), _t({}, "sustitutiva")]
-EJES = [_t(None), _t(""), _t("   "), _t("Porque sí."), _t(5, "eje"), _t("x" * (decision_vista.MAX_TEXTO + 1), "eje"), _t("\x00\x01")]
+EJES = [
+    _t(None),
+    _t(""),
+    _t("   "),
+    _t("Porque sí."),
+    _t(5, "eje"),
+    _t("x" * (decision_vista.MAX_TEXTO + 1), "eje"),
+    _t("\x00\x01"),
+    _t("▎ Porque sí.\n▎ Y además."),
+    _t("▎\n  ▎ "),
+]
+CAUSALES = [_t(None), _t(""), _t("COSA_JUZGADA"), _t("SUBSIDIARIEDAD"), _t("INVENTADA", "causal"), _t(5, "causal"), _t([], "causal")]
 ORDENES = [
     (None, set(), 0),
     ([], set(), 0),
@@ -438,7 +672,7 @@ EXTRAS = [{}, {"desconocida": 1}, {"__proto__": {"x": 1}, "otra": [1, [2]]}]
 
 def _esperado(caso: dict) -> set[str]:
     campos: set[str] = set()
-    for clave in ("resultado", "sustitutiva", "eje", "accion", "numerales", "compulsa", "fecha_fallo"):
+    for clave in ("resultado", "sustitutiva", "eje", "accion", "numerales", "compulsa", "fecha_fallo", "causal"):
         campos |= caso["hallazgos"][clave]
     for clave in ("ordenes", "derechos", "numerales_libres", "orden_numerales"):
         campos |= caso["hallazgos"][clave]
@@ -456,7 +690,7 @@ def _esperado(caso: dict) -> set[str]:
     if sustitutiva is None and resultado != "CONFIRMAR":
         campos.add("sustitutiva")
     eje = d.get("eje")
-    if not (isinstance(eje, str) and eje.strip("\x00\x01 ") and len(eje) <= decision_vista.MAX_TEXTO):
+    if not (isinstance(eje, str) and colapsar_texto(eje) and len(eje) <= decision_vista.MAX_TEXTO):
         campos.add("eje")
     if sustitutiva == "AMPARAR" and caso["n_ordenes"] == 0:
         campos.add("ordenes")
@@ -472,6 +706,7 @@ def _casos_aleatorios(n: int):
             ("resultado", RESULTADOS),
             ("sustitutiva", SUSTITUTIVAS),
             ("eje", EJES),
+            ("causal", CAUSALES),
             ("derechos", DERECHOS),
             ("numerales_libres", LIBRES),
             ("orden_numerales", ORDENES_NUMERALES),
@@ -504,8 +739,11 @@ def test_fuzz_con_semilla_fija_nunca_falla_y_reporta_lo_que_falta(rapido):
         d = caso["decision"]
         salida = decision_vista.decision_vista(d, md)
         assert decision_vista.ERROR_INTERNO not in salida["errores"]
-        assert set(salida) == {"numerales", "faltantes", "errores"}
+        assert set(salida) == CLAVES_VISTA
         assert salida["numerales"], d
+        assert {a["campo"] for a in salida["advertencias"]} <= {"decidido_por"}
+        assert not {a["mensaje"] for a in salida["advertencias"]} & set(salida["errores"])
+        assert isinstance(salida["encabezado"], str) and salida["encabezado"]
         for n in salida["numerales"]:
             assert isinstance(n["clave"], str) and isinstance(n["texto"], str)
             assert all(isinstance(x, str) for x in n["negritas"])

@@ -145,6 +145,9 @@ def test_ingesta_forma_a(caso: str, tmp_path: Path) -> None:
     if caso == "05001400904720260034601":
         assert _por_prefijo(ing, "022SentenciaTutela02072024").rol != "fallo_a_quo"
         assert _por_prefijo(ing, "025ImpugancionAccionante").rol == "impugnacion"
+    if caso == CASO_SIN_ACTA:
+        doc = _por_prefijo(ing, "006_006SolicitudExpediente")
+        assert doc.doc_id in ing.docs_revisar and doc.doc_id not in ing.docs_ajenos
 
 
 @pytest.mark.parametrize("caso", CASOS_FORMA_B)
@@ -195,7 +198,7 @@ def _esperadas(caso_dir: Path, decision: Decision, con_acta: bool) -> tuple[list
     formato = f"FormatoCalificacion{corto}.docx" if decision.generar_formato else None
     if formato:
         nombres.append(formato)
-    numerados = [f"{PRINCIPAL}/{i:03d}{n}" for i, n in enumerate(nombres, 1)]
+    numerados = [f"{PRINCIPAL}/{i:03d}{n}" for i, n in enumerate(nombres, 1 if con_acta else 2)]
     fallo = next(n for n in numerados if "FalloSegunda" in n)
     return numerados, fallo, formato
 
@@ -215,12 +218,14 @@ def _comprobar_formato_fallo(ruta: Path, decision: Decision, cfg: Config) -> Non
     titulos = [p.text for p in parrafos if re.match(r"^[IVX]+\.\t", p.text)]
     assert len(titulos) >= 7, titulos
 
+    assert textos.count(_plano(formulas.COMPETENCIA_1)) == 1
     cuerpo = next(p for p in parrafos if _plano(p.text) == _plano(formulas.COMPETENCIA_1))
     assert cuerpo.runs and all(r.font.name == "Bookman Old Style" and r.font.size.pt == 12 for r in cuerpo.runs if r.text.strip())
     spacing = cuerpo._p.pPr.find(qn("w:spacing"))
     assert spacing.get(qn("w:line")) == "360" and spacing.get(qn("w:lineRule")) == "auto"
 
     plano = "\n".join(textos)
+    assert "competente para resolver" not in plano
     for fijo in (
         formulas.COMPETENCIA_1,
         formulas.PROCEDIBILIDAD_P1,

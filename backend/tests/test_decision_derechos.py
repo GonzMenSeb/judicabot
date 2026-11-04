@@ -51,3 +51,18 @@ def test_derechos_no_viajan_si_confirmar(cfg, tmp_path):
 def test_derechos_no_viajan_en_otras_sustitutivas(cfg, tmp_path, sustitutiva):
     dec = correr(cfg, tmp_path, sustitutiva=sustitutiva, ordenes=[])
     assert "derechos" not in dec
+
+
+@pytest.mark.parametrize("sustitutiva", ["NEGAR", "IMPROCEDENTE"])
+def test_ordenes_advertir_y_prevenir_viajan_sin_amparar(cfg, tmp_path, sustitutiva):
+    ordenes = [
+        {"verbo": "ADVERTIR", "destinatario": "la accionante", "conducta": "deberá acudir ante el juzgado"},
+        {"verbo": "PREVENIR", "destinatario": "la entidad", "conducta": "responda oportunamente"},
+    ]
+    dec = correr(cfg, tmp_path, sustitutiva=sustitutiva, ordenes=ordenes)
+    assert [o["verbo"] for o in dec["ordenes"]] == ["ADVERTIR", "PREVENIR"]
+
+
+def test_la_causal_viaja_al_caso_concreto(cfg, tmp_path):
+    dec = correr(cfg, tmp_path, sustitutiva="IMPROCEDENTE", causal="COSA_JUZGADA", ordenes=[])
+    assert dec["causal"] == "COSA_JUZGADA"

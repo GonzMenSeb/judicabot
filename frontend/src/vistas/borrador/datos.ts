@@ -1,5 +1,5 @@
 import type { Bloque, CitaVista, Vista } from "../../api/contrato";
-import { porcentaje } from "../../estado";
+import { nombreModelo, porcentaje } from "../../estado";
 import type { EtapaPaso } from "../../ui";
 import type {
   AlertasApi,
@@ -11,7 +11,9 @@ import type {
   ItemRevision,
   JevMetadatos,
   LecturaJev,
+  LlamadaBitacora,
   MetadatosCaso,
+  Redaccion,
 } from "./tipos";
 
 export const ETIQUETA_ESTADO_CITA: Record<CitaVista["estado"], string> = {
@@ -46,6 +48,27 @@ const ETIQUETA_NODO: Record<string, string> = {
 const mayuscula = (texto: string) => (texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : texto);
 const etiquetaDe = (mapa: Record<string, string>, clave: string) => mapa[clave] ?? clave;
 const limpiar = (texto: string) => texto.replace(/\s+/g, " ").trim();
+
+const SECCIONES_REDACTADAS = [
+  { nodo: "apertura", secciones: "Secciones II a IV" },
+  { nodo: "consideraciones", secciones: "Sección V" },
+] as const;
+
+const nombreEfectivo = (id: string) => nombreModelo(id.replace(/-\d{8}$/, ""));
+
+export function redaccionPorNodo(bitacora: LlamadaBitacora[] | null | undefined): Redaccion[] {
+  if (!Array.isArray(bitacora)) return [];
+  const filas: Redaccion[] = [];
+  for (const { nodo, secciones } of SECCIONES_REDACTADAS) {
+    const ultima = bitacora.findLast((l) => l.nodo === nodo && l.proveedor !== "jev");
+    const efectivo = ultima?.modelo_efectivo || ultima?.modelo_pedido;
+    if (!ultima || !efectivo) continue;
+    const modelo = nombreEfectivo(efectivo);
+    const pedido = ultima.modelo_pedido ? nombreEfectivo(ultima.modelo_pedido) : null;
+    filas.push({ nodo, secciones, modelo, pedido: pedido && pedido !== modelo ? pedido : null });
+  }
+  return filas;
+}
 
 export const textoBloque = (bloque: Bloque): string => bloque.segmentos.map((s) => s.texto).join("");
 

@@ -25,6 +25,46 @@ const conArticulo = (d: string) => (ARTICULO.test(d) ? d : d === "salud" ? "la s
 const sinArticulo = (d: string) => d.replace(ARTICULO, "");
 const UNIDADES: Record<string, string> = { horas_habiles: "horas hábiles", dias_habiles: "días hábiles", horas: "horas", dias: "días" };
 
+const ENCABEZADO_RESULTADO: Record<string, string> = { CONFIRMAR: "CONFIRMA", REVOCAR: "REVOCA", MODIFICAR: "MODIFICA" };
+const ENCABEZADO_SUSTITUTIVA: Record<string, string> = {
+  AMPARAR: "",
+  NEGAR: "NIEGA",
+  IMPROCEDENTE: "DECLARA IMPROCEDENTE",
+  CARENCIA_HECHO_SUPERADO: "DECLARA HECHO SUPERADO",
+  CARENCIA_DANO_CONSUMADO: "DECLARA DAÑO CONSUMADO",
+  CARENCIA_SOBREVINIENTE: "DECLARA SITUACIÓN SOBREVINIENTE",
+};
+const ENCABEZADO_CAUSAL: Record<string, string> = { COSA_JUZGADA: "POR COSA JUZGADA", SUBSIDIARIEDAD: "POR SUBSIDIARIEDAD" };
+const MOTIVO_CAUSAL: Record<string, string> = {
+  COSA_JUZGADA: "por configurarse el fenómeno de la cosa juzgada constitucional.",
+  SUBSIDIARIEDAD: "por no cumplirse el requisito de subsidiariedad.",
+};
+const PLACEHOLDERS_DECIDIDO_POR = new Set(["john doe", "prueba", "caso sintetico"]);
+
+function encabezadoDe(d: DecisionCuerpo): string {
+  if (d.etiqueta_encabezado.trim()) return d.etiqueta_encabezado.trim();
+  if (!d.resultado) return falta("decisión");
+  const base = ENCABEZADO_RESULTADO[d.resultado] ?? "";
+  if (d.resultado === "CONFIRMAR" || !d.sustitutiva) return base;
+  let extra = ENCABEZADO_SUSTITUTIVA[d.sustitutiva] ?? "";
+  if (d.sustitutiva === "IMPROCEDENTE" && d.causal) extra = `${extra} ${ENCABEZADO_CAUSAL[d.causal] ?? ""}`.trim();
+  return extra ? `${base} Y ${extra}` : base;
+}
+
+function advertenciasDe(d: DecisionCuerpo): DecisionVistaRespuesta["advertencias"] {
+  const nombre = d.decidido_por.trim();
+  if (!nombre) return [{ campo: "decidido_por", mensaje: "Decidido por está vacío: en la declaración de uso de IA constará «no consta»." }];
+  const normal = nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_-]+/g, " ").trim();
+  return PLACEHOLDERS_DECIDIDO_POR.has(normal)
+    ? [{ campo: "decidido_por", mensaje: "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide." }]
+    : [];
+}
+
+function hoyISO(): string {
+  const ahora = new Date();
+  return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+}
+
 function numeralesDe(d: DecisionCuerpo): NumeralVista[] {
   const por = new Map<string, NumeralVista>();
   const resultado = d.resultado ?? falta("resultado");
@@ -39,7 +79,7 @@ function numeralesDe(d: DecisionCuerpo): NumeralVista[] {
     const textos: Record<string, [string, string]> = {
       AMPARAR: ["AMPARAR", `AMPARAR los derechos fundamentales a ${lista} de MARTA INÉS QUINTERO BEDOYA.`],
       NEGAR: ["NEGAR", "NEGAR el amparo solicitado por MARTA INÉS QUINTERO BEDOYA, por las razones expuestas en la parte motiva."],
-      IMPROCEDENTE: ["DECLARAR IMPROCEDENTE", "DECLARAR IMPROCEDENTE la acción de tutela promovida por MARTA INÉS QUINTERO BEDOYA, por las razones expuestas en la parte motiva."],
+      IMPROCEDENTE: ["DECLARAR IMPROCEDENTE", `DECLARAR IMPROCEDENTE la acción de tutela promovida por MARTA INÉS QUINTERO BEDOYA, ${(d.causal && MOTIVO_CAUSAL[d.causal]) || "por las razones expuestas en la parte motiva."}`],
     };
     const [negrita, texto] = (d.sustitutiva && textos[d.sustitutiva]) || [
       d.sustitutiva ? "DECLARAR LA CARENCIA ACTUAL DE OBJETO" : "",
@@ -80,7 +120,15 @@ function vistaDe(cuerpo: unknown): DecisionVistaRespuesta {
     if (!o.destinatario) faltantes.push({ campo: `ordenes.${i}.destinatario`, mensaje: "Cada orden necesita destinatario y conducta." });
     if (!o.conducta) faltantes.push({ campo: `ordenes.${i}.conducta`, mensaje: "Cada orden necesita destinatario y conducta." });
   });
-  return { numerales: numeralesDe(d), faltantes, errores: [...new Set(faltantes.map((f) => f.mensaje))] };
+  return {
+    numerales: numeralesDe(d),
+    faltantes,
+    errores: [...new Set(faltantes.map((f) => f.mensaje))],
+    advertencias: advertenciasDe(d),
+    encabezado: encabezadoDe(d),
+    fecha_fallo: d.fecha_fallo || hoyISO(),
+    fecha_por_defecto: !d.fecha_fallo,
+  };
 }
 
 export const mocks: MockRuta[] = [

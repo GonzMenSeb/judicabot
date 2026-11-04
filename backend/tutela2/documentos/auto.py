@@ -37,6 +37,10 @@ def _o(valor: str | None, nombre: str) -> str:
     return valor.strip() if valor and valor.strip() else falta(nombre)
 
 
+def _firma(valor: str | None, por_defecto: str) -> str:
+    return (valor or "").strip().upper() or por_defecto
+
+
 def corridas(par, texto: str, fuente: str, tam: float, *, negrita=None, cursiva=None) -> None:
     for trozo in _MARCA.split(texto):
         if not trozo:
@@ -147,8 +151,8 @@ def render_auto(md: Metadatos, datos: DatosAuto, cfg: Config, ruta: Path) -> Pat
         alin=J, antes=11.5, izq=SANGRIA_CUERPO,
     )
     _par(doc, d.cierre_auto, alin=C, antes=31.1, pitch=PITCH_SIMPLE, negrita=True)
-    _par(doc, d.juez, alin=C, antes=96, pitch=PITCH_SIMPLE, negrita=True)
-    _par(doc, d.cargo_juez, alin=C, antes=14.4, pitch=PITCH_SIMPLE, negrita=True)
+    _par(doc, _firma(datos.firmante, d.juez), alin=C, antes=96, pitch=PITCH_SIMPLE, negrita=True)
+    _par(doc, _firma(datos.cargo_firmante, d.cargo_juez), alin=C, antes=14.4, pitch=PITCH_SIMPLE, negrita=True)
 
     ruta.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(ruta))

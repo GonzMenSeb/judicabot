@@ -12,6 +12,21 @@ from tutela2.models import limpiar_control
 NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
 RESPALDO_CLIENTE = {"claude-haiku-5-5": "claude-sonnet-5-5"}
+VARIABLE_MODELOS_PERMITIDOS = "TUTELA2_MODELOS_PERMITIDOS"
+
+
+def _modelos_pedidos() -> set[str]:
+    return {m.strip() for m in os.environ.get(VARIABLE_MODELOS_PERMITIDOS, "").split(",") if m.strip()}
+
+
+def modelos_permitidos() -> tuple[str, ...]:
+    """TUTELA2_MODELOS_PERMITIDOS (ids separados por comas) restringe los modelos de MODELOS; apagada, rigen todos."""
+    pedidos = _modelos_pedidos()
+    return tuple(m for m in MODELOS if m in pedidos) if pedidos else MODELOS
+
+
+def modelo_permitido(modelo: str) -> bool:
+    return not _modelos_pedidos() or modelo in modelos_permitidos()
 
 
 class LLMConfig(BaseModel):
@@ -90,6 +105,8 @@ class Config(BaseModel):
     verificar_relatoria: bool = True
     cobertura_ok: float = 0.8
     cobertura_alerta: float = 0.5
+    min_citas_ok: int = 2
+    min_palabras_cita: int = 25
     ngram: int = 6
     exigir_mp: bool = True
     max_bloques_tematicos: int = 3

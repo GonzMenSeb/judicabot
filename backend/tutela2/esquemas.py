@@ -46,3 +46,7 @@ class DecisionVistaRespuesta(BaseModel):
     numerales: list[NumeralVista]
     faltantes: list[FaltanteDecision]
     errores: list[str]
+    advertencias: list[FaltanteDecision]
+    encabezado: str
+    fecha_fallo: str
+    fecha_por_defecto: bool

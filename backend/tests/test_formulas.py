@@ -51,12 +51,8 @@ def test_juzgado_formas_y_falta():
 
 
 def test_competencia():
-    assert f.COMPETENCIA_1.startswith("Este despacho es competente para conocer y resolver")
-    assert f.competencia_2(md()) == (
-        "Este Despacho es competente para resolver la impugnación presentada contra la sentencia de tutela "
-        "proferida el 6 de octubre de 2026 por el Juzgado Dieciocho Penal Municipal con Función de Control de "
-        "Garantías de Medellín, de conformidad con el artículo 32 del Decreto 2591 de 1991."
-    )
+    assert f.COMPETENCIA_1.startswith("Este Despacho es competente para conocer y resolver")
+    assert not hasattr(f, "competencia_2")
 
 
 def test_textos_fijos():
@@ -137,6 +133,84 @@ def test_filas_con_vinculadas_y_sin_decision():
 )
 def test_encabezado_decision(res, sust, esperado):
     assert f.encabezado_decision(Decision(accion="decidir", resultado=res, sustitutiva=sust)) == esperado
+
+
+@pytest.mark.parametrize(
+    "res,sust,causal,esperado",
+    [
+        ("REVOCAR", "IMPROCEDENTE", "COSA_JUZGADA", "REVOCA Y DECLARA IMPROCEDENTE POR COSA JUZGADA"),
+        ("MODIFICAR", "IMPROCEDENTE", "SUBSIDIARIEDAD", "MODIFICA Y DECLARA IMPROCEDENTE POR SUBSIDIARIEDAD"),
+        ("REVOCAR", "IMPROCEDENTE", None, "REVOCA Y DECLARA IMPROCEDENTE"),
+        ("REVOCAR", "IMPROCEDENTE", "", "REVOCA Y DECLARA IMPROCEDENTE"),
+        ("REVOCAR", "IMPROCEDENTE", "INVENTADA", "REVOCA Y DECLARA IMPROCEDENTE"),
+        ("REVOCAR", "NEGAR", "COSA_JUZGADA", "REVOCA Y NIEGA"),
+        ("REVOCAR", "AMPARAR", "COSA_JUZGADA", "REVOCA"),
+        ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "COSA_JUZGADA", "REVOCA Y DECLARA HECHO SUPERADO"),
+        ("CONFIRMAR", "IMPROCEDENTE", "COSA_JUZGADA", "CONFIRMA"),
+    ],
+)
+def test_encabezado_decision_con_causal(res, sust, causal, esperado):
+    assert f.encabezado_decision(Decision(accion="decidir", resultado=res, sustitutiva=sust, causal=causal)) == esperado
+
+
+def test_etiqueta_encabezado_prevalece_sobre_la_causal():
+    d = Decision(
+        accion="decidir", resultado="REVOCAR", sustitutiva="IMPROCEDENTE", causal="COSA_JUZGADA", etiqueta_encabezado="REVOCA"
+    )
+    assert f.encabezado_decision(d) == "REVOCA"
+
+
+def test_causales_cerradas():
+    assert tuple(f.CAUSALES) == ("COSA_JUZGADA", "SUBSIDIARIEDAD")
+
+
+def test_improcedente_con_causal_nombra_la_causal_en_el_segundo():
+    cosa_juzgada = por_clave(f.numerales(dec(sustitutiva="IMPROCEDENTE", causal="COSA_JUZGADA", ordenes=[]), md()))
+    assert cosa_juzgada["sustitutiva"].texto == (
+        "DECLARAR IMPROCEDENTE la acción de tutela promovida por la señora ANA EJEMPLO, por configurarse el fenómeno "
+        "de la cosa juzgada constitucional, al verificarse identidad de partes, causa y objeto con un trámite de "
+        "tutela resuelto previamente."
+    )
+    assert cosa_juzgada["sustitutiva"].negritas == ["DECLARAR IMPROCEDENTE"]
+    subsidiariedad = por_clave(f.numerales(dec(sustitutiva="IMPROCEDENTE", causal="SUBSIDIARIEDAD", ordenes=[]), md()))
+    assert subsidiariedad["sustitutiva"].texto == (
+        "DECLARAR IMPROCEDENTE la acción de tutela promovida por la señora ANA EJEMPLO, por no cumplirse el "
+        "requisito de subsidiariedad."
+    )
+
+
+@pytest.mark.parametrize("causal", [None, "", "INVENTADA"])
+def test_improcedente_sin_causal_valida_conserva_el_texto_generico(causal):
+    t = por_clave(f.numerales(dec(sustitutiva="IMPROCEDENTE", causal=causal, ordenes=[]), md()))["sustitutiva"].texto
+    assert t == (
+        "DECLARAR IMPROCEDENTE la acción de tutela promovida por la señora ANA EJEMPLO, por las razones expuestas en este proveído."
+    )
+
+
+@pytest.mark.parametrize("sustitutiva", ["NEGAR", "CARENCIA_HECHO_SUPERADO", "CARENCIA_DANO_CONSUMADO", "CARENCIA_SOBREVINIENTE"])
+def test_la_causal_no_altera_otras_sustitutivas(sustitutiva):
+    con = por_clave(f.numerales(dec(sustitutiva=sustitutiva, causal="COSA_JUZGADA", ordenes=[]), md()))["sustitutiva"].texto
+    sin = por_clave(f.numerales(dec(sustitutiva=sustitutiva, ordenes=[]), md()))["sustitutiva"].texto
+    assert con == sin
+
+
+@pytest.mark.parametrize("sustitutiva", ["NEGAR", "IMPROCEDENTE", "CARENCIA_HECHO_SUPERADO"])
+def test_advertir_y_prevenir_sin_amparar_generan_sus_numerales(sustitutiva):
+    ordenes = [
+        Orden(verbo="ADVERTIR", destinatario="la señora ANA EJEMPLO", conducta="en caso de considerar incumplida la orden, deberá acudir ante el juzgado de conocimiento"),
+        Orden(verbo="PREVENIR", destinatario="el BANCO EJEMPLO S.A.", conducta="en lo sucesivo responda las peticiones de manera oportuna"),
+    ]
+    ns = f.numerales(dec(sustitutiva=sustitutiva, ordenes=ordenes), md())
+    assert [n.clave for n in ns] == ["resultado", "sustitutiva", "orden:0", "orden:1", "notificar", "remitir"]
+    n = por_clave(ns)
+    assert n["orden:0"].texto == (
+        "ADVERTIR a la señora ANA EJEMPLO que en caso de considerar incumplida la orden, deberá acudir ante el juzgado de conocimiento."
+    )
+    assert n["orden:0"].negritas == ["ADVERTIR", "señora ANA EJEMPLO"]
+    assert n["orden:1"].texto == (
+        "PREVENIR al BANCO EJEMPLO S.A. para que en lo sucesivo responda las peticiones de manera oportuna."
+    )
+    assert n["orden:1"].negritas == ["PREVENIR", "BANCO EJEMPLO S.A."]
 
 
 def test_encabezado_decision_etiqueta_y_falta():
@@ -384,11 +458,6 @@ def test_con_articulo_con_articulo_previo():
     assert f.con_articulo("el debido proceso") == "al debido proceso"
     assert f.con_articulo("la vida digna") == "a la vida digna"
     assert f.con_articulo("los derechos") == "a los derechos"
-
-
-def test_competencia_2_plural():
-    assert "la impugnación presentada" in f.competencia_2(md())
-    assert "las impugnaciones presentadas" in f.competencia_2(md(impugnantes=["a", "b"]))
 
 
 @pytest.mark.parametrize(

@@ -145,13 +145,14 @@ def test_origen_modelo_y_plantilla(tmp_path, gen):
         "PROCEDIBILIDAD_P1",
         "Hábeas data",
         "BLOQUE_TEXTO",
-        "QUOTE_C1",
         "PROBLEMA_JURIDICO_TEXTO",
         "CASO_P1",
         "INSERTAR IMAGEN",
         "CONCLUSION_TEXTO",
     ):
         assert bloque_con(v, fragmento)["origen"] == "modelo", fragmento
+    citados = [b for b in bloques(v) if "QUOTE_C1" in texto(b)]
+    assert citados and all(b["origen"] == "modelo" for b in citados)
     for fragmento in (
         formulas.TRANSICION[:60],
         "Procede el Despacho a resolver",

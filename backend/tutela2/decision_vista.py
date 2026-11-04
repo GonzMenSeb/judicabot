@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import threading
 from collections import OrderedDict
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
 
@@ -19,6 +20,7 @@ from tutela2.models import (
     Metadatos,
     Orden,
     Plazo,
+    colapsar_texto,
     limpiar_control,
 )
 
@@ -58,6 +60,7 @@ DISPOSICIONES_REPARO = _opciones(DisposicionReparo, "disposicion")
 DISPOSICIONES_DERECHO = _opciones(DisposicionDerecho, "disposicion")
 VERBOS = _opciones(Orden, "verbo")
 UNIDADES = _opciones(Plazo, "unidad")
+CAUSALES = tuple(formulas.CAUSALES)
 
 _TEXTOS = {
     "instruccion": "La instrucción",
@@ -66,6 +69,7 @@ _TEXTOS = {
     "previo_sha256": "El identificador del borrador previo",
     "etiqueta_encabezado": "La etiqueta del encabezado",
 }
+_TEXTOS_COLAPSADOS = frozenset({"instruccion", "eje"})
 _ORDEN_CAMPOS = {nombre: i for i, nombre in enumerate(Decision.model_fields)}
 _ENTERO = TypeAdapter(int)
 _Hallazgos = list[tuple[str, str]]
@@ -79,21 +83,25 @@ def _lista_o(opciones: tuple[str, ...]) -> str:
     return ", ".join(opciones[:-1]) + " o " + opciones[-1]
 
 
-def _texto(v: Any, campo: str, etiqueta: str, h: _Hallazgos, maximo: int = MAX_TEXTO) -> str | None:
+def _texto(
+    v: Any, campo: str, etiqueta: str, h: _Hallazgos, maximo: int = MAX_TEXTO, colapsar: bool = False
+) -> str | None:
     if v is None:
         return None
     if not isinstance(v, str):
         h.append((campo, f"{etiqueta} debe ser texto."))
         return None
     v = _limpio(v)
+    if colapsar:
+        v = colapsar_texto(v)
     if len(v) > maximo:
         h.append((campo, f"{etiqueta} supera los {maximo:,} caracteres permitidos.".replace(",", ".")))
         v = v[:maximo]
     return v
 
 
-def _obligatorio(v: Any, campo: str, etiqueta: str, falta: str, h: _Hallazgos) -> str | None:
-    texto = _texto(v, campo, etiqueta, h)
+def _obligatorio(v: Any, campo: str, etiqueta: str, falta: str, h: _Hallazgos, colapsar: bool = False) -> str | None:
+    texto = _texto(v, campo, etiqueta, h, colapsar=colapsar)
     if (texto is None and v is None) or (texto is not None and not texto.strip()):
         h.append((campo, falta))
         return None
@@ -156,7 +164,7 @@ def _reparos(v: Any, h: _Hallazgos) -> list[dict[str, Any]]:
         )
         if disposicion:
             item["disposicion"] = disposicion
-        nota = _texto(x.get("nota"), f"{base}.nota", f"La nota del reparo {n}", h)
+        nota = _texto(x.get("nota"), f"{base}.nota", f"La nota del reparo {n}", h, colapsar=True)
         if nota is not None:
             item["nota"] = nota
         salida.append(item)
@@ -232,7 +240,7 @@ def _ordenes(v: Any, h: _Hallazgos) -> list[dict[str, Any]]:
             x.get("destinatario"), f"{base}.destinatario", f"El destinatario de la orden {n}", MSG_ORDEN_INCOMPLETA, h
         ) or falta_destinatario
         orden["conducta"] = _obligatorio(
-            x.get("conducta"), f"{base}.conducta", f"La conducta de la orden {n}", MSG_ORDEN_INCOMPLETA, h
+            x.get("conducta"), f"{base}.conducta", f"La conducta de la orden {n}", MSG_ORDEN_INCOMPLETA, h, colapsar=True
         ) or falta_conducta
         for clave, etiqueta in (("via_representante", "La vía del representante"), ("mismo_termino", "El mismo término")):
             valor = _booleano(x.get(clave), f"{base}.{clave}", f"{etiqueta} de la orden {n}", h)
@@ -288,7 +296,7 @@ def _libres(v: Any, h: _Hallazgos) -> list[str]:
     salida = []
     for i, x in enumerate(_lista(v, "numerales_libres", "Los numerales libres", h)):
         campo = f"numerales_libres.{i}"
-        texto = _texto(x, campo, f"El numeral libre {i + 1}", h)
+        texto = _texto(x, campo, f"El numeral libre {i + 1}", h, colapsar=True)
         salida.append(texto if texto is not None else "")
     return salida
 
@@ -306,7 +314,7 @@ def _limpiar(parcial: dict[str, Any], h: _Hallazgos) -> dict[str, Any]:
     d: dict[str, Any] = {}
     d["accion"] = _opcion(parcial.get("accion"), "accion", "La acción", ACCIONES, h) or "decidir"
     for campo, etiqueta in _TEXTOS.items():
-        texto = _texto(parcial.get(campo), campo, etiqueta, h)
+        texto = _texto(parcial.get(campo), campo, etiqueta, h, colapsar=campo in _TEXTOS_COLAPSADOS)
         if texto is not None:
             d[campo] = texto
     for campo, etiqueta, opciones in (
@@ -316,6 +324,9 @@ def _limpiar(parcial: dict[str, Any], h: _Hallazgos) -> dict[str, Any]:
         valor = _opcion(parcial.get(campo), campo, etiqueta, opciones, h)
         if valor:
             d[campo] = valor
+    causal = _opcion(parcial.get("causal"), "causal", "La causal de improcedencia", CAUSALES, h)
+    if causal:
+        d["causal"] = causal
     formato = _booleano(parcial.get("generar_formato"), "generar_formato", "Generar el formato", h)
     if formato is not None:
         d["generar_formato"] = formato
@@ -346,6 +357,7 @@ _CAMPO_POR_ERROR = (
     ("Clave de numeral inválida", "orden_numerales"),
     ("fecha_fallo", "fecha_fallo"),
     ("fecha_oficio", "fecha_oficio"),
+    ("Decidido por", "decidido_por"),
 )
 
 
@@ -369,9 +381,21 @@ def _faltantes(dec: Decision, hallazgos: _Hallazgos) -> list[tuple[str, str]]:
     return sorted(unicos, key=lambda f: _ORDEN_CAMPOS.get(f[0].split(".")[0], len(_ORDEN_CAMPOS)))
 
 
-def decision_vista(parcial: Any, md: Metadatos) -> dict[str, Any]:
+def vista_error(mensaje: str) -> dict[str, Any]:
+    return {
+        "numerales": [],
+        "faltantes": [],
+        "errores": [mensaje],
+        "advertencias": [],
+        "encabezado": "",
+        "fecha_fallo": "",
+        "fecha_por_defecto": False,
+    }
+
+
+def decision_vista(parcial: Any, md: Metadatos, hoy: date | None = None) -> dict[str, Any]:
     if not isinstance(parcial, dict):
-        return {"numerales": [], "faltantes": [], "errores": ["La decisión debe ser un objeto."]}
+        return vista_error("La decisión debe ser un objeto.")
     hallazgos: _Hallazgos = []
     dec = Decision.model_validate(_limpiar(parcial, hallazgos))
     faltantes = _faltantes(dec, hallazgos)
@@ -381,6 +405,12 @@ def decision_vista(parcial: Any, md: Metadatos) -> dict[str, Any]:
         ],
         "faltantes": [{"campo": c, "mensaje": m} for c, m in faltantes],
         "errores": list(dict.fromkeys(m for _, m in faltantes)),
+        "advertencias": [
+            {"campo": c, "mensaje": m} for m in dec.advertencias() for c in _campos_del_error(m, dec)
+        ],
+        "encabezado": formulas.encabezado_decision(dec),
+        "fecha_fallo": dec.fecha_fallo or (hoy or date.today()).isoformat(),
+        "fecha_por_defecto": dec.fecha_fallo is None,
     }
 
 

@@ -38,6 +38,7 @@ OCR_DPI = 300
 EXTENSIONES = {".pdf", ".docx", ".txt"}
 ROLES_OBLIGATORIOS = ("escrito_tutela", "fallo_a_quo", "impugnacion")
 ROLES_ESPERADOS = ("auto_admisorio", "auto_concede_impugnacion", "acta_reparto_2a")
+AVISO_REVISAR = "[AVISO: el encabezado de este documento pertenece a otro radicado; verifique antes de afirmar hechos]"
 
 
 def _limpiar(texto: str) -> str:
@@ -457,15 +458,23 @@ def _primera_pagina(d: Doc) -> str:
     return d.paginas[0].texto if d.paginas else ""
 
 
-def _extraer_partes(
-    utiles: list[Doc], alertas: list[str] | None = None
-) -> tuple[str | None, list[str]]:
+def _partes_acta(utiles: list[Doc]) -> tuple[Doc, list[str], list[str]] | None:
     actas = [d for d in utiles if d.rol == "acta_reparto_2a"]
     actas += [d for d in utiles if d.rol == "acta_reparto_1a"]
     for d in actas:
         acc, dem = _partes_tabla(_primera_pagina(d))
         if acc or dem:
-            return _un_accionante(acc, d, alertas), _unicos(dem)
+            return d, acc, dem
+    return None
+
+
+def _extraer_partes(
+    utiles: list[Doc], alertas: list[str] | None = None
+) -> tuple[str | None, list[str]]:
+    acta = _partes_acta(utiles)
+    if acta is not None:
+        d, acc, dem = acta
+        return _un_accionante(acc, d, alertas), _unicos(dem)
     for d in (d for d in utiles if d.rol in ("fallo_a_quo", "auto_admisorio")):
         acc, dem = _partes_etiquetas(_primera_pagina(d))
         if acc or dem:
@@ -586,6 +595,9 @@ def _prefijo_caso(docs: list[Doc]) -> str | None:
     return None
 
 
+_JUZGADO_PENAL = re.compile(
+    r"juzgado\s+(\d+|[^\W\d_]+(?:\s+y\s+[^\W\d_]+)?)\s+(?:\(\s*\d+\s*\)\s+)?penal\s+municipal"
+)
 _JUZGADO = re.compile(
     r"Juzgado\s+([^\W\d_]+(?:\s+(?:y\s+)?[^\W\d_]+){0,2}?)\s+(?:\(\s*\d+\s*\)\s+)?Penal\s+Municipal(?:\s+de\s+Medell[ií]n)?,?\s+con\s+Funci(ón|ones|on)\s+de\s+(Conocimiento|Control\s+de\s+Garant[ií]as)",
     re.I,
@@ -648,6 +660,48 @@ def _juzgado_a_quo(docs: list[Doc], cui_1a: str | None, alertas: list[str]) -> d
     }
 
 
+def _palabras(texto: str) -> str:
+    return " " + " ".join(re.findall(r"[a-z0-9]+", _plano(texto))) + " "
+
+
+def _nombra_alguno(palabras: str, nombres: list[str]) -> bool:
+    frases = (" ".join(_palabras(n).split()) for n in nombres)
+    return any(len(f) >= 6 and f" {f} " in palabras for f in frases)
+
+
+def _nombra_juzgado(texto: str, numero: int) -> bool:
+    for m in _JUZGADO_PENAL.finditer(_plano(texto)):
+        n = m.group(1)
+        if (int(n) if n.isdigit() else letras_a_numero(n)) == numero:
+            return True
+    return False
+
+
+def _cuis_ajenos(d: Doc, prefijo: str) -> list[str]:
+    if d.rol_origen == "usuario":
+        return []
+    cabecera = list(_cuis_cabecera(d))
+    if not cabecera or any(c.startswith(prefijo) for c in cabecera):
+        return []
+    if menciona_radicado(texto_cabecera(d), prefijo):
+        return []
+    return cabecera
+
+
+def _nombra_al_caso(
+    d: Doc, accionantes: list[str], accionadas: list[str], juzgado: Juzgado | None
+) -> str | None:
+    texto = d.texto()
+    palabras = _palabras(texto)
+    if _nombra_alguno(palabras, accionantes):
+        return "al accionante"
+    if _nombra_alguno(palabras, accionadas):
+        return "a la accionada"
+    if juzgado is not None and _nombra_juzgado(texto, juzgado.numero):
+        return "al juzgado de primera instancia"
+    return None
+
+
 def _derivar(
     docs: list[Doc],
     ignorados: list[str],
@@ -664,22 +718,33 @@ def _derivar(
         d.cuis = list(Counter(extraer_cuis(d.texto())))
     prefijo = _prefijo_caso(docs)
     ajenos: list[str] = []
+    revisar: list[str] = []
     if prefijo is None:
         derivadas.append(
             "No se encontró ningún CUI de 23 dígitos; no se pudo verificar la pertenencia de los documentos al caso."
         )
     else:
+        fuera = {d.doc_id: c for d in docs if (c := _cuis_ajenos(d, prefijo))}
+        acta = _partes_acta(
+            [d for d in docs if d.doc_id not in fuera or d.rol in ROLES_OBLIGATORIOS]
+        )
+        accionantes = _unicos(acta[1]) if acta else []
+        accionadas = _unicos(acta[2]) if acta else []
+        juzgado = juzgado_de_radicado(prefijo + "00")
         for d in docs:
-            if d.rol_origen == "usuario":
-                continue
-            cabecera = list(_cuis_cabecera(d))
-            if not cabecera or any(c.startswith(prefijo) for c in cabecera):
-                continue
-            if menciona_radicado(texto_cabecera(d), prefijo):
+            cabecera = fuera.get(d.doc_id)
+            if not cabecera:
                 continue
             if d.rol in ROLES_OBLIGATORIOS:
                 derivadas.append(
                     f"{d.doc_id} {d.nombre}: es {d.rol} pero sus CUIs ({', '.join(cabecera)}) no corresponden al caso {prefijo}; revisar."
+                )
+                continue
+            nombra = _nombra_al_caso(d, accionantes, accionadas, juzgado)
+            if nombra:
+                revisar.append(d.doc_id)
+                derivadas.append(
+                    f"{d.doc_id} {d.nombre}: sus CUIs ({', '.join(cabecera)}) no corresponden al caso {prefijo}, pero el texto nombra {nombra}; queda para revisar y se entrega al modelo con una marca."
                 )
                 continue
             ajenos.append(d.doc_id)
@@ -702,7 +767,7 @@ def _derivar(
             d.ruido, d.motivo_ruido = True, f"Duplicado exacto de {vistos[d.sha256]}"
         vistos.setdefault(d.sha256, d.doc_id)
 
-    utiles = [d for d in docs if d.doc_id not in ajenos]
+    utiles = [d for d in docs if d.doc_id not in ajenos and d.doc_id not in revisar]
     presentes = {d.rol for d in utiles}
     faltantes = [r for r in ROLES_OBLIGATORIOS if r not in presentes]
     esperados = [r for r in ROLES_ESPERADOS if r not in presentes]
@@ -748,6 +813,7 @@ def _derivar(
     return Ingesta(
         documentos=docs,
         docs_ajenos=ajenos,
+        docs_revisar=revisar,
         faltantes=faltantes,
         esperados_faltantes=esperados,
         alertas=alertas_lectura + derivadas,
@@ -762,7 +828,10 @@ def reaplicar(ing: Ingesta, roles: dict[str, Rol]) -> Ingesta:
     docs = [d.model_copy(deep=True) for d in ing.documentos]
     for d in docs:
         if d.doc_id in roles and (
-            roles[d.doc_id] != d.rol or d.doc_id in ing.docs_ajenos or d.rol_origen == "jev"
+            roles[d.doc_id] != d.rol
+            or d.doc_id in ing.docs_ajenos
+            or d.doc_id in ing.docs_revisar
+            or d.rol_origen == "jev"
         ):
             d.rol, d.rol_origen = roles[d.doc_id], "usuario"
             d.evidencia = "Rol fijado por el usuario."
@@ -903,6 +972,7 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
             "lee",
             f"{d.ruta}: rol {d.rol} (origen: {d.rol_origen}){jev_txt}"
             + ("; ajeno al caso" if d.doc_id in ing.docs_ajenos else "")
+            + ("; para revisar" if d.doc_id in ing.docs_revisar else "")
             + (f"; ruido: {d.motivo_ruido}" if d.ruido else "")
             + ".",
             {
@@ -914,6 +984,7 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
                 "jev_rol": d.jev_rol,
                 "jev_confianza": d.jev_confianza,
                 "ajeno": d.doc_id in ing.docs_ajenos,
+                "revisar": d.doc_id in ing.docs_revisar,
                 "ruido": d.ruido,
             },
         )
@@ -955,5 +1026,7 @@ def texto_para_llm(
             alerta = f"{d.doc_id} {d.nombre}: texto truncado a {max_chars} caracteres para el LLM."
             if alerta not in ing.alertas:
                 ing.alertas.append(alerta)
+        if d.doc_id in ing.docs_revisar:
+            cuerpo = f"{AVISO_REVISAR}\n{cuerpo}"
         bloques.append(f"### DOC {d.doc_id} | {d.rol} | {d.nombre}\n{cuerpo}")
     return "\n\n".join(bloques)

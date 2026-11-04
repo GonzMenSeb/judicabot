@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import functools
+import itertools
 import json
 import logging
+import time
 import types
+from pathlib import Path
 
 import anthropic
 import pytest
 from anthropic.lib._parse._transform import to_json_output_format
 
-from tutela2 import llm
+from tutela2 import citas, lint, llm
 from tutela2.config import Config, LLMConfig
 from tutela2.llm import AnthropicClient, ErrorLLM, FakeClient, cliente_para
-from tutela2.models import AperturaLLM, CasoConcretoLLM, ConsideracionesLLM, MetadatosLLM
+from tutela2.models import AperturaLLM, CasoConcretoLLM, ConsideracionesLLM, Decision, MetadatosLLM
 from tutela2.prompts import prompt_default
 
 try:
@@ -47,6 +51,7 @@ class SDKEspia:
     def __init__(self, *args, **kwargs):
         self.args, self.kwargs = args, kwargs
         self.llamadas: list[dict] = []
+        self.flujos: list[Flujo] = []
         self.messages = self
         self.beta = types.SimpleNamespace(messages=BetaEspia(self))
         self.opciones: dict = {}
@@ -58,10 +63,15 @@ class SDKEspia:
 
     def stream(self, **kwargs):
         self.llamadas.append(kwargs)
+        return self.abrir()
+
+    def abrir(self):
         siguiente = SDKEspia.guion.pop(0)
         if isinstance(siguiente, Exception):
             raise siguiente
-        return Flujo(siguiente)
+        flujo = siguiente if isinstance(siguiente, Flujo) else Flujo(siguiente)
+        self.flujos.append(flujo)
+        return flujo
 
 
 class BetaEspia:
@@ -70,21 +80,34 @@ class BetaEspia:
 
     def stream(self, **kwargs):
         self.padre.llamadas.append({"beta": True, **kwargs})
-        siguiente = SDKEspia.guion.pop(0)
-        if isinstance(siguiente, Exception):
-            raise siguiente
-        return Flujo(siguiente)
+        return self.padre.abrir()
 
 
 class Flujo:
-    def __init__(self, final):
+    def __init__(self, final, trozos=None):
         self.final = final
+        self.trozos = trozos
+        self.consumido = 0
+        self.cerrado = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, *a):
+        self.cerrado = True
         return False
+
+    @property
+    def text_stream(self):
+        for trozo in self._trozos():
+            self.consumido += len(trozo)
+            yield trozo
+
+    def _trozos(self):
+        if self.trozos is not None:
+            return self.trozos
+        texto = "".join(b.text for b in self.final.content if b.type == "text")
+        return [texto[i : i + 40] for i in range(0, len(texto), 40)]
 
     def get_final_message(self):
         return self.final
@@ -353,6 +376,21 @@ def test_sdk_real_fallback_del_servidor_reetiqueta_modelo_y_suma_tokens(modelo, 
     assert json.loads(peticiones[0].content)["fallbacks"] == "default"
 
 
+def test_sdk_real_haiku_no_repite_con_sonnet_si_este_no_esta_permitido(monkeypatch):
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-haiku-5-5,claude-opus-5-5")
+    peticiones: list[httpx.Request] = []
+
+    def manejador(peticion: httpx.Request) -> httpx.Response:
+        peticiones.append(peticion)
+        return sse("", "refusal", "claude-haiku-5-5")
+
+    cfg = Config(llm=LLMConfig(modelo="claude-haiku-5-5"))
+    with pytest.raises(ErrorLLM, match="El modelo rechazó la solicitud") as e:
+        AnthropicClient(sdk_real(manejador)).estructurado("apertura", "s", "u", CasoConcretoLLM, cfg)
+    assert "claude-sonnet-5-5" not in str(e.value)
+    assert [json.loads(p.content)["model"] for p in peticiones] == ["claude-haiku-5-5"]
+
+
 def test_sdk_real_haiku_sin_fallbacks_activados_no_repite_el_rechazo():
     peticiones: list[httpx.Request] = []
 
@@ -541,8 +579,423 @@ def test_los_prompts_explican_la_salida_anterior_en_los_reintentos():
         assert "salida del intento anterior" in prompt_default(nodo)
 
 
+def test_los_prompts_con_documentos_explican_el_aviso_de_documento_a_revisar():
+    for nodo in ("apertura", "caso_concreto"):
+        texto = prompt_default(nodo)
+        assert '"[AVISO: ...]"' in texto and "otro radicado" in texto and "corrobor" in texto
+
+
 def test_prompt_de_apertura_distingue_resultado_para_que_y_para_se_sin_ordenes():
     texto = prompt_default("apertura")
     assert "ir tras \"que\"" in texto and "ir tras \"se\"" in texto and "concordando en número" in texto
     assert "No incluyas las órdenes" in texto
     assert "incluidas las órdenes" not in texto
+
+
+def test_prompt_consideraciones_no_deja_salida_sin_citas_ni_modela_la_formula_sin_marcador():
+    texto = prompt_default("consideraciones")
+    assert "o no cites" not in texto and "ha decantado" not in texto
+    assert lint.jurisprudencia_sin_cita(texto, "prompt") == []
+
+
+def test_prompt_consideraciones_pide_ratio_literal_y_excluye_normas_y_salvamentos():
+    texto = prompt_default("consideraciones")
+    assert "ratio decidendi" in texto and "una a tres frases completas" in texto
+    assert "LIMITES" in texto
+    for excluido in ("texto de la Constitución", "salvamento"):
+        assert excluido in texto
+
+
+MIN_PALABRAS_FAKE = 25
+
+
+@pytest.mark.parametrize("id_", sorted(llm.CITAS_FAKE))
+def test_citas_fake_cumplen_las_reglas_de_longitud_y_no_son_normativas(id_):
+    _, texto = llm.CITAS_FAKE[id_]
+    literal, *_ = citas._analizar_cita(citas._limpiar_cita(texto))
+    assert len(literal) >= MIN_PALABRAS_FAKE
+    normas = json.loads((Path(citas.__file__).parent / "assets" / "normas_citables.json").read_text(encoding="utf-8"))
+    assert normas
+    for norma in normas:
+        assert (citas.cobertura(texto, norma["texto"], 6) or 0) < 0.5
+
+
+def test_fake_consideraciones_no_atribuye_a_la_jurisprudencia_sin_marcador():
+    cfg = Config(llm=LLMConfig(proveedor="fake"))
+    user = llm.seccion("REPAROS", json.dumps([{"id": "R1", "sintesis": "s"}])) + llm.seccion("LIMITES", "Máximo: 3")
+    salida, _ = FakeClient().estructurado("consideraciones", "s", user, ConsideracionesLLM, cfg)
+    for b in salida.bloques:
+        assert lint.jurisprudencia_sin_cita(b.texto, "bloque") == []
+    assert lint.jurisprudencia_sin_cita(salida.procedibilidad, "procedibilidad") == []
+    assert lint.marcadores_consideraciones(salida) == []
+
+
+def _citas_json(**estados: str) -> str:
+    return json.dumps([{"id": i, "estado": e} for i, e in estados.items()])
+
+
+def _caso_fake(decision: dict, reparos: list[dict], citas: str | None = None) -> CasoConcretoLLM:
+    user = llm.seccion("DECISION", json.dumps(decision)) + llm.seccion("REPAROS", json.dumps(reparos))
+    if citas is not None:
+        user += llm.seccion("CITAS", citas)
+    salida, _ = FakeClient().estructurado("caso_concreto", "s", user, CasoConcretoLLM, Config(llm=LLMConfig(proveedor="fake")))
+    return salida
+
+
+REPARO = {"id": "R1", "sintesis": "El impugnante señala que no se valoró la prueba.", "disposicion": "ACOGE"}
+DECISION_FAKE = {"resultado": "REVOCAR", "sustitutiva": "AMPARAR"}
+
+
+def test_fake_caso_prefiere_las_citas_ok_a_las_que_estan_en_alerta():
+    caso = _caso_fake(DECISION_FAKE, [REPARO], _citas_json(c1="alerta", c2="ok"))
+    marcadores = [m for p in caso.parrafos for m in lint._MARCADOR.findall(p.texto)]
+    assert marcadores == ["c2"]
+    solo_alerta = _caso_fake(DECISION_FAKE, [REPARO], _citas_json(c1="alerta"))
+    assert [m for p in solo_alerta.parrafos for m in lint._MARCADOR.findall(p.texto)] == ["c1"]
+
+
+def test_fake_caso_sin_reparos_igual_deja_un_marcador():
+    caso = _caso_fake(DECISION_FAKE, [], _citas_json(c1="ok"))
+    assert [m for p in caso.parrafos for m in lint._MARCADOR.findall(p.texto)] == ["c1"]
+
+
+def test_fake_caso_sin_citas_utilizables_no_inventa_marcadores():
+    caso = _caso_fake(DECISION_FAKE, [REPARO], _citas_json(c1="rechazada"))
+    assert not [m for p in caso.parrafos for m in lint._MARCADOR.findall(p.texto)]
+    assert not [m for p in _caso_fake(DECISION_FAKE, [REPARO]).parrafos for m in lint._MARCADOR.findall(p.texto)]
+
+
+@pytest.mark.parametrize("n_reparos", [0, 1, 3])
+def test_fake_caso_la_conclusion_no_repite_el_ultimo_parrafo(n_reparos):
+    temas = [
+        "el juez de primera instancia no valoró los conceptos médicos aportados con la tutela y que demuestran la urgencia del procedimiento",
+        "la acción se interpuso dentro de un plazo razonable porque la negativa de la entidad persiste y la afectación continúa cada día",
+        "existen medios ordinarios que no resultan idóneos ni eficaces para proteger el mínimo vital de una persona en situación de vulnerabilidad",
+    ]
+    reparos = [{**REPARO, "id": f"R{i}", "sintesis": f"El impugnante señala que {temas[i - 1]}."} for i in range(1, n_reparos + 1)]
+    ordenes = [{"verbo": "ORDENAR", "destinatario": "la entidad", "conducta": "pague", "plazo": {"n": 48, "unidad": "horas_habiles"}}]
+    caso = _caso_fake({**DECISION_FAKE, "ordenes": ordenes}, reparos, _citas_json(c1="ok"))
+    assert lint.duplicados_caso(caso, Config().jaccard_duplicados) == []
+
+
+def test_fake_caso_menciona_el_plazo_de_cada_orden_con_plazo_propio():
+    ordenes = [
+        {"verbo": "ORDENAR", "destinatario": "la entidad uno", "conducta": "pague", "plazo": {"n": 3, "unidad": "dias"}},
+        {"verbo": "ORDENAR", "destinatario": "la entidad dos", "conducta": "informe", "plazo": {"n": 48, "unidad": "horas_habiles"}},
+        {"verbo": "PREVENIR", "destinatario": "la entidad tres", "conducta": "no reincida", "plazo": {"n": 9, "unidad": "dias"}},
+        {"verbo": "ORDENAR", "destinatario": "la entidad cuatro", "conducta": "cumpla", "mismo_termino": True},
+    ]
+    decision = {**DECISION_FAKE, "ordenes": ordenes, "accion": "decidir"}
+    caso = _caso_fake(decision, [REPARO], _citas_json(c1="ok"))
+    assert lint.plazos_en_caso(caso, Decision.model_validate(decision)) == []
+    sin_ordenes = _caso_fake(DECISION_FAKE, [REPARO], _citas_json(c1="ok"))
+    assert not [p for p in sin_ordenes.parrafos if p.texto.startswith("Frente a las órdenes")]
+
+
+def test_prompt_caso_concreto_exige_marcador_ok_y_prohibe_transcribir():
+    texto = prompt_default("caso_concreto")
+    assert "al menos un marcador de una cita con estado `ok`" in texto
+    assert "Nunca transcribas" in texto and "se rechaza" in texto
+    assert "el hecho relevante que consta en el expediente, la razón del Despacho" in texto
+    assert "la regla jurisprudencial que la respalda, invocada solo con su marcador" in texto
+
+
+def test_prompt_caso_concreto_motiva_las_ordenes_y_su_plazo_fuera_de_la_conclusion():
+    texto = prompt_default("caso_concreto")
+    assert "sección ORDENES" in texto
+    assert "mencionando ese plazo tal como allí aparece" in texto
+    assert "no en la conclusion" in texto.replace("conclusión", "conclusion")
+
+
+def test_prompt_caso_concreto_pide_una_sola_conclusion():
+    texto = prompt_default("caso_concreto")
+    assert "La conclusión va solo en este campo" in texto
+    assert "ningún párrafo la repite" in texto
+    assert lint.jurisprudencia_sin_cita(texto, "prompt") == []
+
+
+RELATORIA = Path(__file__).parent / "fixtures" / "relatoria"
+PREFIJO_LAZO = (
+    '{"problema_juridico":' + json.dumps(prompt_default("caso_concreto")[:500]) + ',"parrafos":[],"conclusion":"'
+)
+MENSAJE_DOS_LAZOS = (
+    "El modelo entró en un lazo de repetición en dos intentos consecutivos; use 'continuar' para reintentar."
+)
+
+
+def lazo(veces: int = 5000, repeticion: str = "Fin.  ") -> Flujo:
+    trozos = itertools.chain([PREFIJO_LAZO], itertools.repeat(repeticion, veces))
+    return Flujo(respuesta(None, "max_tokens"), trozos=trozos)
+
+
+def trozos_de(texto: str, n: int) -> list[str]:
+    return [texto[i : i + n] for i in range(0, len(texto), n)]
+
+
+def texto_sentencia(archivo: str) -> str:
+    return citas._html_a_texto((RELATORIA / archivo).read_text(encoding="utf-8"))
+
+
+def unidad_de(n: int) -> str:
+    base = "Corresponde al Despacho determinar si la decision de primera instancia se ajusta a derecho. "
+    return (base * 2)[:n]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Fin.  " * 41,
+        "Fin.  " * 500,
+        PREFIJO_LAZO + "Fin.  " * 60,
+        ("Fin.  " * 50)[:-2],
+        unidad_de(80) * 12,
+        unidad_de(40) * 12,
+        unidad_de(7) * 40,
+        "\\n" * 130,
+        '"}],"x":[' + '{"a":"","b":""},' * 20,
+        "[[CITA:c1]] " * 25,
+        "." * 400,
+        " " * 400,
+        "\n" * 400,
+        "texto normal " + "-" * 400,
+    ],
+)
+def test_detecta_degeneracion_en_repeticiones_y_rachas(texto):
+    assert llm.detectar_degeneracion(texto) is True
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "",
+        "Fin.",
+        "Fin.  " * 39,
+        unidad_de(80) * 11,
+        unidad_de(40) * 11,
+        "." * 399,
+        "=" * 399,
+        " " * 300,
+        "a" * 1000,
+        "0" * 1000,
+        "\n" + " " * 300 + "texto",
+        "Fin.  " * 41 + texto_sentencia("T-1215-03.min.html")[:1500],
+        "-" * 500 + "x",
+        " ".join(f"[[CITA:c{i}]]" for i in range(1, 60)),
+        "| Fecha | Valor |\n| --- | --- |\n" + "".join(f"| {i} | {i * 7} |\n" for i in range(200)),
+        json.dumps([{"id": f"R{i}", "reparo_ids": ["R1"], "texto": "El Despacho considera."} for i in range(80)]),
+        "\n".join("    " * (i % 6) + f"línea {i}" for i in range(300)),
+    ],
+)
+def test_no_detecta_degeneracion_en_texto_legitimo(texto):
+    assert llm.detectar_degeneracion(texto) is False
+
+
+def test_la_deteccion_es_independiente_de_la_fase_y_de_donde_empieza_la_repeticion():
+    base = "Fin.  " * 80
+    assert all(llm.detectar_degeneracion(PREFIJO_LAZO + base[i:]) for i in range(6))
+    assert all(llm.detectar_degeneracion(PREFIJO_LAZO + base[:-i or None]) for i in range(6))
+
+
+def test_el_costo_de_la_deteccion_depende_de_la_cola_y_no_del_texto():
+    enorme = "x" * 20_000_000 + texto_sentencia("C-774-01.min.html")[:3000]
+    inicio = time.perf_counter()
+    for _ in range(200):
+        assert llm.detectar_degeneracion(enorme) is False
+    assert time.perf_counter() - inicio < 1.0
+    assert llm.detectar_degeneracion("Fin.  " * 1000 + texto_sentencia("C-774-01.min.html")[:3000]) is False
+
+
+def _user_apertura(textos: list[str]) -> str:
+    roles = ["escrito_tutela", "fallo_a_quo", "impugnacion", "contestacion", "auto_admisorio"]
+    docs = "\n".join(f"### DOC d{i} | {rol} | {rol}.pdf\n{texto}" for i, (rol, texto) in enumerate(zip(roles, textos)))
+    return llm.seccion("DOCUMENTOS", docs) + llm.seccion("METADATOS", "{}")
+
+
+@functools.cache
+def corpus_legitimo() -> dict[str, str]:
+    cfg = Config(llm=LLMConfig(proveedor="fake"))
+    sentencias = {f.name: texto_sentencia(f.name) for f in sorted(RELATORIA.glob("*.html"))}
+    corpus: dict[str, str] = {}
+    for nombre, texto in sentencias.items():
+        corpus[f"relatoria/{nombre}"] = texto
+        corpus[f"relatoria-json/{nombre}"] = json.dumps(texto)
+    for nodo in ("apertura", "consideraciones", "caso_concreto"):
+        texto = prompt_default(nodo)
+        corpus[f"prompt/{nodo}"] = texto
+        corpus[f"prompt-json/{nodo}"] = json.dumps(texto)
+    textos = list(sentencias.values())
+    apertura, _ = FakeClient().estructurado("apertura", "s", _user_apertura(textos), AperturaLLM, cfg)
+    reparos = [{**REPARO, "id": f"R{i}", "sintesis": ln} for i, ln in enumerate(textos[0].splitlines()[:12], start=1)]
+    user_cons = llm.seccion("REPAROS", json.dumps(reparos)) + llm.seccion("LIMITES", "Máximo: 3")
+    cons, _ = FakeClient().estructurado("consideraciones", "s", user_cons, ConsideracionesLLM, cfg)
+    ordenes = [{"verbo": "ORDENAR", "destinatario": "la entidad", "conducta": "pague", "plazo": {"n": 48, "unidad": "horas_habiles"}}]
+    caso = _caso_fake({**DECISION_FAKE, "ordenes": ordenes}, reparos, _citas_json(c1="ok", c2="ok"))
+    for nombre, salida in (("apertura", apertura), ("consideraciones", cons), ("caso", caso)):
+        corpus[f"fake/{nombre}"] = salida.model_dump_json()
+        corpus[f"fake-indent/{nombre}"] = json.dumps(salida.model_dump(mode="json"), indent=4, ensure_ascii=False)
+    return corpus
+
+
+@pytest.mark.parametrize("paso", [1, 7])
+@pytest.mark.parametrize("nombre", sorted(corpus_legitimo()))
+def test_el_corpus_legitimo_llega_completo_sin_disparar_el_corte(nombre, paso):
+    texto = corpus_legitimo()[nombre]
+    flujo = Flujo(respuesta(None, texto=texto), trozos=trozos_de(texto, paso))
+    final = llm._consumir(flujo)
+    assert final.stop_reason == "end_turn" and flujo.consumido == len(texto)
+
+
+def test_el_corpus_cubre_los_tres_esquemas_del_fake_y_las_cinco_sentencias():
+    nombres = corpus_legitimo()
+    assert {"fake/apertura", "fake/consideraciones", "fake/caso"} <= set(nombres)
+    assert len([n for n in nombres if n.startswith("relatoria/")]) == 5
+    assert all(len(nombres[n]) > 2000 for n in nombres if n.startswith(("relatoria/", "prompt/")))
+    assert "[[CITA:c1]]" in nombres["fake/caso"]
+
+
+def test_el_consumo_del_flujo_levanta_lazo_degenerado_sin_texto_del_modelo():
+    flujo = lazo()
+    with pytest.raises(llm.ErrorLLMDegenerado) as e:
+        llm._consumir(flujo)
+    assert isinstance(e.value, ErrorLLM)
+    assert "Fin." not in str(e.value) and PREFIJO_LAZO[30:60] not in str(e.value)
+    assert 0 < flujo.consumido - len(PREFIJO_LAZO) < 2000
+
+
+def test_un_stream_largo_y_normal_no_se_corta_y_se_consume_completo(sdk):
+    parrafos = [
+        llm.ParrafoLLM(reparo_ids=["R1"], texto=f"{ln} [[CITA:c1]] [[CITA:c2]] [[CITA:c3]]")
+        for ln in texto_sentencia("C-313-14.min.html").splitlines()[:60]
+    ]
+    caso = CasoConcretoLLM(problema_juridico="p", parrafos=parrafos, conclusion="c")
+    sdk.guion = [respuesta(caso)]
+    salida, _ = llamar()
+    assert salida == caso
+    flujo = sdk.instancias[0].flujos[0]
+    assert len(sdk.instancias[0].llamadas) == 1 and flujo.consumido == len(caso.model_dump_json()) > 5000
+
+
+def test_lazo_en_la_ruta_beta_por_defecto_se_corta_pronto_y_se_repite_la_misma_llamada(sdk, caplog):
+    sdk.guion = [lazo(), respuesta()]
+    with caplog.at_level(logging.WARNING, logger="tutela2"):
+        salida, meta = llamar(Config(), "caso_concreto")
+    espia = sdk.instancias[0]
+    primero, segundo = espia.flujos
+    assert salida == CASO
+    assert len(espia.llamadas) == 2 and all(l["beta"] is True and l["fallbacks"] == "default" for l in espia.llamadas)
+    assert {k: v for k, v in espia.llamadas[0].items()} == {k: v for k, v in espia.llamadas[1].items()}
+    assert primero.cerrado and 0 < primero.consumido - len(PREFIJO_LAZO) < 2000
+    assert segundo.cerrado and segundo.consumido == len(CASO.model_dump_json())
+    assert meta["tokens_entrada"] == 11 and meta["tokens_salida"] == 7
+    avisos = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(avisos) == 1 and "repetición" in avisos[0].getMessage()
+    assert "Fin." not in caplog.text and PREFIJO_LAZO[30:60] not in caplog.text
+
+
+def test_lazo_sin_fallbacks_tambien_se_repite_una_vez(sdk):
+    sdk.guion = [lazo(), respuesta()]
+    salida, _ = llamar(Config(llm=LLMConfig(fallbacks_default=False)))
+    assert salida == CASO
+    assert [bool(l.get("beta")) for l in sdk.instancias[0].llamadas] == [False, False]
+
+
+def test_dos_lazos_consecutivos_levantan_error_llm_y_no_hay_tercer_intento(sdk, caplog):
+    sdk.guion = [lazo(), lazo(), respuesta()]
+    with caplog.at_level(logging.WARNING, logger="tutela2"):
+        with pytest.raises(ErrorLLM) as e:
+            llamar()
+    assert type(e.value) is ErrorLLM and str(e.value) == MENSAJE_DOS_LAZOS
+    espia = sdk.instancias[0]
+    assert len(espia.llamadas) == 2 and all(f.cerrado for f in espia.flujos)
+    assert all(0 < f.consumido - len(PREFIJO_LAZO) < 2000 for f in espia.flujos)
+    assert len(sdk.guion) == 1
+    assert "Fin." not in caplog.text and PREFIJO_LAZO[30:60] not in caplog.text
+
+
+def test_el_reintento_por_lazo_convive_con_el_rechazo_de_fallbacks_de_la_api(sdk):
+    sdk.guion = [error_400("fallbacks: Extra inputs are not permitted"), lazo(), respuesta()]
+    salida, meta = llamar()
+    llamadas = sdk.instancias[0].llamadas
+    assert salida == CASO and meta["tokens_entrada"] == 11
+    assert [bool(l.get("beta")) for l in llamadas] == [True, False, False]
+    assert not {"betas", "fallbacks"} & set(llamadas[1]) and llamadas[1] == llamadas[2]
+
+
+def test_una_llamada_abortada_no_devuelve_uso_y_no_suma_tokens_ni_borra_los_previos(sdk):
+    sdk.guion = [
+        respuesta(None, "refusal", modelo="claude-haiku-5-5"),
+        lazo(),
+        respuesta(modelo="claude-sonnet-5-5"),
+    ]
+    cfg = Config(llm=LLMConfig(modelo="claude-haiku-5-5"))
+    salida, meta = llamar(cfg)
+    assert salida == CASO and len(sdk.instancias[0].llamadas) == 3
+    assert meta["modelo_efectivo"] == "claude-sonnet-5-5"
+    assert meta["tokens_entrada"] == 11 + 11 and meta["tokens_salida"] == 7 + 7
+
+
+def test_lazo_y_error_del_proveedor_en_el_reintento_se_reportan_como_error_llm(sdk):
+    peticion = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    sdk.guion = [lazo(), anthropic.APIConnectionError(request=peticion)]
+    with pytest.raises(ErrorLLM, match="APIConnectionError"):
+        llamar()
+
+
+def evento_sse(tipo: str, datos: dict) -> bytes:
+    return f"event: {tipo}\ndata: {json.dumps({'type': tipo, **datos})}\n\n".encode()
+
+
+def eventos_lazo(veces: int, modelo: str = "claude-efectivo"):
+    mensaje = {
+        "id": "msg_1", "type": "message", "role": "assistant", "model": modelo, "content": [],
+        "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 9, "output_tokens": 0},
+    }
+    yield evento_sse("message_start", {"message": mensaje})
+    yield evento_sse("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
+    yield evento_sse("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": PREFIJO_LAZO}})
+    for _ in range(veces):
+        yield evento_sse("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "Fin.  "}})
+    yield evento_sse("content_block_stop", {"index": 0})
+    yield evento_sse(
+        "message_delta", {"delta": {"stop_reason": "max_tokens", "stop_sequence": None}, "usage": {"output_tokens": 64000}}
+    )
+    yield evento_sse("message_stop", {})
+
+
+@pytest.mark.parametrize("fallbacks", [True, False])
+def test_sdk_real_el_lazo_se_corta_sin_leer_el_cuerpo_completo_y_la_llamada_se_repite(fallbacks):
+    leidos: list[int] = []
+    peticiones: list[httpx.Request] = []
+    veces = 20000
+
+    def cuerpo_lazo():
+        for n, trozo in enumerate(eventos_lazo(veces)):
+            leidos.append(n)
+            yield trozo
+
+    def manejador(peticion: httpx.Request) -> httpx.Response:
+        peticiones.append(peticion)
+        if len(peticiones) == 1:
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=cuerpo_lazo())
+        return sse(CASO.model_dump_json())
+
+    cfg = Config(llm=LLMConfig(fallbacks_default=fallbacks))
+    salida, meta = AnthropicClient(sdk_real(manejador)).estructurado("apertura", "s", "u", CasoConcretoLLM, cfg)
+    assert salida == CASO and len(peticiones) == 2
+    assert 0 < len(leidos) < veces // 10
+    assert meta["tokens_entrada"] == 3 and meta["tokens_salida"] == 2 and meta["stop_reason"] == "end_turn"
+    primero, segundo = (json.loads(p.content) for p in peticiones)
+    assert primero == segundo and primero["stream"] is True
+    assert ("fallbacks" in primero) is fallbacks
+
+
+def test_sdk_real_dos_lazos_levantan_error_llm_con_dos_peticiones():
+    peticiones: list[httpx.Request] = []
+
+    def manejador(peticion: httpx.Request) -> httpx.Response:
+        peticiones.append(peticion)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=eventos_lazo(3000))
+
+    with pytest.raises(ErrorLLM) as e:
+        AnthropicClient(sdk_real(manejador)).estructurado("apertura", "s", "u", CasoConcretoLLM, Config())
+    assert type(e.value) is ErrorLLM and str(e.value) == MENSAJE_DOS_LAZOS and len(peticiones) == 2

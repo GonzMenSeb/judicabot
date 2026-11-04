@@ -934,3 +934,141 @@ def test_reaplicar_confirmar_mismo_rol_rescata_ajeno(tmp_path):
     nuevo = reaplicar(ing, {ajeno.doc_id: ajeno.rol})
     assert nuevo.docs_ajenos == []
     assert por_nombre(nuevo, "030Ajeno.txt").rol_origen == "usuario"
+
+
+def ajena(base: Path, nombre: str, texto: str) -> None:
+    escribir(base, P1 + nombre, f"Constancia de otro trámite, radicado {OTRO_CUI}\n{texto}\n" + "a" * 60)
+
+
+def test_ajeno_sin_nombres_del_caso_sigue_ajeno(tmp_path):
+    caso_sintetico(tmp_path)
+    ing = ingerir(tmp_path, Config())
+    assert ing.docs_revisar == []
+    assert por_nombre(ing, "030Ajeno.txt").doc_id in ing.docs_ajenos
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Solicitud presentada por MARIA PRUEBA UNO ante otro despacho.",
+        "Se reclama a ENTIDAD DE PRUEBA S.A. DE MEDELLIN el cumplimiento.",
+        "Respuesta de otra empresa de prueba al requerimiento.",
+        "Oficio dirigido al Juzgado 33 Penal Municipal de Medellín.",
+        "Oficio dirigido al Juzgado Treinta y Tres Penal Municipal con Funciones de Control de Garantías.",
+        "Oficio dirigido al Juzgado Treinta y Tres (33) Penal Municipal.",
+        "Desde Juzgado 33 Penal Municipal Control Garantías - Antioquia - Medellín",
+    ],
+)
+def test_ajeno_que_nombra_al_caso_queda_para_revisar(tmp_path, texto):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", texto)
+    ing = ingerir(tmp_path, Config())
+    d = por_nombre(ing, "032Cartas.txt")
+    assert ing.docs_revisar == [d.doc_id]
+    assert d.doc_id not in ing.docs_ajenos
+    assert ing.docs_ajenos == [por_nombre(ing, "030Ajeno.txt").doc_id]
+    assert any(d.doc_id in a and "para revisar" in a for a in ing.alertas)
+    assert not any(d.doc_id in a and "se trata como ajeno" in a for a in ing.alertas)
+    assert ing.faltantes == []
+    assert Ingesta.model_validate(ing.model_dump(mode="json")) == ing
+
+
+def test_para_revisar_llega_al_modelo_con_linea_de_marca(tmp_path):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", "Solicitud presentada por MARIA PRUEBA UNO.")
+    ing = ingerir(tmp_path, Config())
+    d = por_nombre(ing, "032Cartas.txt")
+    texto = texto_para_llm(ing, max_chars=100000)
+    cabecera = f"### DOC {d.doc_id} | {d.rol} | 032Cartas.txt\n"
+    assert cabecera + ingest.AVISO_REVISAR + "\n[p. 1]\n" in texto
+    assert "Solicitud presentada por MARIA PRUEBA UNO." in texto
+    assert texto.count(ingest.AVISO_REVISAR) == 1
+    assert "030Ajeno" not in texto
+    solo = texto_para_llm(ing, {d.rol}, 100000)
+    assert ingest.AVISO_REVISAR in solo
+
+
+def test_marca_de_revisar_no_cuenta_en_el_truncado(tmp_path):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", "MARIA PRUEBA UNO " + "x" * 400)
+    ing = ingerir(tmp_path, Config())
+    texto = texto_para_llm(ing, max_chars=50)
+    assert ingest.AVISO_REVISAR in texto and "[... TRUNCADO ...]" in texto
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Solicitud presentada por MARIA PRUEBA UNOS.",
+        "Solicitud presentada por MARIA PRUEBA.",
+        "Solicitud sobre otra EMPRESA en la EPS de prueba.",
+        "Oficio dirigido al Juzgado 34 Penal Municipal de Medellín.",
+        "Oficio dirigido al Juzgado 133 Penal Municipal de Medellín.",
+        "Oficio dirigido al Juzgado 33 Civil Municipal de Medellín.",
+    ],
+)
+def test_nombres_parciales_o_de_otro_juzgado_no_rescatan(tmp_path, texto):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", texto)
+    ing = ingerir(tmp_path, Config())
+    d = por_nombre(ing, "032Cartas.txt")
+    assert d.doc_id in ing.docs_ajenos and ing.docs_revisar == []
+
+
+def test_sin_acta_no_se_rescata_por_nombre_de_partes(tmp_path):
+    escribir(tmp_path, P1 + "002Escrito.txt", ESCRITO)
+    escribir(tmp_path, P1 + "003Admite.txt", ADMISORIO)
+    escribir(tmp_path, P1 + "004Fallo.txt", FALLO)
+    escribir(tmp_path, P1 + "005Correo.txt", IMPUGNACION)
+    ajena(tmp_path, "032Cartas.txt", "Solicitud presentada por MARIA PRUEBA UNO y por MARIA PRUEBA.")
+    ing = ingerir(tmp_path, Config())
+    d = por_nombre(ing, "032Cartas.txt")
+    assert ing.metadatos.cui_1a == CUI
+    assert d.doc_id in ing.docs_ajenos and ing.docs_revisar == []
+
+
+def test_sin_acta_se_rescata_por_el_juzgado_a_quo(tmp_path):
+    escribir(tmp_path, P1 + "002Escrito.txt", ESCRITO)
+    escribir(tmp_path, P1 + "003Admite.txt", ADMISORIO)
+    escribir(tmp_path, P1 + "004Fallo.txt", FALLO)
+    escribir(tmp_path, P1 + "005Correo.txt", IMPUGNACION)
+    ajena(tmp_path, "032Cartas.txt", "Escrito al Juzgado 33 Penal Municipal.")
+    ing = ingerir(tmp_path, Config())
+    assert ing.docs_revisar == [por_nombre(ing, "032Cartas.txt").doc_id]
+
+
+def test_para_revisar_no_alimenta_los_metadatos(tmp_path):
+    caso_sintetico(tmp_path, con_acta_2a=False)
+    escribir(
+        tmp_path,
+        P1 + "008Acta.txt",
+        ACTA.format(rad=OTRO_CUI, clase="IMPUGNACIÓN TUTELA"),
+    )
+    ing = ingerir(tmp_path, Config())
+    acta = por_nombre(ing, "008Acta.txt")
+    assert acta.rol == "acta_reparto_2a"
+    assert ing.docs_revisar == [acta.doc_id]
+    assert ing.esperados_faltantes == ["acta_reparto_2a"]
+    assert ing.metadatos.fechas.reparto_2a is None
+
+
+def test_reaplicar_confirmar_mismo_rol_saca_el_documento_de_revisar(tmp_path):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", "Solicitud presentada por MARIA PRUEBA UNO.")
+    ing = ingerir(tmp_path, Config())
+    d = por_nombre(ing, "032Cartas.txt")
+    assert ing.docs_revisar == [d.doc_id]
+    nuevo = reaplicar(ing, {d.doc_id: d.rol})
+    assert nuevo.docs_revisar == [] and nuevo.docs_ajenos == ing.docs_ajenos
+    assert por_nombre(nuevo, "032Cartas.txt").rol_origen == "usuario"
+    assert ingest.AVISO_REVISAR not in texto_para_llm(nuevo, max_chars=100000)
+    assert not any("para revisar" in a and d.doc_id in a for a in nuevo.alertas)
+
+
+def test_reaplicar_conserva_revisar_si_no_se_toca_el_documento(tmp_path):
+    caso_sintetico(tmp_path)
+    ajena(tmp_path, "032Cartas.txt", "Solicitud presentada por MARIA PRUEBA UNO.")
+    ing = ingerir(tmp_path, Config())
+    escrito = por_nombre(ing, "002Escrito.txt")
+    nuevo = reaplicar(ing, {escrito.doc_id: "memorial"})
+    assert nuevo.docs_revisar == ing.docs_revisar

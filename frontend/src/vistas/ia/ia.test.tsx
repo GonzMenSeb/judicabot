@@ -69,6 +69,8 @@ describe("Inteligencia artificial", () => {
     expect((screen.getByRole("radio", { name: /Apagado/ }) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByText(/artículo 8\.6/)).toBeNull();
     expect(screen.queryByLabelText("Confianza mínima de Jev")).toBeNull();
+    expect(screen.queryByText(/no está permitido en este servidor/)).toBeNull();
+    expect(screen.queryByText(/No hay modelos permitidos/)).toBeNull();
   });
 
   it("al encender Jev avisa que la información sale del despacho y pide clave y umbral", async () => {
@@ -177,6 +179,58 @@ describe("Inteligencia artificial", () => {
     const boton = screen.getByRole("button", { name: "Editar instrucciones" }) as HTMLButtonElement;
     expect(boton.disabled).toBe(true);
     expect(boton.getAttribute("aria-describedby")).toBe(screen.getByText("Próximamente").id);
+  });
+});
+
+describe("Modelos permitidos por el servidor", () => {
+  const radiosModelo = () => screen.queryAllByRole("radio", { name: /5\.5/ }) as HTMLInputElement[];
+  const restringido = (): PreferenciasIa => ({ ...base(), modelo: "claude-opus-5-5", modelos: ["claude-sonnet-5-5"] });
+
+  it("avisa que el modelo guardado no está permitido y no lo ofrece", async () => {
+    await montar({}, restringido());
+    const aviso = screen.getByText("El modelo guardado no está permitido en este servidor").closest(".aviso") as HTMLElement;
+    expect(aviso.classList.contains("alerta")).toBe(true);
+    expect(aviso.textContent).toContain("Opus 5.5");
+    expect(aviso.textContent).toMatch(/la redacción fallará/);
+    expect(radiosModelo().map((r) => r.closest("label")?.querySelector("b")?.textContent)).toEqual(["Sonnet 5.5"]);
+    expect(radiosModelo().some((r) => r.checked)).toBe(false);
+    expect(screen.queryByRole("radio", { name: /Opus/ })).toBeNull();
+  });
+
+  it("no guarda mientras no se elija uno permitido y retira el aviso al guardarlo", async () => {
+    const llamadas = await montar(
+      { "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...restringido(), ...(cuerpo as object), api_key: true, jev_key: false, modelos: ["claude-sonnet-5-5"] } }) },
+      restringido(),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Sombra/ }));
+    fireEvent.click(guardar());
+    expect(await screen.findByText("Elija uno de los modelos disponibles.")).toBeTruthy();
+    expect(llamadas.some((l) => l.clave === "PUT /api/ia")).toBe(false);
+    expect(screen.getByText("El modelo guardado no está permitido en este servidor")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Sonnet 5\.5/ }));
+    expect(screen.queryByText("Elija uno de los modelos disponibles.")).toBeNull();
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    expect(llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo).toMatchObject({ modelo: "claude-sonnet-5-5" });
+    expect(screen.queryByText("El modelo guardado no está permitido en este servidor")).toBeNull();
+    expect(radiosModelo().filter((r) => r.checked).length).toBe(1);
+  });
+
+  it("no avisa del modelo guardado cuando sí está en la lista restringida", async () => {
+    await montar({}, { ...base(), modelos: ["claude-sonnet-5-5", "claude-haiku-5-5"] });
+    expect(screen.queryByText(/no está permitido en este servidor/)).toBeNull();
+    expect(radiosModelo().map((r) => r.closest("label")?.querySelector("b")?.textContent)).toEqual(["Sonnet 5.5", "Haiku 5.5"]);
+    expect((screen.getByRole("radio", { name: /Sonnet 5\.5/ }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("explica que no hay ningún modelo permitido cuando la lista llega vacía", async () => {
+    await montar({}, { ...base(), modelos: [] });
+    const aviso = screen.getByText("No hay modelos permitidos en este servidor").closest(".aviso") as HTMLElement;
+    expect(aviso.textContent).toContain("TUTELA2_MODELOS_PERMITIDOS");
+    expect(screen.queryByText("El modelo guardado no está permitido en este servidor")).toBeNull();
+    expect(radiosModelo().length).toBe(0);
+    expect(screen.getByRole("radio", { name: /Apagado/ })).toBeTruthy();
   });
 });
 

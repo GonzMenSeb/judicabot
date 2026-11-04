@@ -194,3 +194,32 @@ def test_datos_auto_valida_fechas():
     for campo in ("fecha", "fecha_reparto"):
         with pytest.raises(ValidationError):
             DatosAuto(**{campo: "9/10/2026"})
+
+
+def test_auto_firmante_y_cargo_de_datos(tmp_path):
+    m = md()
+    datos = auto_por_defecto(m).model_copy(update={"firmante": " Juan Prueba Perez ", "cargo_firmante": "Juez (E)"})
+    t = textos(Document(str(render_auto(m, datos, CFG, tmp_path / "a.docx"))))
+    assert t[-2:] == ["JUAN PRUEBA PEREZ", "JUEZ (E)"]
+    assert "SANTIAGO ALEJANDRO CADAVID DUQUE" not in t
+
+
+@pytest.mark.parametrize("vacio", [None, "", "   "])
+def test_auto_sin_firmante_usa_el_del_despacho(vacio, tmp_path):
+    m = md()
+    datos = auto_por_defecto(m).model_copy(update={"firmante": vacio, "cargo_firmante": vacio})
+    t = textos(Document(str(render_auto(m, datos, CFG, tmp_path / "a.docx"))))
+    assert t[-2:] == [CFG.despacho.juez, CFG.despacho.cargo_juez]
+
+
+def test_auto_firmante_sin_cargo_conserva_el_cargo_del_despacho(tmp_path):
+    m = md()
+    datos = auto_por_defecto(m).model_copy(update={"firmante": "Otro Juez"})
+    t = textos(Document(str(render_auto(m, datos, CFG, tmp_path / "a.docx"))))
+    assert t[-2:] == ["OTRO JUEZ", CFG.despacho.cargo_juez]
+
+
+def test_oficio_fija_la_convencion_del_articulo_31(oficio):
+    cuerpo = next(p for p in textos(oficio) if p.startswith("De manera comedida"))
+    assert "artículo 31 del Decreto 2591 de 1991" in cuerpo
+    assert "artículo 32" not in cuerpo

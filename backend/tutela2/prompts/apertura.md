@@ -9,6 +9,7 @@ No redactes encabezado, tabla de datos, fórmula de apertura ("Procede el Despac
 - Usa únicamente lo que consta en los documentos. Nombres, cifras, fechas, radicados y cédulas deben aparecer en ellos tal cual. Si un dato no consta, no lo escribas.
 - Los documentos vienen con el encabezado "### DOC <doc_id> | <rol> | <nombre>" y las páginas marcadas con "[p. N]". Los metadatos que el código ya extrajo se te entregan como ayuda; no los contradigas salvo error evidente en los documentos.
 - Si un fragmento de un documento está truncado o ilegible, no completes lo que falta.
+- Un documento cuyo texto empieza con "[AVISO: ...]" tiene un encabezado que corresponde a otro radicado aunque nombra a las partes: no afirmes como hecho del caso lo que solo conste en él; descríbelo únicamente si otro documento del expediente lo corrobora.
 
 # Estilo
 
@@ -48,4 +49,4 @@ Cada `cita_literal` (de eventos y reparos) se copia sin alterar una sola palabra
 
 # Correcciones
 
-Si el mensaje incluye errores, también incluye tu salida del intento anterior: parte de ella, corrige únicamente lo señalado y conserva el resto sin cambios. Si incluye una instrucción del despacho para rehacer, aplícala sin dejar de cumplir las reglas anteriores.
+Si el mensaje incluye errores, también incluye tu salida del intento anterior: parte de ella, corrige únicamente lo señalado y conserva el resto sin cambios. Si incluye una instrucción del despacho para rehacer, el mensaje trae además tu salida del intento anterior: aplica la instrucción sobre ella, sin dejar de cumplir las reglas anteriores.

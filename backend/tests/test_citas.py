@@ -55,8 +55,10 @@ def _csv_bytes() -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
-def _pagina(ident: str, cuerpo: str = PARRAFO_HTML, encoding: str = "cp1252") -> bytes:
+def _pagina(ident: str, cuerpo: str = PARRAFO_HTML, encoding: str = "cp1252", cierre: bool = True) -> bytes:
     relleno = "".join(f"<p>Fundamento {i} alfa{i} beta{i} gamma{i} delta{i} epsilon{i}</p>\r\n" for i in range(500))
+    if cierre:
+        relleno += "<p>Cópiese, notifíquese, comuníquese y cúmplase.</p><p>Magistrado</p><p>Secretaria General</p>"
     html = (
         "<script language='JavaScript1.2' src='/relatoria/encabezado.js'> </script> "
         f"<a href='/sentencias/x/{ident}.rtf'> {ident} </a>\r\n<html><head>"
@@ -881,8 +883,8 @@ def test_real_su712_cita_literal_al_100(cfg_real):
     larga, corta = citas.verificar_citas(
         [_p("SU-712/13", CITA_SU712), _p("SU712-13", CITA_SU712_CORTA, "c2")], cfg_real, ds
     )
-    assert larga.estado == "ok" and larga.cobertura == 1.0
-    assert corta.estado == "ok" and corta.cobertura == 1.0
+    assert larga.estado == "ok" and larga.cobertura == 1.0 and larga.seccion == "mayoria"
+    assert corta.estado == "rechazada" and corta.cobertura == 1.0 and corta.n_palabras == 14
     assert larga.mp_dataset == "Jorge Iván Palacio Palacio"
 
 
@@ -1424,3 +1426,868 @@ def test_cobertura_negacion_omitida_en_hueco_largo():
 def test_cobertura_omision_marcada_no_se_penaliza(marca):
     cita = _GAP_NEG.replace("nunca y bajo ninguna circunstancia", marca)
     assert citas.cobertura(cita, _FUENTE_NEG) >= 0.8
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "relatoria"
+MP_FIXTURES = {
+    "C-543-92": ("C", 543, 1992, "José Gregorio Hernández Galindo"),
+    "C-774-01": ("C", 774, 2001, "Rodrigo Escobar Gil"),
+    "T-1215-03": ("T", 1215, 2003, "Clara Inés Vargas Hernández"),
+    "C-313-14": ("C", 313, 2014, "Gabriel Eduardo Mendoza Martelo"),
+}
+DATASET_FIXTURES = {
+    citas.clave_dataset(t, n, a): {"magistrado_a": mp, "fecha_sentencia": f"{a}-01-01"}
+    for t, n, a, mp in MP_FIXTURES.values()
+}
+
+
+def _html_fixture(nombre: str) -> str:
+    return citas._decodificar((FIXTURES / f"{nombre}.min.html").read_bytes())
+
+
+def _secciones_fixture(nombre: str) -> citas.SeccionesRelatoria:
+    return citas.separar_secciones(citas._html_a_texto(_html_fixture(nombre)))
+
+
+def _verificar_fixture(cfg: Config, nombre: str, texto: str, id_: str = "c1") -> CitaVerificada:
+    datos = (FIXTURES / f"{nombre}.min.html").read_bytes()
+    relleno = max(0, citas.MIN_BYTES_PAGINA - len(datos))
+    _poner_pagina(cfg, f"{nombre}.htm", datos + b"<!-- " + b"x" * relleno + b" -->")
+    tipo, numero, anio, _ = MP_FIXTURES[nombre]
+    (cv,) = citas.verificar_citas([_p(f"{tipo}-{numero} de {anio}", texto, id_)], cfg, DATASET_FIXTURES)
+    return cv
+
+
+MAYORIA_C543 = (
+    "La Corte ha señalado que dos de las características esenciales de esta figura en el ordenamiento jurídico "
+    "colombiano son la subsidiariedad y la inmediatez: la primera por cuanto tan sólo resulta procedente instaurar "
+    "la acción en subsidio o a falta de instrumento constitucional o legal diferente, susceptible de ser alegado "
+    "ante los jueces"
+)
+SALVAMENTO_C543 = (
+    "Es evidente que si contra una sentencia dictada por el Juez en abierta violación de los derechos "
+    "constitucionales fundamentales, se ejercen todos los medios de impugnación ordinarios y, no obstante, la "
+    "vulneración persiste, no disponiendo el afectado de otro medio de defensa judicial - se han agotado todos - "
+    "sólo le queda la acción de tutela"
+)
+MAYORIA_C774 = (
+    "La cosa juzgada constitucional es una institución jurídico procesal que tiene su fundamento en el artículo "
+    "243 de la Constitución Política y mediante la cual se otorga a las decisiones plasmadas en una sentencia de "
+    "constitucionalidad, el carácter de inmutables, vinculantes y definitivas."
+)
+ACLARACION_C774 = (
+    "Con el debido respeto por la mayoría de la Corte y por el magistrado ponente, aclaro mi voto respecto de un "
+    "par de asuntos puntuales porque en general comparto tanto los argumentos plasmados en la sentencia como el "
+    "espíritu garantista de la libertad personal que la anima."
+)
+PARAFRASIS_T1215 = (
+    "Para prevenir actitudes deshonestas y contradictorias, específicamente frente al ejercicio de la tutela, el "
+    "Decreto 2591 de 1991 consagró que cuando sin motivo expresamente justificado una persona presente ante varios "
+    "jueces la misma acción de tutela con fundamento en los mismos hechos y pidiendo la protección de los mismos "
+    "derechos de origen constitucional, se rechazarán o decidirán desfavorablemente todas las solicitudes."
+)
+CITAS_DEBILES_406 = [
+    ("C-543-92", "cuando el afectado no disponga de otro medio de defensa judicial", 11),
+    ("C-774-01", "inmutables, vinculantes y definitivas", 4),
+    ("T-1215-03", "sin motivo expresamente justificado", 4),
+    ("C-313-14", "El derecho fundamental a la salud es autónomo e irrenunciable en lo individual y en lo colectivo.", 17),
+]
+VOTO_SINTETICO = (
+    "El salvamento sostiene que la tutela procede contra providencias judiciales aunque se hayan agotado los "
+    "recursos ordinarios cuando la vulneración persiste y no existe otro medio idóneo para evitar un perjuicio "
+    "irremediable a los derechos fundamentales de la persona afectada."
+)
+
+
+def _pagina_con_votos(ident: str, mayoria: str, voto: str = "", nota: str = "") -> bytes:
+    cuerpo = f"<p>{mayoria}</p><p>Notifíquese, comuníquese y cúmplase.</p><p>Magistrado</p><p>Secretaria General</p>"
+    if voto:
+        cuerpo += f"<p>Salvamento de voto a la Sentencia No. T-200</p><p>{voto}</p>"
+    if nota:
+        cuerpo += f"<div><div id=ftn1><p>{nota}</p></div></div>"
+    return _pagina(ident, cuerpo, cierre=False)
+
+
+def test_contar_palabras_ignora_omisiones_y_cuenta_incisos():
+    assert citas.contar_palabras("uno dos (...) tres [...] cuatro") == 4
+    assert citas.contar_palabras("(i) uno, (ii) dos") == 4
+    assert citas.contar_palabras("") == 0
+    assert citas.contar_palabras(TEXTO_BASE) == 43
+
+
+def test_marca_de_notas_no_agrega_tokens_al_texto():
+    assert citas.normalizar_texto(citas.MARCA_NOTAS) == ""
+    sin = citas._html_a_texto("<p>uno dos tres</p><div><p>notas</p></div>")
+    con = citas._html_a_texto("<p>uno dos tres</p><div><div id=ftn1><p>notas</p></div></div>")
+    assert citas.normalizar_texto(con) == citas.normalizar_texto(sin)
+    assert citas.MARCA_NOTAS in con and citas.MARCA_NOTAS not in sin
+
+
+def test_marca_de_notas_solo_en_el_primer_bloque_de_notas():
+    texto = citas._html_a_texto("<p>a</p><div id=ftn1><p>n1</p></div><div id=ftn2><p>n2</p></div>")
+    assert texto.count(citas.MARCA_NOTAS) == 1
+
+
+def test_separar_secciones_c543_salvamento_comunicado_y_notas():
+    s = _secciones_fixture("C-543-92")
+    assert "R E S U E L V E" in s.mayoria and "Secretaria General" in s.mayoria
+    assert "dos (2) de junio" not in s.votos and "aclaración de voto formulada" in s.mayoria
+    assert s.votos.startswith("COMUNICADO Sentencia C-543")
+    assert "Salvamento de voto a la Sentencia No. C-543" in s.votos and SALVAMENTO_C543 in s.votos
+    assert "Enciclopedia Jurídica OMEBA" in s.resto and "Enciclopedia" not in s.votos
+    assert citas.MARCA_NOTAS not in s.mayoria + s.votos + s.resto
+
+
+def test_separar_secciones_aclaracion_sin_salvamento_c774():
+    s = _secciones_fixture("C-774-01")
+    assert MAYORIA_C774 in s.mayoria and "Secretaria General" in s.mayoria
+    assert s.votos.startswith("Aclaración de voto a la Sentencia C-774/01") and ACLARACION_C774 in s.votos
+    assert "Ver entre otras las sentencias" in s.resto and "Ver entre otras" not in s.votos
+
+
+def test_separar_secciones_c313_firmas_anexo_votos_y_autos():
+    s = _secciones_fixture("C-313-14")
+    assert "Con salvamento parcial de voto" in s.mayoria and "ANEXO" in s.mayoria
+    assert "ACLARACION DE VOTO DEL MAGISTRADO" in s.votos and "ACLARACIÓN Y SALVAMENTO PARCIAL DE VOTO" in s.votos
+    assert "ACLARACION DE VOTO DE LA MAGISTRADA" in s.votos
+    assert "Auto 377/14" in s.resto and "Auto 078/15" in s.resto and "Auto 377/14" not in s.votos
+
+
+def test_separar_secciones_su712_variantes_de_titulo():
+    s = _secciones_fixture("SU712-13")
+    assert "SALVAMENTO DE VOTO DEL MAGISTRADO" in s.votos and "ACLARACIÓN DE VOTO DEL MAGISTRADO" in s.votos
+    assert "Notifíquese, comuníquese y cúmplase." in s.mayoria and "Con salvamento de voto" in s.mayoria
+
+
+def test_separar_secciones_sin_votos_todo_es_mayoria():
+    s = _secciones_fixture("T-1215-03")
+    assert s.votos == "" and s.resto == ""
+    assert "Cuarto.- ORDENAR" in s.mayoria and PARAFRASIS_T1215 in s.mayoria
+    assert citas.MARCA_NOTAS not in s.mayoria
+
+
+def test_separar_secciones_pagina_sin_marcadores_es_mayoria_completa():
+    texto = citas._html_a_texto(_pagina("T-200-22").decode("cp1252"))
+    s = citas.separar_secciones(texto)
+    assert s.votos == "" and s.resto == "" and "SENTENCIA T-200-22" in s.mayoria
+
+
+def test_separar_secciones_ignora_menciones_de_votos_antes_del_cierre():
+    texto = "La Corte acoge la aclaración de voto formulada por otro magistrado.\nSalvamento de voto a la Sentencia No. 1\nNotifíquese y cúmplase.\nSecretaria General"
+    s = citas.separar_secciones(texto)
+    assert s.votos == "" and "aclaración de voto formulada" in s.mayoria and s.delimitada
+
+
+CIERRE_ESTANDAR = "Notifíquese, comuníquese y cúmplase."
+CIERRES_CUMPLASE_PRIMERO = [
+    "Cúmplase, cópiese, publíquese, comuníquese a quien corresponda, insértese en la Gaceta de la Corte "
+    "Constitucional y archívese el expediente.",
+    "Cúmplase, cópiese, publíquese, comuníquese y archívese.",
+]
+
+
+def _texto_con_voto(cierre: str | None, titulo: str, firma: str | None = "Con salvamento de voto") -> str:
+    lineas = [
+        "SENTENCIA T-200/22", TEXTO_BASE, cierre, "JUAN PEREZ", "Magistrado", firma, "Secretaria General", titulo,
+        VOTO_SINTETICO,
+    ]
+    return "\n".join(ln for ln in lineas if ln)
+
+
+@pytest.mark.parametrize("cierre", CIERRES_CUMPLASE_PRIMERO)
+def test_cierres_que_empiezan_por_cumplase_delimitan_la_mayoria(cierre):
+    s = citas.separar_secciones(_texto_con_voto(cierre, "Salvamento de voto a la Sentencia T-200"))
+    assert s.delimitada and VOTO_SINTETICO in s.votos and VOTO_SINTETICO not in s.mayoria
+    assert TEXTO_BASE in s.mayoria
+
+
+TITULO_NEUTRO = "Me aparto respetuosamente de la decisión de la mayoría"
+
+
+@pytest.mark.parametrize(
+    "firma",
+    ["Con salvamento de voto", "Con aclaración de voto", "Salvamento parcial de voto", "Con salvamento parcial y aclaración de voto"],
+)
+def test_firma_corta_de_voto_sin_titulo_reconocido_no_se_delimita(firma):
+    s = citas.separar_secciones(_texto_con_voto(CIERRE_ESTANDAR, TITULO_NEUTRO, firma))
+    assert not s.delimitada and s.votos == ""
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Salvamento de voto del doctor JUAN PEREZ",
+        "Aclaración de voto de Juan Pérez, magistrado, a la presente providencia",
+        "VOTO DISIDENTE DEL MAGISTRADO JUAN PEREZ",
+        "Voto particular del magistrado Juan Pérez",
+        "Voto concurrente del magistrado Juan Pérez",
+        "VOTO SEPARADO",
+    ],
+)
+def test_titulo_de_voto_no_estandar_sin_firma_no_se_delimita(titulo):
+    s = citas.separar_secciones(_texto_con_voto(CIERRE_ESTANDAR, titulo, None))
+    assert not s.delimitada and s.votos == ""
+
+
+def test_linea_larga_despues_del_cierre_no_cuenta_como_firma_de_voto():
+    larga = "Aclaración sobre la cuantía de las costas del proceso, " + "que se liquidarán en la forma ordinaria " * 6
+    assert len(larga) > citas.MAX_LINEA_TITULO_VOTO
+    assert citas.separar_secciones(_texto_con_voto(CIERRE_ESTANDAR, larga, None)).delimitada
+
+
+@pytest.mark.parametrize("cierre", [None, "Así se resuelve el asunto sometido a revisión."])
+def test_texto_sin_cierre_reconocido_de_la_mayoria_no_se_delimita(cierre):
+    s = citas.separar_secciones(_texto_con_voto(cierre, "Salvamento de voto a la Sentencia T-200", None))
+    assert not s.delimitada
+
+
+def test_primer_voto_con_titulo_no_estandar_antes_de_uno_estandar_no_se_delimita():
+    texto = "\n".join(
+        [
+            "SENTENCIA T-200/22", TEXTO_BASE, CIERRE_ESTANDAR, "Magistrado", "Secretaria General",
+            "Salvamento de voto del doctor JUAN PEREZ", VOTO_SINTETICO,
+            "Aclaración de voto a la Sentencia T-200", "Aclaro mi voto.",
+        ]
+    )
+    assert not citas.separar_secciones(texto).delimitada
+
+
+def test_cierre_estandar_sin_votos_ni_firmas_de_voto_se_delimita():
+    s = citas.separar_secciones(_texto_con_voto(CIERRE_ESTANDAR, "Anexo de la mayoría", None))
+    assert s.delimitada and s.votos == ""
+
+
+def test_firma_de_voto_en_las_notas_al_pie_no_impide_delimitar():
+    texto = "\n".join(
+        [
+            "SENTENCIA T-200/22", TEXTO_BASE, CIERRE_ESTANDAR, "Magistrado", "Secretaria General", citas.MARCA_NOTAS,
+            "Salvamento de voto de los magistrados Jaime Araújo y Clara Vargas.",
+        ]
+    )
+    s = citas.separar_secciones(texto)
+    assert s.delimitada and s.votos == ""
+
+
+@pytest.mark.parametrize("nombre", ["C-543-92", "C-774-01", "T-1215-03", "C-313-14", "SU712-13"])
+def test_fixtures_reales_se_delimitan(nombre):
+    assert _secciones_fixture(nombre).delimitada
+
+
+@pytest.mark.parametrize("nombre,texto,palabras", CITAS_DEBILES_406)
+def test_cuatro_citas_debiles_del_406_se_rechazan_con_la_regla(cfg, nombre, texto, palabras):
+    cv = _verificar_fixture(cfg, nombre, texto)
+    assert cv.estado == "rechazada" and cv.n_palabras == palabras
+    assert any(f"tiene {palabras} palabra" in m and "es de 25" in m for m in cv.motivos)
+    regla = cv.motivos[-1]
+    for fragmento in ("ratio decidendi", "25 palabras", "Decreto 2591", "salvamento", "No acorte"):
+        assert fragmento in regla
+
+
+def test_citas_debiles_del_406_texto_normativo_se_nombra(cfg):
+    cv = _verificar_fixture(cfg, "T-1215-03", "sin motivo expresamente justificado")
+    assert any("Decreto 2591 de 1991, artículo 38" in m for m in cv.motivos)
+    cv = _verificar_fixture(cfg, "C-313-14", CITAS_DEBILES_406[3][1])
+    assert any("Ley 1751 de 2015, artículo 2" in m for m in cv.motivos)
+    cv = _verificar_fixture(cfg, "C-774-01", "inmutables, vinculantes y definitivas")
+    assert not any("artículo" in m and "transcribe" in m for m in cv.motivos)
+
+
+def test_cita_corta_que_si_esta_en_la_mayoria_conserva_cobertura_y_seccion(cfg):
+    cv = _verificar_fixture(cfg, "C-774-01", "inmutables, vinculantes y definitivas")
+    assert cv.estado == "rechazada" and cv.cobertura == 1.0 and cv.pagina_ok and cv.seccion == "mayoria"
+
+
+def test_cita_de_una_palabra_ya_no_pasa(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    (cv,) = _verificar(cfg, _p("T-200/22", "subsidiariedad"))
+    assert cv.estado == "rechazada" and cv.n_palabras == 1
+    assert "tiene 1 palabra y" in cv.motivos[0]
+    assert cv.cobertura == 1.0
+
+
+def test_verificar_puebla_n_palabras_y_seccion(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    (cv,) = _verificar(cfg, _p("T-200/22"))
+    assert cv.estado == "ok" and cv.n_palabras == 43 and cv.seccion == "mayoria"
+    assert cv.motivos == []
+
+
+def test_n_palabras_se_puebla_aunque_la_cita_falle_antes(cfg):
+    no_existe, ilegible = _verificar(cfg, _p("T-999 de 2022"), _p("sin identificador", id_="c2"))
+    assert no_existe.n_palabras == 43 and ilegible.n_palabras == 43
+    assert no_existe.seccion is None and ilegible.seccion is None
+
+
+def test_longitud_minima_configurable(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    corta = " ".join(TEXTO_BASE.split()[:20])
+    assert _verificar(cfg, _p("T-200/22", corta))[0].estado == "rechazada"
+    cfg.min_palabras_cita = 20
+    assert _verificar(cfg, _p("T-200/22", corta))[0].estado == "ok"
+    cfg.min_palabras_cita = 21
+    assert _verificar(cfg, _p("T-200/22", corta))[0].estado == "rechazada"
+    cfg.min_palabras_cita = 0
+    assert _verificar(cfg, _p("T-200/22", "subsidiariedad"))[0].estado == "ok"
+
+
+def _con_cortes(*tramos: tuple[int, int]) -> str:
+    palabras = TEXTO_BASE.split()
+    return " (...) ".join(" ".join(palabras[a:b]) for a, b in tramos)
+
+
+def test_cita_con_cortes_y_un_tramo_bajo_la_mitad_del_minimo_se_rechaza(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    corta = _con_cortes((0, 11), (15, 36))
+    assert citas.contar_palabras(corta) == 32 >= cfg.min_palabras_cita
+    (cv,) = _verificar(cfg, _p("T-200/22", corta))
+    assert cv.estado == "rechazada" and cv.cobertura >= cfg.cobertura_ok and cv.seccion == "mayoria"
+    motivo = next(m for m in cv.motivos if "omisiones" in m)
+    assert "tiene 11 palabras" in motivo and "al menos 12" in motivo and "mitad del mínimo de 25" in motivo
+    assert "ratio decidendi" in cv.motivos[-1]
+
+
+def test_cita_con_cortes_y_todos_los_tramos_en_la_mitad_del_minimo_pasa(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    (cv,) = _verificar(cfg, _p("T-200/22", _con_cortes((0, 15), (19, 35))))
+    assert (cv.estado, cv.motivos) == ("ok", [])
+
+
+def test_tramos_vacios_por_omision_al_inicio_o_al_final_no_cuentan(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    texto = " ".join(TEXTO_BASE.split()[:30])
+    for cita in (f"(...) {texto}", f"{texto} (...)", f"(...) {texto} (...) (...)"):
+        (cv,) = _verificar(cfg, _p("T-200/22", cita))
+        assert (cv.estado, cv.motivos) == ("ok", []), cita
+
+
+def test_tramo_corto_se_mide_con_el_minimo_configurado(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    cita = _con_cortes((0, 11), (15, 36))
+    cfg.min_palabras_cita = 22
+    assert _verificar(cfg, _p("T-200/22", cita))[0].estado == "ok"
+    cfg.min_palabras_cita = 24
+    (cv,) = _verificar(cfg, _p("T-200/22", cita))
+    assert cv.estado == "rechazada" and any("al menos 12" in m for m in cv.motivos)
+    cfg.min_palabras_cita = 0
+    assert _verificar(cfg, _p("T-200/22", cita))[0].estado == "ok"
+
+
+def test_cita_sin_cortes_no_recibe_el_motivo_por_tramo(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    (cv,) = _verificar(cfg, _p("T-200/22", " ".join(TEXTO_BASE.split()[:11])))
+    assert cv.estado == "rechazada" and not any("omisiones" in m for m in cv.motivos)
+
+
+def test_rechazo_por_cobertura_tambien_enuncia_la_regla(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    inventada = " ".join(f"fantasia{i}" for i in range(40))
+    (cv,) = _verificar(cfg, _p("T-200/22", inventada))
+    assert cv.estado == "rechazada" and "no se localizó" in cv.motivos[0]
+    assert "ratio decidendi" in cv.motivos[-1] and "25 palabras" in cv.motivos[-1]
+    assert len(cv.motivos) == 2
+
+
+def test_motivos_de_dataset_o_pagina_no_agregan_la_regla_si_la_cita_es_valida(cfg):
+    no_existe, sin_pagina = _verificar(cfg, _p("T-999 de 2022"), _p("SU-082/95", id_="c2"))
+    for cv in (no_existe, sin_pagina):
+        assert cv.estado == "rechazada" and len(cv.motivos) == 1
+
+
+def test_alerta_por_cobertura_parcial_no_agrega_la_regla(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    parcial = " ".join(TEXTO_BASE.split()[:26]) + " " + " ".join(f"inventada{i}" for i in range(10))
+    (cv,) = _verificar(cfg, _p("T-200/22", parcial))
+    assert cv.estado == "alerta" and not any("ratio decidendi" in m for m in cv.motivos)
+
+
+def test_pasaje_solo_en_el_salvamento_c543_se_rechaza(cfg):
+    cv = _verificar_fixture(cfg, "C-543-92", SALVAMENTO_C543)
+    assert cv.estado == "rechazada" and cv.seccion == "salvamento" and cv.n_palabras >= 25
+    assert cv.cobertura == 1.0 and cv.pagina_ok
+    assert "voto separado" in cv.motivos[0] and "salvamento" in cv.motivos[0] and "C-543/92" in cv.motivos[0]
+    assert "ratio decidendi" in cv.motivos[-1]
+
+
+def test_pasaje_de_la_mayoria_c543_es_ok(cfg):
+    cv = _verificar_fixture(cfg, "C-543-92", MAYORIA_C543)
+    assert cv.estado == "ok" and cv.seccion == "mayoria" and cv.motivos == []
+
+
+def test_aclaracion_de_voto_c774_se_trata_como_voto_separado(cfg):
+    voto = _verificar_fixture(cfg, "C-774-01", ACLARACION_C774)
+    mayoria = _verificar_fixture(cfg, "C-774-01", MAYORIA_C774, "c2")
+    assert voto.estado == "rechazada" and voto.seccion == "salvamento"
+    assert mayoria.estado == "ok" and mayoria.seccion == "mayoria"
+
+
+def test_pagina_sin_votos_t1215_parafrasis_de_la_norma_no_es_texto_normativo(cfg):
+    cv = _verificar_fixture(cfg, "T-1215-03", PARAFRASIS_T1215)
+    assert cv.estado == "ok" and cv.seccion == "mayoria" and cv.motivos == []
+
+
+def test_seccion_sintetica_mayoria_voto_y_notas(cfg):
+    nota = "La nota al pie recuerda que la doctrina constitucional ha explicado de manera reiterada que los jueces deben motivar sus providencias con suficiencia y coherencia argumentativa en cada caso."
+    _poner_pagina(cfg, "T-200-22.htm", _pagina_con_votos("T-200-22", TEXTO_BASE, VOTO_SINTETICO, nota))
+    mayoria, voto, en_nota = _verificar(
+        cfg, _p("T-200/22", TEXTO_BASE), _p("T-200/22", VOTO_SINTETICO, "c2"), _p("T-200/22", nota, "c3")
+    )
+    assert (mayoria.estado, mayoria.seccion) == ("ok", "mayoria")
+    assert (voto.estado, voto.seccion) == ("rechazada", "salvamento")
+    assert (en_nota.estado, en_nota.seccion) == ("alerta", "desconocida")
+    assert "no se puede atribuir" in en_nota.motivos[0]
+    assert not any("ratio decidendi" in m for m in en_nota.motivos)
+
+
+def test_nota_al_pie_sin_votos_separados_es_de_la_mayoria(cfg):
+    nota = "La nota al pie recuerda que la doctrina constitucional ha explicado de manera reiterada que los jueces deben motivar sus providencias con suficiencia y coherencia argumentativa en cada caso."
+    _poner_pagina(cfg, "T-200-22.htm", _pagina_con_votos("T-200-22", TEXTO_BASE, nota=nota))
+    (cv,) = _verificar(cfg, _p("T-200/22", nota))
+    assert (cv.estado, cv.seccion) == ("ok", "mayoria")
+
+
+def test_pasaje_repartido_entre_mayoria_y_voto_no_queda_ok(cfg):
+    mitad_a = " ".join(TEXTO_BASE.split()[:22])
+    mitad_b = " ".join(VOTO_SINTETICO.split()[:22])
+    _poner_pagina(cfg, "T-200-22.htm", _pagina_con_votos("T-200-22", TEXTO_BASE, VOTO_SINTETICO))
+    (cv,) = _verificar(cfg, _p("T-200/22", f"{mitad_a} {mitad_b}"))
+    assert cv.estado != "ok"
+
+
+def test_pasaje_en_mayoria_y_en_el_voto_se_toma_de_la_mayoria(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina_con_votos("T-200-22", TEXTO_BASE, TEXTO_BASE))
+    (cv,) = _verificar(cfg, _p("T-200/22", TEXTO_BASE))
+    assert (cv.estado, cv.seccion) == ("ok", "mayoria")
+
+
+def _pagina_voto_con_titulo_no_estandar() -> bytes:
+    cuerpo = (
+        f"<p>{TEXTO_BASE}</p><p>{CIERRE_ESTANDAR}</p><p>Magistrado</p><p>Con salvamento de voto</p>"
+        f"<p>Secretaria General</p><p>Salvamento de voto del doctor JUAN PEREZ</p><p>{VOTO_SINTETICO}</p>"
+    )
+    return _pagina("T-200-22", cuerpo, cierre=False)
+
+
+@pytest.mark.parametrize("texto", [VOTO_SINTETICO, TEXTO_BASE])
+def test_pagina_con_voto_de_titulo_no_estandar_no_deja_ok_a_ninguna_cita(cfg, texto):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina_voto_con_titulo_no_estandar())
+    (cv,) = _verificar(cfg, _p("T-200/22", texto))
+    assert (cv.estado, cv.seccion) == ("alerta", "desconocida")
+    assert cv.cobertura == 1.0
+    assert any("No se pudo delimitar la decisión de la mayoría" in m and "salvamento" in m and "T-200/22" in m for m in cv.motivos)
+
+
+def test_pagina_sin_cierre_reconocido_deja_la_cita_en_alerta_y_sin_pasaje_cercano(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", f"<p>{S_GRAVE}</p><p>{TEXTO_BASE}</p>", cierre=False))
+    literal, cercana = _verificar(cfg, _p("T-200/22", TEXTO_BASE), _p("T-200/22", NEAR_77, "c2"))
+    assert (literal.estado, literal.seccion) == ("alerta", "desconocida")
+    assert any("No se pudo delimitar la decisión de la mayoría" in m for m in literal.motivos)
+    assert cercana.estado == "alerta" and cercana.pasaje_cercano is None
+    assert not any("pasaje más cercano" in m for m in cercana.motivos)
+
+
+def test_pagina_con_cierre_estandar_y_sin_votos_sigue_ok_como_mayoria(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    (cv,) = _verificar(cfg, _p("T-200/22"))
+    assert (cv.estado, cv.seccion, cv.motivos) == ("ok", "mayoria", [])
+
+
+def _norma(norma: str, articulo: str) -> str:
+    return next(e.texto for e in citas.normas_citables() if e.norma == norma and e.articulo == articulo)
+
+
+def test_corpus_de_normas_cubre_las_diez_entradas():
+    claves = {(e.norma, e.articulo) for e in citas.normas_citables()}
+    assert ("Constitución Política", "86") in claves and ("Ley 1751 de 2015", "2") in claves
+    assert {a for n, a in claves if n == "Decreto 2591 de 1991"} == {"1", "5", "6", "8", "10", "13", "38", "42"}
+
+
+def test_texto_normativo_se_rechaza_aunque_este_en_la_mayoria(cfg):
+    texto = _norma("Decreto 2591 de 1991", "10")
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", f"<p>{texto}</p>"))
+    (cv,) = _verificar(cfg, _p("T-200/22", texto))
+    assert cv.estado == "rechazada" and cv.cobertura == 1.0 and cv.seccion == "mayoria"
+    assert "Decreto 2591 de 1991, artículo 10" in cv.motivos[0] and "no se admite" in cv.motivos[0]
+    assert "Decreto 2591" in cv.motivos[-1]
+
+
+def test_texto_normativo_con_una_palabra_distinta_sigue_detectado():
+    texto = _norma("Decreto 2591 de 1991", "1")
+    assert "en las casos" in texto
+    corregido = texto.replace("en las casos", "en los casos")
+    assert citas.norma_transcrita(corregido, 0.8) == ("Decreto 2591 de 1991", "1")
+    assert citas.norma_transcrita(texto, 0.8) == ("Decreto 2591 de 1991", "1")
+
+
+def test_norma_transcrita_con_omisiones_no_cruza_los_cortes():
+    texto = _norma("Constitución Política", "86")
+    palabras = texto.split()
+    cita = " ".join(palabras[:12]) + " (...) " + " ".join(palabras[40:52]) + " (...) " + " ".join(palabras[80:92])
+    assert citas.norma_transcrita(cita, 0.8) == ("Constitución Política", "86")
+
+
+def test_norma_transcrita_no_marca_jurisprudencia_ni_comentario_mixto():
+    assert citas.norma_transcrita(TEXTO_BASE, 0.8) is None
+    assert citas.norma_transcrita(PARAFRASIS_T1215, 0.8) is None
+    texto = _norma("Constitución Política", "86")
+    mixto = " ".join(texto.split()[:12]) + " " + VOTO_SINTETICO
+    assert citas.norma_transcrita(mixto, 0.8) is None
+    assert citas.norma_transcrita("", 0.8) is None
+    assert citas.norma_transcrita("acción de tutela", 0.8) is None
+
+
+def test_corpus_de_normas_ausente_no_rompe_la_verificacion(cfg, monkeypatch, tmp_path):
+    monkeypatch.setattr(citas, "RUTA_NORMAS", tmp_path / "no_existe.json")
+    citas.normas_citables.cache_clear()
+    try:
+        assert citas.norma_transcrita("Toda persona tendrá acción de tutela para reclamar ante los jueces", 0.8) is None
+        _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+        assert _verificar(cfg, _p("T-200/22"))[0].estado == "ok"
+    finally:
+        citas.normas_citables.cache_clear()
+
+
+def test_corpus_de_normas_corrupto_se_ignora(monkeypatch, tmp_path):
+    malo = tmp_path / "normas.json"
+    malo.write_text("{no es json", encoding="utf-8")
+    monkeypatch.setattr(citas, "RUTA_NORMAS", malo)
+    citas.normas_citables.cache_clear()
+    try:
+        assert citas.normas_citables() == ()
+    finally:
+        citas.normas_citables.cache_clear()
+
+
+def test_modo_fake_no_se_altera_con_las_citas_de_llm_fake(cfg):
+    from tutela2.llm import CITAS_FAKE
+
+    cfg.verificar_relatoria = False
+    propuestas = [_p(s, t, i) for i, (s, t) in CITAS_FAKE.items()]
+    cvs = _verificar(cfg, *propuestas)
+    assert [cv.estado for cv in cvs] == ["alerta", "alerta"]
+    assert all(cv.n_palabras >= cfg.min_palabras_cita and cv.seccion is None for cv in cvs)
+    assert all("desactivada" in cv.motivos[0] and len(cv.motivos) == 1 for cv in cvs)
+
+
+def test_modo_fake_tambien_exige_longitud_y_no_texto_normativo(cfg):
+    cfg.verificar_relatoria = False
+    corta, norma = _verificar(
+        cfg, _p("T-200/22", "dos palabras"), _p("T-200/22", _norma("Decreto 2591 de 1991", "5"), "c2")
+    )
+    assert corta.estado == "rechazada" and any("tiene 2 palabras" in m for m in corta.motivos)
+    assert norma.estado == "rechazada" and any("artículo 5" in m for m in norma.motivos)
+
+
+def test_config_min_palabras_cita_por_defecto_es_el_p10_medido():
+    assert Config().min_palabras_cita == 25
+
+
+S_INMINENTE = (
+    "El perjuicio ha de ser inminente, lo que significa que amenaza con ocurrir de manera próxima porque existen "
+    "evidencias fácticas de su presencia real en un corto lapso."
+)
+S_GRAVE = (
+    "No basta cualquier perjuicio, se requiere que este sea grave, lo que equivale a la gran intensidad del daño o "
+    "menoscabo material o moral en el haber jurídico de la persona."
+)
+S_URGENTE = (
+    "La urgencia exige que las medidas de protección se adopten sin demora para que resulten eficaces frente a la amenaza."
+)
+S_CORTA = "La tutela es un mecanismo residual y subsidiario de protección."
+S_SIGUE = (
+    "Por eso el juez debe verificar primero si existen otros medios de defensa judicial idóneos y eficaces disponibles "
+    "para el afectado."
+)
+S_ANTERIOR = (
+    "Los jueces de instancia deben motivar con suficiencia las providencias mediante las cuales niegan o conceden el "
+    "amparo solicitado."
+)
+S_FINAL_CORTA = "Esa carga argumentativa no admite excepciones en sede de revisión."
+CUERPO_CERCANO = (
+    f"<p>{S_INMINENTE} {S_GRAVE} {S_URGENTE}</p><p>{TEXTO_BASE}</p>"
+    f"<p>{S_CORTA} {S_SIGUE}</p><p>{S_ANTERIOR} {S_FINAL_CORTA}</p>"
+)
+NEAR_79 = S_INMINENTE.replace("en un corto lapso.", "en breve tiempo.")
+NEAR_77 = S_GRAVE.replace("No basta cualquier perjuicio, se requiere que este sea grave", "El perjuicio ha de ser grave")
+INVENTADA_40 = " ".join(f"fantasia{i}" for i in range(40))
+
+
+def _verificar_cercana(cfg: Config, texto: str, cuerpo: str = CUERPO_CERCANO) -> CitaVerificada:
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", cuerpo))
+    return _verificar(cfg, _p("T-200/22", texto))[0]
+
+
+def _ida_y_vuelta(cfg: Config, cv: CitaVerificada) -> CitaVerificada:
+    assert cv.pasaje_cercano
+    return _verificar(cfg, _p("T-200/22", cv.pasaje_cercano, "c9"))[0]
+
+
+def test_pasaje_cercano_por_defecto_es_none_y_ok_no_lo_lleva(cfg):
+    assert CitaVerificada(id="c1", sentencia_original="T-200/22", texto_citado="x").pasaje_cercano is None
+    cv = _verificar_cercana(cfg, S_GRAVE)
+    assert cv.estado == "ok" and cv.pasaje_cercano is None
+
+
+def test_near_miss_al_79_devuelve_la_oracion_literal_y_pasa_al_volver(cfg):
+    cv = _verificar_cercana(cfg, NEAR_79)
+    assert cv.estado == "alerta" and cv.cobertura == 0.79
+    assert cv.pasaje_cercano == S_INMINENTE
+    assert _ida_y_vuelta(cfg, cv).estado == "ok"
+
+
+def test_near_miss_al_77_devuelve_la_oracion_literal_y_pasa_al_volver(cfg):
+    cv = _verificar_cercana(cfg, NEAR_77)
+    assert cv.estado == "alerta" and 0.7 < cv.cobertura < cfg.cobertura_ok
+    assert cv.pasaje_cercano == S_GRAVE
+    vuelta = _ida_y_vuelta(cfg, cv)
+    assert vuelta.estado == "ok" and vuelta.motivos == [] and vuelta.pasaje_cercano is None
+
+
+def test_alerta_con_pasaje_lo_lleva_como_ultimo_motivo_con_la_instruccion(cfg):
+    cv = _verificar_cercana(cfg, NEAR_79)
+    ultimo = cv.motivos[-1]
+    assert ultimo.startswith("El pasaje más cercano en la sentencia T-200/22 dice textualmente: «" + S_INMINENTE + "».")
+    assert "cópielo sin ningún cambio" in ultimo and "al menos 25 palabras" in ultimo
+    assert sum("pasaje más cercano" in m for m in cv.motivos) == 1
+
+
+def test_rechazada_con_pasaje_lo_pone_justo_antes_de_la_regla(cfg):
+    cv = _verificar_cercana(cfg, "Esa carga argumentativa no admite excepciones en sede de revisión constitucional.")
+    assert cv.estado == "rechazada"
+    assert "ratio decidendi" in cv.motivos[-1] and "pasaje más cercano" in cv.motivos[-2]
+
+
+def test_cita_inventada_no_recibe_pasaje(cfg):
+    cv = _verificar_cercana(cfg, INVENTADA_40)
+    assert cv.estado == "rechazada" and cv.pasaje_cercano is None
+    assert len(cv.motivos) == 2 and not any("pasaje más cercano" in m for m in cv.motivos)
+
+
+def test_texto_juridico_plausible_pero_ausente_no_recibe_pasaje(cfg):
+    inventada = (
+        "La inmediatez de la acción de tutela exige que el afectado la interponga dentro de un término razonable "
+        "desde el hecho que originó la vulneración, de modo que el juez pueda evaluar la urgencia de la protección."
+    )
+    assert _verificar_cercana(cfg, inventada).pasaje_cercano is None
+
+
+def test_cita_corta_literal_recibe_el_pasaje_extendido_hasta_el_minimo(cfg):
+    cv = _verificar_cercana(cfg, "La tutela es un mecanismo residual y subsidiario de protección constitucional.")
+    assert cv.estado == "rechazada"
+    assert cv.pasaje_cercano == f"{S_CORTA} {S_SIGUE}"
+    assert citas.contar_palabras(cv.pasaje_cercano) >= cfg.min_palabras_cita
+    assert _ida_y_vuelta(cfg, cv).estado == "ok"
+
+
+def test_pasaje_corto_al_final_del_parrafo_se_extiende_hacia_la_oracion_anterior(cfg):
+    cv = _verificar_cercana(cfg, "Esa carga argumentativa no admite excepciones en sede de revisión constitucional.")
+    assert cv.pasaje_cercano == f"{S_ANTERIOR} {S_FINAL_CORTA}"
+    assert _ida_y_vuelta(cfg, cv).estado == "ok"
+
+
+@pytest.mark.parametrize("minimo", [0, 10, 25, 40])
+def test_pasaje_cercano_respeta_el_minimo_de_palabras_configurado(cfg, minimo):
+    cfg.min_palabras_cita = minimo
+    cv = _verificar_cercana(cfg, "La tutela es un mecanismo residual y subsidiario de protección constitucional.")
+    pasaje = cv.pasaje_cercano
+    assert pasaje is not None and "\n" not in pasaje and citas.contar_palabras(pasaje) >= minimo
+    assert (pasaje == S_CORTA) == (minimo <= 10)
+    motivo = next(m for m in cv.motivos if "pasaje más cercano" in m)
+    assert (f"al menos {minimo} palabras" in motivo) == (minimo > 0)
+    assert _ida_y_vuelta(cfg, cv).estado == "ok"
+
+
+S_NEGATIVA = (
+    "La Corte ha explicado que el perjuicio irremediable no se configura por la sola afirmación del accionante, sino "
+    "que debe acreditarse con pruebas suficientes sobre su gravedad e inminencia en el caso concreto bajo examen."
+)
+
+
+def test_inversion_de_polaridad_con_cobertura_cero_recibe_el_pasaje(cfg):
+    invertida = S_NEGATIVA.replace("irremediable no se configura", "irremediable se configura", 1)
+    cv = _verificar_cercana(cfg, invertida, f"<p>{S_NEGATIVA}</p>")
+    assert cv.estado == "rechazada" and cv.cobertura == 0.0
+    assert cv.pasaje_cercano == S_NEGATIVA
+    assert _ida_y_vuelta(cfg, cv).estado == "ok"
+
+
+def test_cita_literal_alertada_solo_por_una_nota_o_rechazada_por_seccion_no_recibe_pasaje(cfg):
+    con_nota = f"{TEXTO_BASE[:60]} (Sentencia T-999 de 2015) {TEXTO_BASE[60:]}"
+    cv = _verificar_cercana(cfg, con_nota, f"<p>{TEXTO_BASE}</p>")
+    assert cv.estado == "alerta" and cv.pasaje_cercano is None
+    assert not any("pasaje más cercano" in m for m in cv.motivos)
+    salvamento = _verificar_fixture(cfg, "C-543-92", SALVAMENTO_C543)
+    assert salvamento.seccion == "salvamento" and salvamento.pasaje_cercano is None
+
+
+def test_no_ofrece_un_pasaje_que_seria_texto_normativo(cfg):
+    texto = _norma("Decreto 2591 de 1991", "10")
+    cercana = texto.replace("cualquiera persona", "cualquier persona", 1).replace("Los poderes", "Los apoderados", 1)
+    cv = _verificar_cercana(cfg, cercana, f"<p>{texto}</p>")
+    assert cv.estado == "rechazada" and cv.pasaje_cercano is None
+    assert not any("pasaje más cercano" in m for m in cv.motivos)
+
+
+def test_pasaje_cercano_sale_solo_de_la_mayoria(cfg):
+    cuerpo = _pagina_con_votos("T-200-22", f"{S_INMINENTE} {S_GRAVE} {S_URGENTE}", VOTO_SINTETICO)
+    _poner_pagina(cfg, "T-200-22.htm", cuerpo)
+    del_voto = VOTO_SINTETICO.replace("sostiene", "afirma").replace("aunque se hayan agotado", "aun cuando se agotaron")
+    de_la_mayoria, voto = _verificar(cfg, _p("T-200/22", NEAR_77), _p("T-200/22", del_voto, "c2"))
+    assert de_la_mayoria.pasaje_cercano == S_GRAVE
+    assert voto.pasaje_cercano is None
+
+
+def test_sin_pagina_o_sin_sentencia_no_hay_pasaje(cfg):
+    no_existe, sin_pagina = _verificar(cfg, _p("T-999 de 2022", NEAR_77), _p("SU-082/95", NEAR_77, "c2"))
+    assert no_existe.pasaje_cercano is None and sin_pagina.pasaje_cercano is None
+
+
+def test_pasaje_cercano_reutiliza_la_pagina_ya_indexada(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22", CUERPO_CERCANO))
+    citas._fuente_cercana.cache_clear()
+    _verificar(cfg, _p("T-200/22", NEAR_77), _p("T-200/22", NEAR_79, "c2"))
+    info = citas._fuente_cercana.cache_info()
+    assert info.misses == 1 and info.hits >= 1
+
+
+def test_pasaje_cercano_c774_real_es_la_oracion_de_la_mayoria(cfg):
+    cercana = MAYORIA_C774.replace("institución jurídico procesal que tiene", "figura jurídica que tiene")
+    cv = _verificar_fixture(cfg, "C-774-01", cercana)
+    assert cv.estado != "ok" and cv.pasaje_cercano == MAYORIA_C774
+    ida = _verificar_fixture(cfg, "C-774-01", cv.pasaje_cercano, "c2")
+    assert ida.estado == "ok" and ida.seccion == "mayoria"
+
+
+def test_pasaje_cercano_t1215_real_no_arrastra_la_oracion_siguiente(cfg):
+    cercana = PARAFRASIS_T1215.replace("actitudes deshonestas y contradictorias", "conductas deshonestas y contradictorias")
+    cv = _verificar_fixture(cfg, "T-1215-03", cercana)
+    assert cv.estado != "ok" and cv.pasaje_cercano == PARAFRASIS_T1215
+    assert _verificar_fixture(cfg, "T-1215-03", cv.pasaje_cercano, "c2").estado == "ok"
+
+
+def test_pasaje_mas_cercano_de_cita_vacia_o_sin_fuente_es_none():
+    assert citas.pasaje_mas_cercano("", TEXTO_BASE, 25) is None
+    assert citas.pasaje_mas_cercano("dos palabras", TEXTO_BASE, 25) is None
+    assert citas.pasaje_mas_cercano(TEXTO_BASE, "", 25) is None
+
+
+def _oracion(k: int, n: int, desde: int = 0) -> str:
+    palabras = [f"voz{k}x{i}" for i in range(desde, desde + n)]
+    palabras[0] = palabras[0].capitalize()
+    return " ".join(palabras) + "."
+
+
+def _fuente_con(*lineas: str) -> str:
+    return "\n".join([_oracion(90, 25), *lineas, _oracion(91, 25)])
+
+
+def _cercano(cita: str, *lineas: str, minimo: int = 0) -> str | None:
+    return citas.pasaje_mas_cercano(cita, _fuente_con(*lineas), minimo)
+
+
+@pytest.mark.parametrize(
+    "largos,conservadas",
+    [((40, 60, 60), (1, 2)), ((60, 60, 40), (0, 1)), ((50, 60, 50), (0, 1)), ((60, 60, 60), (0, 1)), ((70, 61, 61), (0, 1))],
+)
+def test_pasaje_mas_cercano_recorta_a_150_palabras_quitando_el_extremo_con_menos_texto_cubierto(largos, conservadas):
+    oraciones = [_oracion(k, n) for k, n in enumerate(largos)]
+    assert sum(largos) > citas.MAX_PALABRAS_PASAJE
+    esperado = " ".join(oraciones[i] for i in range(conservadas[0], conservadas[1] + 1))
+    assert _cercano(" ".join(oraciones), " ".join(oraciones)) == esperado
+
+
+@pytest.mark.parametrize(
+    "largos,esperado",
+    [((75, 75), (0, 1)), ((75, 76), (1, 1)), ((76, 75), (0, 0)), ((150,), (0, 0)), ((100, 50), (0, 1))],
+)
+def test_pasaje_mas_cercano_el_borde_de_150_palabras_no_se_recorta(largos, esperado):
+    oraciones = [_oracion(k, n) for k, n in enumerate(largos)]
+    resultado = _cercano(" ".join(oraciones), " ".join(oraciones))
+    assert resultado == " ".join(oraciones[esperado[0] : esperado[1] + 1])
+
+
+@pytest.mark.parametrize("palabras,devuelve", [(299, True), (300, True), (301, False), (400, False)])
+def test_pasaje_mas_cercano_descarta_una_oracion_unica_de_mas_de_300_palabras(palabras, devuelve):
+    larga = _oracion(1, palabras)
+    assert (_cercano(larga, larga) == larga) == devuelve
+    assert devuelve or _cercano(larga, larga) is None
+
+
+@pytest.mark.parametrize("cubiertas,se_conserva", [(3, False), (4, False), (5, True), (6, True), (12, True)])
+def test_pasaje_mas_cercano_descarta_el_borde_con_menos_de_5_tokens_cubiertos(cubiertas, se_conserva):
+    previa, objetivo = _oracion(1, 30), _oracion(2, 30)
+    cola_previa = " ".join(previa.split()[-cubiertas:])
+    esperado = f"{previa} {objetivo}" if se_conserva else objetivo
+    assert _cercano(f"{cola_previa} {objetivo}", f"{previa} {objetivo}") == esperado
+
+
+@pytest.mark.parametrize("cubiertas,se_conserva", [(4, False), (5, True), (12, True)])
+def test_pasaje_mas_cercano_descarta_la_oracion_final_con_menos_de_5_tokens_cubiertos(cubiertas, se_conserva):
+    objetivo, siguiente = _oracion(1, 30), _oracion(2, 30)
+    cabeza = " ".join(siguiente.split()[:cubiertas])
+    esperado = f"{objetivo} {siguiente}" if se_conserva else objetivo
+    assert _cercano(f"{objetivo} {cabeza}", f"{objetivo} {siguiente}") == esperado
+
+
+A_, B_, C_, D_ = (_oracion(k, 20) for k in (11, 12, 13, 14))
+
+
+@pytest.mark.parametrize(
+    "lineas,esperado",
+    [
+        ((f"{A_} {B_} {C_}",), f"{B_} {C_}"),
+        ((f"{A_} {B_}", C_), f"{A_} {B_}"),
+        ((A_, f"{B_} {C_}"), f"{B_} {C_}"),
+        ((A_, B_, C_), f"{B_} {C_}"),
+        ((f"{A_} {B_}", C_, D_), f"{A_} {B_}"),
+    ],
+)
+def test_pasaje_mas_cercano_extiende_primero_hacia_la_oracion_siguiente_de_la_misma_linea(lineas, esperado):
+    assert _cercano(B_, *lineas, minimo=30) == esperado
+
+
+def test_pasaje_mas_cercano_extiende_hacia_la_anterior_si_la_siguiente_esta_en_otra_linea_y_la_anterior_en_la_misma():
+    assert _cercano(B_, f"{A_} {B_}", C_, minimo=30) == f"{A_} {B_}"
+
+
+def test_pasaje_mas_cercano_sin_siguiente_toma_la_anterior_y_sin_ninguna_devuelve_none():
+    fuente = f"{A_}\n{B_}"
+    assert citas.pasaje_mas_cercano(B_, fuente, 30) == f"{A_} {B_}"
+    assert citas.pasaje_mas_cercano(B_, B_, 30) is None
+    assert citas.pasaje_mas_cercano(B_, f"{B_}\n{C_}", 30) == f"{B_} {C_}"
+
+
+@pytest.mark.parametrize(
+    "palabra,siguiente,termina",
+    [
+        ("fin.", "Siguiente", True),
+        ("fin.", "siguiente", False),
+        ("fin.", "2020 fue", True),
+        ("fin.", "«Nueva", True),
+        ("fin.", "“Nueva", True),
+        ("fin.", "¿Nueva", True),
+        ("fin.", "", False),
+        ("fin?", "Nueva", True),
+        ("fin!", "Nueva", True),
+        ("fin,", "Nueva", False),
+        ("fin", "Nueva", False),
+        ("fin.”", "Nueva", True),
+        ("fin.»", "Nueva", True),
+        ("fin.)", "Nueva", True),
+        ("art.", "Nuevo", False),
+        ("Art.", "Nuevo", False),
+        ("No.", "Nuevo", False),
+        ("Sr.", "Pérez", False),
+        ("Sent.", "Nueva", False),
+        ("S.A.", "Nueva", False),
+        ("D.C.", "Bogotá", False),
+        ("a.", "Nueva", False),
+        ("1.", "Hechos", False),
+        ("12.", "Hechos", False),
+        ("123.", "Nueva", True),
+        ("1991.", "Nueva", True),
+        ("1.500.", "Nueva", True),
+        ("...", "Nueva", False),
+    ],
+)
+def test_termina_oracion(palabra, siguiente, termina):
+    assert citas._termina_oracion(palabra, siguiente) is termina

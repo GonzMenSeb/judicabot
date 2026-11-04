@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jobActual } from "../../estado";
 import Borrador from "./index";
 import { CASO_MOCK_BORRADOR, ESTADO_BORRADOR, VISTA_BORRADOR } from "./mock";
-import type { EstadoCaso } from "./tipos";
+import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const CASO = CASO_MOCK_BORRADOR;
 
@@ -52,6 +52,26 @@ const conEstado = (estado: EstadoCaso["estado"], extra: Partial<EstadoCaso> = {}
   estado,
   ...extra,
 });
+
+const COMPETENCIA =
+  "Este Despacho es competente para conocer y resolver el recurso de impugnación interpuesto contra la sentencia de tutela de primera instancia, de conformidad con lo dispuesto en el artículo 32 del Decreto 2591 de 1991 y las normas concordantes de reparto de la acción de amparo. En su condición de superior funcional, le corresponde adelantar un examen integral de la providencia recurrida a la luz de los postulados de la Carta Política y de la doctrina fijada por la Corte Constitucional.";
+
+const llamada = (nodo: string, modelo_pedido: string, modelo_efectivo: string | null, extra: Partial<LlamadaBitacora> = {}): LlamadaBitacora => ({
+  nodo,
+  intento: 1,
+  proveedor: "anthropic",
+  modelo_pedido,
+  modelo_efectivo,
+  ...extra,
+});
+
+const conBitacora = (bitacora: LlamadaBitacora[] | null): EstadoCaso => {
+  const estado = structuredClone(ESTADO_BORRADOR);
+  if (estado.resumen) estado.resumen.bitacora = bitacora;
+  return estado;
+};
+
+const seccionRedaccion = () => screen.getByRole("heading", { name: "Quién redactó" }).closest("section") as HTMLElement;
 
 async function abrir() {
   render(<Borrador caso={CASO} />);
@@ -126,12 +146,101 @@ describe("Borrador con datos", () => {
     expect(within(tarjeta).getByText(/revise esa frase del borrador/)).toBeTruthy();
   });
 
+  it("muestra Competencia como un solo párrafo de plantilla", async () => {
+    simularRed();
+    await abrir();
+    const hoja = screen.getByRole("article", { name: /Borrador del fallo/ });
+    const encabezado = within(hoja).getByRole("heading", { level: 4, name: "Competencia" });
+    const parrafo = encabezado.nextElementSibling as HTMLElement;
+    expect(parrafo.tagName).toBe("P");
+    expect(parrafo.textContent).toBe(COMPETENCIA);
+    expect(parrafo.classList.contains("bor-tpl")).toBe(true);
+    const siguiente = parrafo.nextElementSibling as HTMLElement;
+    expect(siguiente.tagName).toBe("H4");
+    expect(siguiente.textContent).toMatch(/^Presupuestos generales de procedibilidad/);
+  });
+
+  it("deja la tabla de citas con sus nueve columnas en un contenedor propio con desplazamiento", async () => {
+    simularRed();
+    await abrir();
+    const hoja = screen.getByRole("article", { name: /Borrador del fallo/ });
+    const caja = within(hoja).getByRole("region", { name: /desplazable horizontalmente/ });
+    expect(caja.classList.contains("bor-tabla-caja")).toBe(true);
+    expect(caja.getAttribute("tabindex")).toBe("0");
+    const tabla = caja.querySelector("table") as HTMLTableElement;
+    expect(tabla.classList.contains("bor-tabla-ancha")).toBe(true);
+    expect(tabla.style.getPropertyValue("--columnas")).toBe("9");
+    const encabezados = Array.from(tabla.rows[0]?.cells ?? []).map((c) => c.textContent);
+    expect(encabezados).toEqual(["Sentencia", "Estado", "Cobertura", "Palabras", "Sección", "M.P. (dataset)", "URL", "Texto citado", "Motivos"]);
+    for (const fila of Array.from(tabla.rows)) expect(fila.cells.length).toBe(9);
+    expect(hoja.querySelectorAll("table.bor-tabla-ancha").length).toBe(1);
+    expect(hoja.querySelectorAll(".bor-tabla-caja[role=region]").length).toBe(1);
+  });
+
+  it("no marca como ancha la tabla de dos columnas del encabezado", async () => {
+    simularRed();
+    await abrir();
+    const hoja = screen.getByRole("article", { name: /Borrador del fallo/ });
+    const tablas = Array.from(hoja.querySelectorAll("table.bor-tabla"));
+    const dos = tablas.find((t) => t.classList.contains("bor-tabla-2")) as HTMLElement;
+    expect(dos.classList.contains("bor-tabla-ancha")).toBe(false);
+    expect(dos.closest(".bor-tabla-caja")?.getAttribute("role")).toBeNull();
+    expect(dos.closest(".bor-tabla-caja")?.hasAttribute("tabindex")).toBe(false);
+  });
+
   it("no muestra la tarjeta de Jev si no hay lecturas", async () => {
     const estado = structuredClone(ESTADO_BORRADOR);
     if (estado.resumen) estado.resumen.jev_metadatos = null;
     simularRed({ estado });
     await abrir();
     expect(screen.queryByRole("heading", { name: "Segunda lectura de Jev" })).toBeNull();
+  });
+});
+
+describe("Modelo que redactó el borrador", () => {
+  it("indica el modelo de cada parte redactada por el modelo y deja fuera las lecturas de Jev", async () => {
+    simularRed();
+    await abrir();
+    const seccion = await waitFor(() => seccionRedaccion());
+    const filas = within(seccion).getAllByRole("listitem");
+    expect(filas.length).toBe(2);
+    expect(filas[0]?.textContent).toContain("Secciones II a IV");
+    expect(filas[0]?.textContent).toContain("Redactado por Sonnet 5.5");
+    expect(filas[1]?.textContent).toContain("Sección V");
+    expect(filas[1]?.textContent).toContain("Redactado por Sonnet 5.5");
+    expect(seccion.textContent).not.toMatch(/jev/i);
+  });
+
+  it("con varios intentos usa el modelo del último y avisa si el efectivo no es el pedido", async () => {
+    const estado = conBitacora([
+      llamada("apertura", "claude-haiku-5-5", "claude-haiku-5-5"),
+      llamada("apertura", "claude-haiku-5-5", "claude-sonnet-5-5", { intento: 2 }),
+      llamada("consideraciones", "claude-opus-5-5", "claude-opus-5-5"),
+      llamada("consideraciones", "claude-sonnet-5-5", "claude-sonnet-5-5", { intento: 2 }),
+    ]);
+    simularRed({ estado });
+    await abrir();
+    const filas = within(await waitFor(() => seccionRedaccion())).getAllByRole("listitem");
+    expect(filas[0]?.textContent).toContain("Redactado por Sonnet 5.5");
+    expect(filas[0]?.textContent).toContain("Se pidió Haiku 5.5");
+    expect(filas[0]?.textContent).not.toContain("Redactado por Haiku");
+    expect(filas[1]?.textContent).toContain("Redactado por Sonnet 5.5");
+    expect(filas[1]?.textContent).not.toContain("Opus");
+    expect(filas[1]?.textContent).not.toContain("Se pidió");
+  });
+
+  it("no muestra la sección si no hay bitácora o no se pudo leer /estado", async () => {
+    simularRed({ estado: conBitacora([]) });
+    await abrir();
+    await screen.findByText(/El documento 009.pdf tiene 2 páginas sin texto/);
+    expect(screen.queryByRole("heading", { name: "Quién redactó" })).toBeNull();
+  });
+
+  it("no muestra la sección si /estado falla", async () => {
+    simularRed({ estado: 500 });
+    await abrir();
+    await screen.findByText(/No se pudieron leer las alertas del caso/);
+    expect(screen.queryByRole("heading", { name: "Quién redactó" })).toBeNull();
   });
 });
 

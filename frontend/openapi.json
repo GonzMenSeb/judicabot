@@ -343,6 +343,17 @@
       },
       "DecisionVistaRespuesta": {
         "properties": {
+          "advertencias": {
+            "items": {
+              "$ref": "#/components/schemas/FaltanteDecision"
+            },
+            "title": "Advertencias",
+            "type": "array"
+          },
+          "encabezado": {
+            "title": "Encabezado",
+            "type": "string"
+          },
           "errores": {
             "items": {
               "type": "string"
@@ -357,6 +368,14 @@
             "title": "Faltantes",
             "type": "array"
           },
+          "fecha_fallo": {
+            "title": "Fecha Fallo",
+            "type": "string"
+          },
+          "fecha_por_defecto": {
+            "title": "Fecha Por Defecto",
+            "type": "boolean"
+          },
           "numerales": {
             "items": {
               "$ref": "#/components/schemas/NumeralVista"
@@ -368,7 +387,11 @@
         "required": [
           "numerales",
           "faltantes",
-          "errores"
+          "errores",
+          "advertencias",
+          "encabezado",
+          "fecha_fallo",
+          "fecha_por_defecto"
         ],
         "title": "DecisionVistaRespuesta",
         "type": "object"

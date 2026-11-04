@@ -10,11 +10,12 @@ import "./estilos.css";
 import { Barra } from "./Barra";
 import { Cabeza } from "./Cabeza";
 import { DialogoClave } from "./DialogoClave";
+import { DialogoRevisar } from "./DialogoRevisar";
 import { FilaDoc } from "./FilaDoc";
 import { FormAuto } from "./FormAuto";
 import { Generados } from "./Generados";
 import { Progreso } from "./Progreso";
-import { cambiosAuto, cuerpoRevision, hayCambios } from "./revision";
+import { cambiosAuto, cuerpoRevision, hayCambios, sinConfirmar } from "./revision";
 import type { CambiosRoles, EdicionAuto } from "./revision";
 import { OBLIGATORIOS, etiquetaRol, ingestaDe, salidasPrevias } from "./tipos";
 import type { ClaveAuto, ConfigCaso, DatosAuto, DocResumen, EstadoCaso, JobEstado, ResumenIngesta, RolDoc } from "./tipos";
@@ -30,7 +31,7 @@ interface Trabajo {
   cmd: JobEstado["cmd"];
 }
 
-const AUTO_VACIO: DatosAuto = { fecha: null, fecha_reparto: null, accionante: null, accionada: null };
+const AUTO_VACIO: DatosAuto = { fecha: null, fecha_reparto: null, accionante: null, accionada: null, firmante: null, cargo_firmante: null };
 
 const hrefEtapa = (caso: string, etapa: string) => `#/segunda/${encodeURIComponent(caso)}/${etapa}`;
 
@@ -54,6 +55,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const [iniciando, setIniciando] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [pidiendoClave, setPidiendoClave] = useState(false);
+  const [confirmandoRevisar, setConfirmandoRevisar] = useState(false);
   const nuevaSenal = useRef(cancelable()).current;
   const iniciandoAhora = useRef(false);
   const base = `/api/casos/${encodeURIComponent(caso)}`;
@@ -98,6 +100,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const editable = Boolean(estado && (estado.estado === "revision" || estado.estado === "incompleto") && !trabajo);
   const cuerpo = cuerpoRevision(cambios, autoBase, edicion);
   const nRoles = Object.keys(cambios).length;
+  const porConfirmar = ingesta ? sinConfirmar(ingesta.documentos, cambios) : [];
   const nAuto = Object.keys(cambiosAuto(autoBase, edicion)).length;
   const partes = [nRoles ? plural(nRoles, "rol cambiado", "roles cambiados") : null, nAuto ? "datos del auto editados" : null].filter(Boolean);
   const resumenCambios = partes.length ? `${partes.join(" y ")}.` : null;
@@ -176,6 +179,12 @@ function VistaDocumentos({ caso }: { caso: string }) {
     }
   };
 
+  const solicitarInicio = () => {
+    if (iniciandoAhora.current) return;
+    if (porConfirmar.length) setConfirmandoRevisar(true);
+    else void iniciar();
+  };
+
   const procesar = async () => {
     setProcesando(true);
     setAviso(null);
@@ -200,7 +209,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const cambiarRol = (doc: DocResumen, rol: RolDoc) => {
     setCambios((previo) => {
       const siguiente = { ...previo };
-      if (rol === doc.rol && !doc.ajeno) delete siguiente[doc.doc_id];
+      if (rol === doc.rol && !doc.ajeno && !doc.revisar) delete siguiente[doc.doc_id];
       else siguiente[doc.doc_id] = rol;
       return siguiente;
     });
@@ -378,13 +387,22 @@ function VistaDocumentos({ caso }: { caso: string }) {
         guardando={guardando}
         iniciando={iniciando}
         onGuardar={() => void guardar()}
-        onIniciar={() => void iniciar()}
+        onIniciar={solicitarInicio}
       />
       <DialogoClave
         abierto={pidiendoClave}
         onCerrar={() => setPidiendoClave(false)}
         onGuardada={() => {
           setPidiendoClave(false);
+          void iniciar();
+        }}
+      />
+      <DialogoRevisar
+        abierto={confirmandoRevisar}
+        documentos={porConfirmar}
+        onVolver={() => setConfirmandoRevisar(false)}
+        onContinuar={() => {
+          setConfirmandoRevisar(false);
           void iniciar();
         }}
       />

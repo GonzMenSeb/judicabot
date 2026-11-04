@@ -160,6 +160,10 @@ export interface DecisionVistaRespuesta {
   numerales: NumeralVista[];
   faltantes: { campo: string; mensaje: string }[];
   errores: string[];
+  advertencias: { campo: string; mensaje: string }[];
+  encabezado: string;
+  fecha_fallo: string;
+  fecha_por_defecto: boolean;
 }
 
 export type ModoJev = "apagado" | "sombra" | "relleno";

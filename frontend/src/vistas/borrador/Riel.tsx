@@ -4,7 +4,7 @@ import type { CitaVista } from "../../api/contrato";
 import { plural, porcentaje } from "../../estado";
 import { Boton, Chip, cx } from "../../ui";
 import { conteoCitas, ETIQUETA_ESTADO_CITA } from "./datos";
-import type { EntradaIndice, ItemRevision } from "./tipos";
+import type { EntradaIndice, ItemRevision, Redaccion } from "./tipos";
 
 const TONO_CITA = { verificada: "ok", revisar: "alerta", rechazada: "mal" } as const;
 const VISIBLES = 5;
@@ -53,6 +53,7 @@ export function DetalleCita({ cita, titulo, onCerrar }: PropsDetalleCita) {
 
 export interface PropsRiel {
   indice: EntradaIndice[];
+  redaccion: Redaccion[];
   activa: string | null;
   alSeccion: (id: string) => void;
   origen: boolean;
@@ -69,6 +70,7 @@ export interface PropsRiel {
 
 export function Riel({
   indice,
+  redaccion,
   activa,
   alSeccion,
   origen,
@@ -115,6 +117,20 @@ export function Riel({
           <p class="bor-origen-nota">Sombreado: texto de plantilla. Sin sombrear: redactado por el modelo a partir del expediente.</p>
         )}
       </section>
+      {redaccion.length > 0 && (
+        <section aria-labelledby="bor-sec-redaccion">
+          <h2 id="bor-sec-redaccion">Quién redactó</h2>
+          <ul class="bor-redaccion">
+            {redaccion.map((r) => (
+              <li key={r.nodo}>
+                <b>{r.secciones}</b>
+                <span>Redactado por {r.modelo}</span>
+                {r.pedido && <small>Se pidió {r.pedido}.</small>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section aria-labelledby="bor-sec-revisar">
         <h2 id="bor-sec-revisar">Qué conviene revisar</h2>
         {citas.length > 0 && (

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import types
 
@@ -16,6 +17,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+from test_citas import CUERPO_CERCANO, NEAR_77, NEAR_79, S_CORTA, S_GRAVE, S_INMINENTE, S_SIGUE, _pagina
 from test_llm import sse
 from tutela2 import api, cli, graph, ingest, llm, prompts
 from tutela2 import citas as citas_real
@@ -108,8 +110,8 @@ def ingesta_sintetica(faltantes: list[str] | None = None) -> Ingesta:
 
 
 PRINCIPAL = "02SegundaInstancia/C01Principal"
-AUTO = f"{PRINCIPAL}/001AutoAsumeSegunda202600001.docx"
-FALLO_DOCX = f"{PRINCIPAL}/002FalloSegunda202600001.docx"
+AUTO = f"{PRINCIPAL}/002AutoAsumeSegunda202600001.docx"
+FALLO_DOCX = f"{PRINCIPAL}/003FalloSegunda202600001.docx"
 
 DECISION = {
     "accion": "decidir",
@@ -306,8 +308,8 @@ def test_flujo_completo(cfg, tmp_path):
     assert "revocar" in v["caso"]["conclusion"] and "amparar" in v["caso"]["conclusion"]
     assert "[[CITA:" in " ".join(p["texto"] for p in v["caso"]["parrafos"])
     assert set(v["salidas"]) == {
-        f"{PRINCIPAL}/001AutoAsumeSegunda202600001.docx",
-        f"{PRINCIPAL}/002FalloSegunda202600001.docx",
+        AUTO,
+        FALLO_DOCX,
         "por_radicar/OficioRemiteCorteConstitucional.docx",
         "borradores_correo/NotificacionFalloPartes.docx",
         "trabajo/informe_verificacion.docx",
@@ -636,6 +638,10 @@ class FlujoFalso:
 
     def __exit__(self, *a):
         return False
+
+    @property
+    def text_stream(self):
+        yield from (b.text for b in self.final.content if b.type == "text")
 
     def get_final_message(self):
         return self.final
@@ -979,3 +985,660 @@ def test_alerta_de_documentos_omitidos_llega_al_estado(cfg, tmp_path):
 
 def test_prompt_caso_concreto_menciona_documentos():
     assert "DOCUMENTOS" in prompts.prompt_default("caso_concreto")
+
+
+MIN_PALABRAS = 25
+
+
+class VerificadorPorLongitud:
+    def __init__(self):
+        self.llamadas = 0
+
+    def __call__(self, propuestas, cfg, dataset):
+        self.llamadas += 1
+        salida = []
+        for c in propuestas:
+            tipo, numero, anio = citas_real.normalizar_sentencia(c.sentencia)
+            corta = len(c.texto_citado.split()) < MIN_PALABRAS
+            salida.append(
+                CitaVerificada(
+                    id=c.id,
+                    sentencia_original=c.sentencia,
+                    sentencia_norm=citas_real.clave_dataset(tipo, numero, anio),
+                    tipo=tipo,
+                    numero=numero,
+                    anio=anio,
+                    texto_citado=c.texto_citado,
+                    reparo_ids=c.reparo_ids,
+                    en_dataset=True,
+                    mp_dataset="José Fernando Reyes Cuartas",
+                    pagina_ok=True,
+                    cobertura=1.0,
+                    estado="rechazada" if corta else "ok",
+                    motivos=[f"El pasaje tiene menos de {MIN_PALABRAS} palabras."] if corta else [],
+                )
+            )
+        return salida
+
+
+class ClienteConGuionDeCitas:
+    def __init__(self, *guion: str):
+        self.base, self.guion, self.n = FakeClient(), list(guion), 0
+
+    @property
+    def llamadas(self):
+        return self.base.llamadas
+
+    def estructurado(self, nodo, system, user, schema, cfg):
+        salida, meta = self.base.estructurado(nodo, system, user, schema, cfg)
+        if nodo != "consideraciones":
+            return salida, meta
+        paso = self.guion[min(self.n, len(self.guion) - 1)]
+        self.n += 1
+        if paso == "sin_citas":
+            for b in salida.bloques:
+                b.texto = re.sub(r"En la \[\[CITA:\w+\]\], ", "Para este requisito, ", b.texto)
+            salida.citas = []
+        elif paso == "cortas":
+            for c in salida.citas:
+                c.texto_citado = "fragmento demasiado corto para ser la ratio"
+        return salida, meta
+
+
+@pytest.fixture
+def cfg_relatoria(cfg, monkeypatch) -> Config:
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorPorLongitud())
+    return cfg.model_copy(update={"verificar_relatoria": True, "min_palabras_cita": MIN_PALABRAS})
+
+
+def test_cero_citas_luego_cortas_luego_validas_reintenta_con_la_regla(cfg_relatoria, tmp_path):
+    cliente = ClienteConGuionDeCitas("sin_citas", "cortas", "validas")
+    g, h, _ = arrancar(cfg_relatoria, tmp_path, cliente=cliente)
+    cons = [llm.leer_secciones(u) for n, u in cliente.llamadas if n == "consideraciones"]
+    assert len(cons) == 3
+    assert "ERRORES" not in cons[0] and "SALIDA ANTERIOR" not in cons[0]
+    assert "Mínimo de citas verificadas: 2" in cons[0]["LIMITES"]
+    assert f"Mínimo de palabras por cita: {MIN_PALABRAS}" in cons[0]["LIMITES"]
+
+    assert "Las consideraciones tienen 0 citas verificadas; se exigen al menos 2" in cons[1]["ERRORES"]
+    assert "ratio decidendi" in cons[1]["ERRORES"] and "salvamento" in cons[1]["ERRORES"]
+    assert json.loads(cons[1]["SALIDA ANTERIOR"])["citas"] == []
+
+    assert "fue rechazada" in cons[2]["ERRORES"] and "menos de 25 palabras" in cons[2]["ERRORES"]
+    assert "Las consideraciones tienen 0 citas verificadas" in cons[2]["ERRORES"]
+    previa = json.loads(cons[2]["SALIDA ANTERIOR"])
+    assert {c["texto_citado"] for c in previa["citas"]} == {"fragmento demasiado corto para ser la ratio"}
+
+    v = g.get_state(h).values
+    assert v["intentos"]["consideraciones"] == 3
+    assert v["errores"] == []
+    assert {c["estado"] for c in v["citas"]} == {"ok"} and len(v["citas"]) == 2
+    assert not [m for m in v["alertas"]["consideraciones"] if m.startswith("BLOQUEA:")]
+    assert g.get_state(h).next == ("decision",)
+
+
+def test_nodos_directos_con_guion_cero_cortas_validas(cfg_relatoria, tmp_path):
+    base = _estado_en_verificacion(cfg_relatoria, tmp_path)
+    estado = {**base, "consideraciones": None, "citas": [], "errores": [], "decisiones": []}
+    estado["intentos"] = {**base["intentos"], "consideraciones": 0}
+    cliente = ClienteConGuionDeCitas("sin_citas", "cortas", "validas")
+    errores_por_intento = []
+    while True:
+        estado.update(graph.nodo_consideraciones(estado, cfg_relatoria, cliente))
+        estado.update(graph.nodo_verificar_consideraciones(estado, cfg_relatoria))
+        errores_por_intento.append(list(estado["errores"]))
+        if not estado["errores"] or estado["intentos"]["consideraciones"] >= cfg_relatoria.max_intentos:
+            break
+    assert estado["intentos"]["consideraciones"] == 3 and len(errores_por_intento) == 3
+    assert len(errores_por_intento[0]) == 1 and "se exigen al menos 2" in errores_por_intento[0][0]
+    assert any("fue rechazada" in e for e in errores_por_intento[1])
+    assert any("se exigen al menos 2" in e for e in errores_por_intento[1])
+    assert errores_por_intento[2] == []
+    assert [c["estado"] for c in estado["citas"]] == ["ok", "ok"]
+    assert not [m for m in estado["alertas"]["consideraciones"] if m.startswith("BLOQUEA:")]
+
+
+def test_cero_citas_vuelve_a_pedir_y_cumple_a_la_segunda(cfg_relatoria, tmp_path):
+    cliente = ClienteConGuionDeCitas("sin_citas", "validas")
+    g, h, _ = arrancar(cfg_relatoria, tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert v["intentos"]["consideraciones"] == 2 and v["errores"] == []
+    assert len(v["citas"]) == 2
+
+
+@pytest.mark.parametrize("paso", ["sin_citas", "cortas"])
+def test_invariante_sin_citas_ok_siempre_hay_bloqueo_visible(cfg_relatoria, tmp_path, paso):
+    cliente = ClienteConGuionDeCitas(paso)
+    g, h, _ = arrancar(cfg_relatoria, tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert g.get_state(h).next == ("decision",)
+    assert v["intentos"]["consideraciones"] == cfg_relatoria.max_intentos
+    assert not [c for c in v["citas"] if c["estado"] == "ok"]
+    alertas = v["alertas"]["consideraciones"]
+    assert any(m.startswith("BLOQUEA:") and "se exigen al menos 2" in m for m in alertas)
+    assert any("Se agotaron" in m for m in alertas)
+    assert v["errores"]
+
+
+def test_con_las_citas_validas_no_hay_bloqueo_por_minimo(cfg_relatoria, tmp_path):
+    g, h, cliente = arrancar(cfg_relatoria, tmp_path, cliente=ClienteConGuionDeCitas("validas"))
+    v = g.get_state(h).values
+    assert v["intentos"]["consideraciones"] == 1 and v["errores"] == []
+    assert not [m for m in v["alertas"]["consideraciones"] if "se exigen al menos" in m]
+
+
+class VerificadorSoloAlerta:
+    def __call__(self, propuestas, cfg, dataset):
+        return [
+            CitaVerificada(
+                id=c.id, sentencia_original=c.sentencia, texto_citado=c.texto_citado, reparo_ids=c.reparo_ids,
+                estado="alerta", motivos=["No se verificó el texto en la relatoría (verificación desactivada)."],
+            )
+            for c in propuestas
+        ]
+
+
+def test_modo_sin_relatoria_no_exige_citas_ok(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorSoloAlerta())
+    g, h, cliente = arrancar(cfg, tmp_path)
+    v = g.get_state(h).values
+    assert v["intentos"]["consideraciones"] == 1 and v["errores"] == []
+    assert {c["estado"] for c in v["citas"]} == {"alerta"}
+    assert not [m for m in v["alertas"]["consideraciones"] if "se exigen al menos" in m]
+    limites = llm.leer_secciones(dict(cliente.llamadas)["consideraciones"])["LIMITES"]
+    assert "Mínimo de citas" not in limites and "Máximo de bloques temáticos: 3" in limites
+
+
+def _estado_en_verificacion(cfg, tmp_path):
+    g, h, _ = arrancar(cfg, tmp_path)
+    return dict(g.get_state(h).values)
+
+
+def test_nodo_verificar_bloquea_con_menos_de_min_citas_ok(cfg_relatoria, tmp_path, monkeypatch):
+    estado = _estado_en_verificacion(cfg_relatoria, tmp_path)
+    cons = ConsideracionesLLM.model_validate(estado["consideraciones"])
+    cons.citas[1].texto_citado = "corto"
+    salida = graph.nodo_verificar_consideraciones({**estado, "consideraciones": cons.model_dump(mode="json")}, cfg_relatoria)
+    mensajes = salida["alertas"]["consideraciones"]
+    assert sum(1 for m in mensajes if "Las consideraciones tienen 1 cita verificada; se exigen al menos 2" in m) == 1
+    assert any(m.startswith("BLOQUEA:") and "La cita c2" in m and "fue rechazada" in m for m in mensajes)
+    assert salida["errores"] == [m for m in mensajes if m.startswith("BLOQUEA:")]
+
+
+def test_nodo_verificar_respeta_min_citas_ok_configurado(cfg_relatoria, tmp_path):
+    estado = _estado_en_verificacion(cfg_relatoria, tmp_path)
+    exigente = cfg_relatoria.model_copy(update={"min_citas_ok": 3})
+    mensajes = graph.nodo_verificar_consideraciones(estado, exigente)["alertas"]["consideraciones"]
+    assert any(m.startswith("BLOQUEA:") and "se exigen al menos 3" in m for m in mensajes)
+    flexible = cfg_relatoria.model_copy(update={"min_citas_ok": 1})
+    assert not [m for m in graph.nodo_verificar_consideraciones(estado, flexible)["alertas"]["consideraciones"] if "se exigen" in m]
+
+
+def test_nodo_verificar_alerta_la_jurisprudencia_sin_marcador(cfg, tmp_path):
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    cons = ConsideracionesLLM.model_validate(estado["consideraciones"])
+    cons.procedibilidad += "\n\nLa jurisprudencia constitucional ha decantado que el plazo debe ser razonable."
+    salida = graph.nodo_verificar_consideraciones({**estado, "consideraciones": cons.model_dump(mode="json")}, cfg)
+    mensajes = salida["alertas"]["consideraciones"]
+    assert any(m.startswith("ALERTA:") and "la jurisprudencia" in m and "procedibilidad" in m for m in mensajes)
+    assert salida["errores"] == []
+
+
+def test_nodo_verificar_bloquea_un_marcador_de_cita_sin_cerrar(cfg, tmp_path):
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    cons = ConsideracionesLLM.model_validate(estado["consideraciones"])
+    cons.procedibilidad += " Véase [[CITA:c1]"
+    salida = graph.nodo_verificar_consideraciones({**estado, "consideraciones": cons.model_dump(mode="json")}, cfg)
+    rotos = [m for m in salida["alertas"]["consideraciones"] if "Marcador de cita mal formado" in m]
+    assert len(rotos) == 1 and rotos[0].startswith("BLOQUEA:") and "use exactamente [[CITA:id]]" in rotos[0]
+    assert rotos[0] in salida["errores"]
+
+
+def test_nodo_verificar_no_alerta_el_texto_del_fake(cfg, tmp_path):
+    mensajes = _estado_en_verificacion(cfg, tmp_path)["alertas"]["consideraciones"]
+    assert not [m for m in mensajes if "jurisprudencia" in m]
+
+
+def _estado_para_rehacer(cfg, tmp_path, accion: str, **extra):
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    decision = {"accion": accion, "instruccion": "Enfócate en la subsidiariedad."}
+    return {**estado, "decisiones": [decision], "intentos": {"apertura": 0, "consideraciones": 0}, "errores": [], **extra}
+
+
+def test_rehacer_consideraciones_incluye_la_salida_anterior_y_la_instruccion(cfg, tmp_path):
+    estado = _estado_para_rehacer(cfg, tmp_path, "rehacer_consideraciones")
+    cliente = FakeClient()
+    graph.nodo_consideraciones(estado, cfg, cliente)
+    secs = llm.leer_secciones(cliente.llamadas[0][1])
+    assert json.loads(secs["SALIDA ANTERIOR"]) == estado["consideraciones"]
+    assert secs["INSTRUCCION"] == "Enfócate en la subsidiariedad."
+    assert "ERRORES" not in secs
+    user = cliente.llamadas[0][1]
+    assert user.index("=== SALIDA ANTERIOR ===") < user.index("=== INSTRUCCION ===")
+
+
+def test_rehacer_apertura_incluye_la_salida_anterior(cfg, tmp_path):
+    estado = _estado_para_rehacer(cfg, tmp_path, "rehacer_apertura")
+    cliente = FakeClient()
+    graph.nodo_apertura(estado, cfg, cliente)
+    secs = llm.leer_secciones(cliente.llamadas[0][1])
+    assert json.loads(secs["SALIDA ANTERIOR"]) == estado["apertura"]
+    assert secs["INSTRUCCION"] == "Enfócate en la subsidiariedad." and "ERRORES" not in secs
+
+
+def test_rehacer_otro_nodo_no_arrastra_salida_ni_instruccion(cfg, tmp_path):
+    estado = _estado_para_rehacer(cfg, tmp_path, "rehacer_apertura")
+    cliente = FakeClient()
+    graph.nodo_consideraciones(estado, cfg, cliente)
+    secs = llm.leer_secciones(cliente.llamadas[0][1])
+    assert not {"SALIDA ANTERIOR", "INSTRUCCION", "ERRORES"} & set(secs)
+
+
+def test_reintento_automatico_tras_rehacer_no_duplica_la_salida_anterior(cfg, tmp_path):
+    estado = _estado_para_rehacer(
+        cfg, tmp_path, "rehacer_consideraciones", intentos={"consideraciones": 1}, errores=["BLOQUEA: algo."]
+    )
+    cliente = FakeClient()
+    graph.nodo_consideraciones(estado, cfg, cliente)
+    user = cliente.llamadas[0][1]
+    assert user.count("=== SALIDA ANTERIOR ===") == 1
+    secs = llm.leer_secciones(user)
+    assert "- BLOQUEA: algo." in secs["ERRORES"] and "INSTRUCCION" in secs
+
+
+def test_rehacer_por_el_grafo_envia_la_salida_anterior(cfg, tmp_path):
+    g, h, cliente = arrancar(cfg, tmp_path)
+    primera = g.get_state(h).values["consideraciones"]
+    g.invoke(Command(resume={"accion": "rehacer_consideraciones", "instruccion": "Más breve."}), h, durability="sync")
+    secs = llm.leer_secciones(cliente.llamadas[2][1])
+    assert json.loads(secs["SALIDA ANTERIOR"]) == primera and secs["INSTRUCCION"] == "Más breve."
+
+
+class ClienteConGuionDeCaso:
+    def __init__(self, *guion: str):
+        self.base, self.guion, self.n = FakeClient(), list(guion), 0
+
+    @property
+    def llamadas(self):
+        return self.base.llamadas
+
+    def estructurado(self, nodo, system, user, schema, cfg):
+        salida, meta = self.base.estructurado(nodo, system, user, schema, cfg)
+        if nodo != "caso_concreto":
+            return salida, meta
+        paso = self.guion[min(self.n, len(self.guion) - 1)]
+        self.n += 1
+        if paso == "sin_marcador":
+            for p in salida.parrafos:
+                p.texto = re.sub(r" Esto se apoya en la \[\[CITA:\w+\]\]\.", "", p.texto)
+        elif paso == "transcribe":
+            salida.parrafos[0].texto += f" Según la Corte, «{llm.CITAS_FAKE['c1'][1]}»."
+        elif paso == "conclusion_repetida":
+            salida.parrafos[-1].texto += " " + salida.conclusion
+        elif paso == "sin_plazo":
+            salida.parrafos = [p for p in salida.parrafos if not p.texto.startswith("Frente a las órdenes")]
+        return salida, meta
+
+
+def _estado_para_caso(cfg, tmp_path, decision: dict | None = None) -> dict:
+    base = _estado_en_verificacion(cfg, tmp_path)
+    return {
+        **base,
+        "decisiones": [{**(decision or DECISION), "fecha": "2026-11-04"}],
+        "intentos": {**base["intentos"], "caso_concreto": 0},
+        "errores": [],
+    }
+
+
+def _bloqueantes_caso(v: dict) -> list[str]:
+    return [m for m in v["alertas"]["caso_concreto"] if m.startswith("BLOQUEA:")]
+
+
+@pytest.mark.parametrize(
+    "paso, regla",
+    [
+        ("sin_marcador", "Ningún párrafo del caso concreto contiene un marcador de una cita verificada"),
+        ("transcribe", "reproduce el texto de la cita c1"),
+        ("conclusion_repetida", "La conclusión repite el último párrafo"),
+    ],
+)
+def test_caso_concreto_bloquea_cada_regla_nueva_y_reintenta_con_la_regla(cfg, tmp_path, paso, regla):
+    cliente = ClienteConGuionDeCaso(paso, "valido")
+    g, h, _ = arrancar(cfg, tmp_path, cliente=cliente)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    casos = [llm.leer_secciones(u) for n, u in cliente.llamadas if n == "caso_concreto"]
+    assert len(casos) == 2
+    assert "ERRORES" not in casos[0] and "SALIDA ANTERIOR" not in casos[0]
+    assert regla in casos[1]["ERRORES"] and casos[1]["ERRORES"].startswith("- BLOQUEA:")
+    previa = json.loads(casos[1]["SALIDA ANTERIOR"])
+    assert previa["conclusion"] and previa["parrafos"]
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == 2 and v["errores"] == [] and g.get_state(h).next == ()
+    assert not _bloqueantes_caso(v)
+
+
+def test_caso_concreto_sin_marcador_la_salida_anterior_no_trae_marcadores(cfg, tmp_path):
+    cliente = ClienteConGuionDeCaso("sin_marcador", "valido")
+    g, h, _ = arrancar(cfg, tmp_path, cliente=cliente)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    segunda = llm.leer_secciones([u for n, u in cliente.llamadas if n == "caso_concreto"][1])
+    assert "[[CITA:" not in segunda["SALIDA ANTERIOR"]
+    assert "[[CITA:c1]]" in segunda["ERRORES"]
+    assert "[[CITA:" in " ".join(p["texto"] for p in g.get_state(h).values["caso"]["parrafos"])
+
+
+def test_nodos_directos_con_guion_de_caso_sin_marcador_transcrita_repetida_valida(cfg, tmp_path):
+    cfg = cfg.model_copy(update={"max_intentos": 4})
+    estado = _estado_para_caso(cfg, tmp_path)
+    cliente = ClienteConGuionDeCaso("sin_marcador", "transcribe", "conclusion_repetida", "valido")
+    errores_por_intento = []
+    while True:
+        estado.update(graph.nodo_caso_concreto(estado, cfg, cliente))
+        estado.update(graph.nodo_validar_caso(estado, cfg))
+        errores_por_intento.append(list(estado["errores"]))
+        if not estado["errores"] or estado["intentos"]["caso_concreto"] >= cfg.max_intentos:
+            break
+    assert estado["intentos"]["caso_concreto"] == 4 and len(errores_por_intento) == 4
+    assert len(errores_por_intento[0]) == 1 and "Ningún párrafo del caso concreto" in errores_por_intento[0][0]
+    assert len(errores_por_intento[1]) == 1 and "reproduce el texto de la cita c1" in errores_por_intento[1][0]
+    assert len(errores_por_intento[2]) == 1 and "repite el último párrafo" in errores_por_intento[2][0]
+    assert errores_por_intento[3] == []
+    assert not [m for m in estado["alertas"]["caso_concreto"] if m.startswith("BLOQUEA:")]
+
+
+def test_caso_concreto_sin_marcador_agota_los_intentos_y_deja_el_bloqueo_visible(cfg, tmp_path):
+    g, h, cliente = arrancar(cfg, tmp_path, cliente=ClienteConGuionDeCaso("sin_marcador"))
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == cfg.max_intentos
+    assert any("Ningún párrafo del caso concreto" in m for m in _bloqueantes_caso(v))
+    assert any("Se agotaron" in m for m in v["alertas"]["caso_concreto"])
+    assert v["errores"] and g.get_state(h).next == ()
+    assert set(v["salidas"])
+
+
+class VerificadorRechazaTodo:
+    def __call__(self, propuestas, cfg, dataset):
+        return [
+            CitaVerificada(
+                id=c.id, sentencia_original=c.sentencia, texto_citado=c.texto_citado, reparo_ids=c.reparo_ids,
+                estado="rechazada", motivos=["El pasaje no se localizó en la sentencia."],
+            )
+            for c in propuestas
+        ]
+
+
+def test_caso_concreto_sin_citas_utilizables_solo_alerta_y_no_gasta_reintentos(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorRechazaTodo())
+    cliente = ClienteConGuionDeCaso("valido")
+    g, h, _ = arrancar(cfg, tmp_path, cliente=cliente)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == 1 and v["errores"] == []
+    assert any(m.startswith("ALERTA:") and "ninguna cita verificada utilizable" in m for m in v["alertas"]["caso_concreto"])
+    assert not _bloqueantes_caso(v)
+    assert any(m.startswith("BLOQUEA:") for m in v["alertas"]["consideraciones"])
+
+
+def test_modo_sin_relatoria_acepta_marcadores_de_citas_en_alerta(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorSoloAlerta())
+    g, h, _ = arrancar(cfg, tmp_path)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert {c["estado"] for c in v["citas"]} == {"alerta"}
+    assert v["intentos"]["caso_concreto"] == 1 and v["errores"] == []
+    assert not _bloqueantes_caso(v)
+    assert "[[CITA:" in " ".join(p["texto"] for p in v["caso"]["parrafos"])
+
+
+def test_con_relatoria_un_marcador_de_cita_en_alerta_no_basta(cfg_relatoria, tmp_path):
+    estado = _estado_para_caso(cfg_relatoria, tmp_path)
+    estado["citas"] = [{**c, "estado": "alerta" if c["id"] == "c1" else "ok"} for c in estado["citas"]]
+    estado["caso"] = CasoConcretoLLM(
+        problema_juridico="Corresponde al Despacho determinar si procede el amparo solicitado.",
+        parrafos=[{"reparo_ids": ["R1"], "texto": "Argumento con [[CITA:c1]]."}],
+        conclusion="El Despacho considera que debe revocar el fallo y amparar los derechos.",
+    ).model_dump(mode="json")
+    mensajes = graph.nodo_validar_caso(estado, cfg_relatoria)["alertas"]["caso_concreto"]
+    regla = [m for m in mensajes if "Ningún párrafo del caso concreto" in m]
+    assert len(regla) == 1 and regla[0].startswith("BLOQUEA:")
+    assert "[[CITA:c2]]" in regla[0] and "[[CITA:c1]]" not in regla[0]
+
+
+def test_nodo_validar_caso_bloquea_un_marcador_de_cita_sin_cerrar(cfg, tmp_path):
+    estado = _estado_para_caso(cfg, tmp_path)
+    estado["caso"] = CasoConcretoLLM(
+        problema_juridico="Corresponde al Despacho determinar si procede el amparo solicitado.",
+        parrafos=[{"reparo_ids": ["R1"], "texto": "Argumento con [[CITA:c1]] y con [CITA:c2."}],
+        conclusion="El Despacho considera que debe revocar el fallo y amparar los derechos.",
+    ).model_dump(mode="json")
+    salida = graph.nodo_validar_caso(estado, cfg)
+    rotos = [m for m in salida["alertas"]["caso_concreto"] if "Marcador de cita mal formado" in m]
+    assert len(rotos) == 1 and rotos[0].startswith("BLOQUEA:") and "[CITA:c2" in rotos[0]
+    assert rotos[0] in salida["errores"]
+
+
+def _caso_fake_validado(cfg, tmp_path):
+    g, h, cliente = arrancar(cfg, tmp_path)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    return g.get_state(h).values, cliente
+
+
+def test_el_fake_cumple_las_reglas_nuevas_con_citas_en_alerta(cfg, tmp_path):
+    v, _ = _caso_fake_validado(cfg, tmp_path)
+    assert v["intentos"]["caso_concreto"] == 1
+    assert not _bloqueantes_caso(v)
+    assert not [m for m in v["alertas"]["caso_concreto"] if "plazo" in m or "marcador" in m or "comillas" in m]
+
+
+def test_el_fake_cumple_las_reglas_nuevas_con_citas_ok(cfg_relatoria, tmp_path):
+    v, _ = _caso_fake_validado(cfg_relatoria, tmp_path)
+    assert {c["estado"] for c in v["citas"]} == {"ok"}
+    assert v["intentos"]["caso_concreto"] == 1
+    assert not _bloqueantes_caso(v)
+    assert not [m for m in v["alertas"]["caso_concreto"] if "plazo" in m or "marcador" in m or "comillas" in m]
+
+
+def test_sin_el_plazo_en_el_caso_solo_alerta_y_no_reintenta(cfg, tmp_path):
+    cliente = ClienteConGuionDeCaso("sin_plazo")
+    g, h, _ = arrancar(cfg, tmp_path, cliente=cliente)
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == 1 and v["errores"] == []
+    alertas = [m for m in v["alertas"]["caso_concreto"] if "plazo" in m]
+    assert len(alertas) == 1 and alertas[0].startswith("ALERTA:") and "48 horas hábiles" in alertas[0]
+
+
+def test_caso_concreto_recibe_el_texto_renderizado_de_las_ordenes(cfg, tmp_path):
+    ordenes = llm.leer_secciones(_user_caso(cfg, tmp_path))["ORDENES"]
+    assert ordenes.startswith("- ORDENAR a Entidad Prestadora Uno")
+    assert "dentro de las cuarenta y ocho (48) horas hábiles siguientes a la notificación de esta providencia" in ordenes
+    assert "autorice el procedimiento ordenado por el médico tratante" in ordenes
+    for ajeno in ("REVOCAR", "AMPARAR", "NOTIFICAR", "REMITIR"):
+        assert ajeno not in ordenes
+
+
+def test_ordenes_renderizadas_incluyen_literales_prevenir_y_numerales_libres(cfg, tmp_path):
+    decision = {
+        **DECISION,
+        "ordenes": [{**DECISION["ordenes"][0], "literales": ["Entregar el insumo", "Informar al despacho"]}],
+        "prevenir": ["la Secretaría de Salud"],
+        "numerales_libres": ["ADVERTIR a la entidad que el incumplimiento acarrea desacato."],
+    }
+    estado = _estado_para_caso(cfg, tmp_path, decision)
+    cliente = FakeClient()
+    graph.nodo_caso_concreto(estado, cfg, cliente)
+    ordenes = llm.leer_secciones(cliente.llamadas[0][1])["ORDENES"]
+    assert "a. Entregar el insumo" in ordenes and "b. Informar al despacho" in ordenes
+    assert "PREVENIR a la Secretaría de Salud" in ordenes and "desacato" in ordenes
+
+
+def test_sin_ordenes_la_seccion_lo_dice(cfg, tmp_path):
+    estado = _estado_para_caso(cfg, tmp_path, {**DECISION, "ordenes": []})
+    cliente = FakeClient()
+    graph.nodo_caso_concreto(estado, cfg, cliente)
+    assert llm.leer_secciones(cliente.llamadas[0][1])["ORDENES"] == "Ninguna"
+
+
+def test_el_juez_puede_citar_entre_comillas_su_propio_eje(cfg, tmp_path):
+    class ClienteQueCitaElEje(ClienteConGuionDeCaso):
+        def estructurado(self, nodo, system, user, schema, c):
+            salida, meta = super().estructurado(nodo, system, user, schema, c)
+            if nodo == "caso_concreto":
+                salida.parrafos[0].texto += f" Para el Despacho, «{DECISION['eje']}»."
+            return salida, meta
+
+    g, h, _ = arrancar(cfg, tmp_path, cliente=ClienteQueCitaElEje("valido"))
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == 1 and not _bloqueantes_caso(v)
+
+
+def test_se_puede_citar_entre_comillas_el_texto_renderizado_de_las_ordenes(cfg, tmp_path):
+    frase = "dentro de las cuarenta y ocho (48) horas hábiles siguientes a la notificación de esta providencia"
+
+    class ClienteQueCitaLaOrden(ClienteConGuionDeCaso):
+        def estructurado(self, nodo, system, user, schema, c):
+            salida, meta = super().estructurado(nodo, system, user, schema, c)
+            if nodo == "caso_concreto":
+                salida.parrafos[0].texto += f" La orden se cumplirá «{frase}»."
+            return salida, meta
+
+    g, h, _ = arrancar(cfg, tmp_path, cliente=ClienteQueCitaLaOrden("valido"))
+    g.invoke(Command(resume=DECISION), h, durability="sync")
+    v = g.get_state(h).values
+    assert v["intentos"]["caso_concreto"] == 1 and not _bloqueantes_caso(v)
+
+
+_VERIFICAR_REAL = citas_real.verificar_citas
+DATASET_CERCANO = {
+    "T-200/22": {"sentencia": "T-200/22", "magistrado_a": "José Fernando Reyes Cuartas", "fecha_sentencia": "2022-06-06T00:00:00.000"}
+}
+
+
+class VerificadorConMotivos:
+    def __init__(self, estado: str, motivos: list[str]):
+        self.estado, self.motivos = estado, motivos
+
+    def __call__(self, propuestas, cfg, dataset):
+        return [
+            CitaVerificada(
+                id=c.id, sentencia_original=c.sentencia, texto_citado=c.texto_citado, reparo_ids=c.reparo_ids,
+                estado=self.estado, motivos=list(self.motivos),
+            )
+            for c in propuestas
+        ]
+
+
+def test_mensaje_de_cita_rechazada_une_los_motivos_sin_puntuacion_doble(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorConMotivos("rechazada", ["Primero.", "Segundo."]))
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    mensajes = graph.nodo_verificar_consideraciones(estado, cfg)["alertas"]["consideraciones"]
+    m = next(m for m in mensajes if m.startswith("BLOQUEA:") and "La cita c1" in m)
+    assert m.endswith("fue rechazada: Primero. Segundo. Regla de oro: cambia la cita, nunca la tesis.")
+    assert ".;" not in m and ".." not in m
+
+
+def test_mensaje_de_cita_en_alerta_une_los_motivos_sin_puntuacion_doble(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorConMotivos("alerta", ["Primero.", "Segundo."]))
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    mensajes = graph.nodo_verificar_consideraciones(estado, cfg)["alertas"]["consideraciones"]
+    m = next(m for m in mensajes if m.startswith("ALERTA:") and "La cita c1" in m)
+    assert m.endswith("requiere revisión: Primero. Segundo.")
+
+
+def test_mensaje_de_cita_sin_motivos_dice_sin_detalle(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(citas_real, "verificar_citas", VerificadorConMotivos("rechazada", []))
+    estado = _estado_en_verificacion(cfg, tmp_path)
+    mensajes = graph.nodo_verificar_consideraciones(estado, cfg)["alertas"]["consideraciones"]
+    m = next(m for m in mensajes if m.startswith("BLOQUEA:") and "La cita c1" in m)
+    assert "fue rechazada: sin detalle. Regla de oro" in m
+
+
+class ClienteQueCopiaElPasajeCercano:
+    def __init__(self):
+        self.base, self.n, self.errores = FakeClient(), 0, []
+
+    @property
+    def llamadas(self):
+        return self.base.llamadas
+
+    def estructurado(self, nodo, system, user, schema, cfg):
+        salida, meta = self.base.estructurado(nodo, system, user, schema, cfg)
+        if nodo != "consideraciones":
+            return salida, meta
+        self.n += 1
+        previos = {"c1": NEAR_77, "c2": NEAR_79}
+        errores = llm.leer_secciones(user).get("ERRORES", "")
+        self.errores.append(errores)
+        for c in salida.citas:
+            c.sentencia = "T-200 de 2022"
+            copiado = re.search(rf"Cita {c.id}\b.*?dice textualmente: «(.+?)»", errores, re.S)
+            c.texto_citado = copiado.group(1) if copiado else previos[c.id]
+        return salida, meta
+
+
+@pytest.fixture
+def cfg_relatoria_real(tmp_path, monkeypatch) -> Config:
+    cfg = Config(
+        llm=LLMConfig(proveedor="fake"), verificar_relatoria=True, cache_dir=str(tmp_path / "cache"), min_palabras_cita=25
+    )
+    destino = cfg.cache_path() / "relatoria"
+    destino.mkdir(parents=True)
+    (destino / "T-200-22.htm").write_bytes(_pagina("T-200-22", CUERPO_CERCANO))
+    monkeypatch.setattr(citas_real, "verificar_citas", _VERIFICAR_REAL)
+    monkeypatch.setattr(citas_real, "cargar_dataset", lambda c: DATASET_CERCANO)
+    return cfg
+
+
+def test_citas_near_miss_reciben_el_pasaje_en_el_reintento_lo_copian_y_pasan(cfg_relatoria_real, tmp_path):
+    cliente = ClienteQueCopiaElPasajeCercano()
+    g, h, _ = arrancar(cfg_relatoria_real, tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert cliente.n == 2 and cliente.errores[0] == ""
+    reintento = cliente.errores[1]
+    assert f"dice textualmente: «{S_GRAVE}»" in reintento and f"dice textualmente: «{S_INMINENTE}»" in reintento
+    assert reintento.count("cópielo sin ningún cambio y con al menos 25 palabras") == 2
+    assert "Cita c1" in reintento and "Cita c2" in reintento and "se exigen al menos 2" in reintento
+    assert v["intentos"]["consideraciones"] == 2 and v["errores"] == []
+    assert [c["estado"] for c in v["citas"]] == ["ok", "ok"]
+    assert [c["texto_citado"] for c in v["citas"]] == [S_GRAVE, S_INMINENTE]
+    assert not [m for m in v["alertas"]["consideraciones"] if m.startswith("BLOQUEA:")]
+    assert g.get_state(h).next == ("decision",)
+
+
+def test_cita_en_alerta_sigue_sin_contar_como_ok_aunque_tenga_pasaje_cercano(cfg_relatoria_real, tmp_path):
+    cliente = ClienteQueCopiaElPasajeCercano()
+    g, h, _ = arrancar(cfg_relatoria_real.model_copy(update={"max_intentos": 1}), tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert [c["estado"] for c in v["citas"]] == ["alerta", "alerta"]
+    assert all(c["pasaje_cercano"] for c in v["citas"])
+    assert v["errores"] and any("se exigen al menos 2" in m for m in v["alertas"]["consideraciones"] if m.startswith("BLOQUEA:"))
+
+
+def test_cita_rechazada_con_pasaje_cercano_aparece_una_sola_vez_en_los_errores(cfg_relatoria_real, tmp_path):
+    estado = _estado_en_verificacion(cfg_relatoria_real, tmp_path)
+    cons = ConsideracionesLLM.model_validate(estado["consideraciones"])
+    corta = "La tutela es un mecanismo residual y subsidiario de protección constitucional."
+    for c, texto in zip(cons.citas, (corta, NEAR_77)):
+        c.sentencia, c.texto_citado = "T-200 de 2022", texto
+    salida = graph.nodo_verificar_consideraciones({**estado, "consideraciones": cons.model_dump(mode="json")}, cfg_relatoria_real)
+    errores = "\n".join(salida["errores"])
+    assert [c["estado"] for c in salida["citas"]] == ["rechazada", "alerta"]
+    assert errores.count(f"{S_CORTA} {S_SIGUE}") == 1 and errores.count(S_GRAVE) == 1
+    assert errores.count("ratio decidendi") == 1 and "Regla de las citas:" not in errores
+    assert any(e.startswith("BLOQUEA:") and "La cita c1" in e and "fue rechazada" in e for e in salida["errores"])
+    assert any("Cita c1" in e and "Cita c2" in e and "se exigen al menos 2" in e for e in salida["errores"])
+
+
+def test_cita_rechazada_conserva_su_detalle_completo_si_el_minimo_no_bloquea(cfg_relatoria_real, tmp_path):
+    estado = _estado_en_verificacion(cfg_relatoria_real, tmp_path)
+    cons = ConsideracionesLLM.model_validate(estado["consideraciones"])
+    corta = "La tutela es un mecanismo residual y subsidiario de protección constitucional."
+    cons.citas[0].sentencia, cons.citas[0].texto_citado = "T-200 de 2022", corta
+    cons.citas[1].sentencia, cons.citas[1].texto_citado = "T-200 de 2022", S_GRAVE
+    flexible = cfg_relatoria_real.model_copy(update={"min_citas_ok": 1})
+    salida = graph.nodo_verificar_consideraciones({**estado, "consideraciones": cons.model_dump(mode="json")}, flexible)
+    (rechazo,) = [e for e in salida["errores"] if "La cita c1" in e]
+    assert f"dice textualmente: «{S_CORTA} {S_SIGUE}»" in rechazo and "ratio decidendi" in rechazo
+    assert not any("se exigen al menos" in e for e in salida["errores"])

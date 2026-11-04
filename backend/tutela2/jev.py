@@ -180,6 +180,21 @@ def cliente_jev(cfg: Config) -> JevClient | None:
     return HttpJev(clave, cfg.jev.timeout_s)
 
 
+def transcribir_preguntas(preguntas: dict[str, dict]) -> str:
+    bloques = []
+    for nombre, pregunta in preguntas.items():
+        lineas = [f"=== {nombre} ==="]
+        if isinstance(pregunta, dict):
+            if pregunta.get("instructions"):
+                lineas.append(str(pregunta["instructions"]))
+            criterios = pregunta.get("criteria")
+            if isinstance(criterios, dict) and criterios:
+                lineas.append("Opciones:")
+                lineas += [f"- {opcion}: {descripcion}" for opcion, descripcion in criterios.items()]
+        bloques.append("\n".join(lineas))
+    return "\n\n".join(bloques)
+
+
 def _llamada(
     nodo: str,
     estado: str | dict,
@@ -195,6 +210,7 @@ def _llamada(
         modelo_pedido=modelo_pedido,
         prompt_id=f"jev-{nodo}-v1",
         sha256_instrucciones=_sha(_serializar(preguntas)),
+        instrucciones=transcribir_preguntas(preguntas),
         sha256_entrada=_sha(_serializar(estado)),
         sha256_salida=_sha(salida),
         fecha=_ahora(),

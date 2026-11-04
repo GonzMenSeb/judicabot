@@ -128,6 +128,7 @@ pipeline {
 
                         docker buildx build --builder judicabot-builder \
                             --provenance=false --sbom=false \
+                            --build-arg GIT_SHA=$GIT_SHA \
                             --label org.opencontainers.image.revision=$GIT_SHA \
                             --label org.opencontainers.image.source=https://github.com/GonzMenSeb/judicabot \
                             --cache-from type=registry,ref=$IMAGE:buildcache \

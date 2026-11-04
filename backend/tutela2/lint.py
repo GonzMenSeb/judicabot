@@ -5,8 +5,8 @@ from datetime import date
 from itertools import combinations
 from typing import Iterable
 
-from tutela2.letras import letras_a_numero
-from tutela2.citas import RE_SENTENCIA, cobertura, normalizar_texto, sentencias_en_texto
+from tutela2.letras import letras_a_numero, numero_a_letras
+from tutela2.citas import PREFIJO_REGLA, RE_SENTENCIA, cobertura, normalizar_texto, sentencias_en_texto
 from tutela2.models import (
     AperturaLLM,
     CasoConcretoLLM,
@@ -15,6 +15,7 @@ from tutela2.models import (
     Decision,
     Ingesta,
     Metadatos,
+    Plazo,
     Reparo,
 )
 
@@ -25,6 +26,14 @@ COBERTURA_ANCLA = 0.8
 MIN_PALABRAS_DUPLICADO = 8
 MAX_PALABRAS_RESIDUO = 40
 MAX_LINEAS_CITADAS = 5
+NGRAMA_CONTENCION = 3
+MIN_NGRAMAS_CONTENCION = 10
+MAX_CHARS_CITA_EN_MINIMO = 1800
+MIN_CHARS_MOTIVOS_EN_MINIMO = 300
+_ESTADO_EN_MINIMO = {"rechazada": "rechazada", "alerta": "para revisar"}
+UMBRAL_CONTENCION = 0.6
+MIN_PALABRAS_PASAJE = NGRAMA_ANCLA
+COBERTURA_PASAJE_CITA = 0.5
 
 _VINETA = re.compile(r"^\s*(?:[-–—•·▪◦*]|\d+[.)])\s+\S")
 _ENCABEZADO = re.compile(r"^\s{0,3}#{1,6}\s+\S")
@@ -32,7 +41,7 @@ _ROTULO = re.compile(
     r"^\s*((?i:argumento del despacho|hechos|pretensiones|nota|borrador|problema jur[ií]dico|conclusi[oó]n|tesis)|TODO)\s*:"
 )
 _MARCADOR = re.compile(r"\[\[CITA:\s*([^\]\s]+)\s*\]\]")
-_MARCADOR_LAXO = re.compile(r"\[\[\s*cita\b[^\]]*\]\]", re.IGNORECASE)
+_MARCADOR_LAXO = re.compile(r"\[\[\s*cita\b[^\]\n]{0,80}\]{0,2}|\[\s*cita\s*:[^\]\n]{0,80}\]{0,2}", re.IGNORECASE)
 _MARCADOR_CUALQUIERA = re.compile(r"\[\[[^\]]*\]\]")
 _SIN_ANIO = re.compile(r"\b(SU|T|C)[-‑–](\d{3,4})(?![\dA-Za-z/])")
 _SUFIJOS_SOCIETARIOS = {"sas", "sa", "ltda", "esp"}
@@ -322,6 +331,102 @@ def subconjunto_citas(caso: CasoConcretoLLM, citas: list[CitaVerificada]) -> lis
     return msgs
 
 
+def cita_verificada_en_caso(caso: CasoConcretoLLM, citas: list[CitaVerificada], permitir_alerta: bool) -> list[str]:
+    utilizables = [c for c in citas if c.estado == "ok" or (permitir_alerta and c.estado == "alerta")]
+    if not utilizables:
+        return [
+            f"{ALERTA}No hay ninguna cita verificada utilizable para el caso concreto; esta sección queda sin "
+            "jurisprudencia citada. Revise las citas de las consideraciones."
+        ]
+    ids = {c.id for c in utilizables}
+    if ids & set(_MARCADOR.findall("\n".join(p.texto for p in caso.parrafos))):
+        return []
+    disponibles = ", ".join(f"[[CITA:{c.id}]] ({c.sentencia_original})" for c in utilizables)
+    return [
+        f"{BLOQUEA}Ningún párrafo del caso concreto contiene un marcador de una cita verificada. Regla: al menos un "
+        "argumento de fondo debe cerrar con la regla jurisprudencial que lo respalda, citada solo con su marcador "
+        "[[CITA:id]]; el sistema inserta el fragmento verificado, de modo que no lo transcriba ni lo ponga entre "
+        f"comillas. Citas utilizables: {disponibles}."
+    ]
+
+
+_COMILLAS = re.compile(r"«([^»\n]+)»|“([^”\n]+)”|\"([^\"\n]+)\"")
+
+
+def pasajes_entre_comillas(caso: CasoConcretoLLM, ing: Ingesta, citas: list[CitaVerificada]) -> list[str]:
+    campos = {"problema jurídico": caso.problema_juridico}
+    campos.update({f"párrafo {i}": p.texto for i, p in enumerate(caso.parrafos, 1)})
+    campos["conclusión"] = caso.conclusion
+    corpus: str | None = None
+    msgs: list[str] = []
+    for campo, texto in campos.items():
+        for m in _COMILLAS.finditer(texto):
+            pasaje = next(g for g in m.groups() if g is not None).strip()
+            if contar_palabras(pasaje) < MIN_PALABRAS_PASAJE:
+                continue
+            if corpus is None:
+                corpus = "\n\n".join(ing.textos_visibles())
+            cob = cobertura(pasaje, corpus, NGRAMA_ANCLA)
+            if cob is None or cob >= COBERTURA_ANCLA:
+                continue
+            inicio = " ".join(pasaje.split())[:70]
+            origen = next(
+                (c for c in citas if (cobertura(pasaje, c.texto_citado, NGRAMA_ANCLA) or 0) >= COBERTURA_PASAJE_CITA),
+                None,
+            )
+            if origen is not None:
+                msgs.append(
+                    f"{BLOQUEA}Caso concreto, {campo}: el pasaje entre comillas «{inicio}» reproduce el texto de la cita "
+                    f"{origen.id} ({origen.sentencia_original}). Regla: la jurisprudencia se cita solo con su marcador "
+                    f"[[CITA:{origen.id}]]; el sistema inserta el fragmento verificado, así que no transcriba sentencias."
+                )
+            else:
+                msgs.append(
+                    f"{BLOQUEA}Caso concreto, {campo}: el pasaje entre comillas «{inicio}» no consta en el expediente ni "
+                    "en la decisión. Regla: lo que va entre comillas debe copiarse literalmente de los documentos del "
+                    "caso; la jurisprudencia se cita solo con [[CITA:id]], las normas por su número y año y lo demás se "
+                    "formula sin comillas."
+                )
+    return msgs[:MAX_LINEAS_CITADAS]
+
+
+_UNIDAD_PLAZO = {
+    "horas_habiles": ("f", "hora", "hora hábil", "horas hábiles"),
+    "horas": ("f", "hora", "hora", "horas"),
+    "dias_habiles": ("m", "dia", "día hábil", "días hábiles"),
+    "dias": ("m", "dia", "día", "días"),
+}
+
+
+def _menciona_plazo(norm: str, plazo: Plazo) -> bool:
+    genero, raiz, *_ = _UNIDAD_PLAZO[plazo.unidad]
+    formas = {str(plazo.n)}
+    if 0 <= plazo.n < 1_000_000:
+        formas.add(normalizar_texto(numero_a_letras(plazo.n, genero), False))
+    if plazo.n == 1:
+        formas |= {"un", "una", "uno"}
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(f)}(?:\s+\S+){{0,2}}?\s+{raiz}s?\b", norm) for f in formas
+    )
+
+
+def plazos_en_caso(caso: CasoConcretoLLM, decision: Decision) -> list[str]:
+    norm = normalizar_texto("\n".join(p.texto for p in caso.parrafos), False)
+    sin_mencion: dict[tuple[int, str], list[int]] = {}
+    for i, o in enumerate(decision.ordenes, 1):
+        if o.verbo == "ORDENAR" and not o.mismo_termino and not _menciona_plazo(norm, o.plazo):
+            sin_mencion.setdefault((o.plazo.n, o.plazo.unidad), []).append(i)
+    msgs = []
+    for (n, unidad), numeros in sin_mencion.items():
+        etiqueta = _UNIDAD_PLAZO[unidad][2] if n == 1 else _UNIDAD_PLAZO[unidad][3]
+        orden = f"la orden {numeros[0]}" if len(numeros) == 1 else f"las órdenes {', '.join(map(str, numeros[:-1]))} y {numeros[-1]}"
+        msgs.append(
+            f"{ALERTA}El caso concreto no menciona el plazo de {n} {etiqueta} que la decisión fija en {orden}; la "
+            "motivación debe reflejar el alcance y el plazo de las órdenes."
+        )
+    return msgs
+
+
 def marcadores_consideraciones(cons: ConsideracionesLLM) -> list[str]:
     texto = "\n".join([cons.procedibilidad, *(f"{b.titulo}\n{b.texto}" for b in cons.bloques)])
     ids = [c.id for c in cons.citas]
@@ -341,6 +446,80 @@ def marcadores_consideraciones(cons: ConsideracionesLLM) -> list[str]:
     for tipo, numero in sorted(sin_anio):
         msgs.append(f"{BLOQUEA}La sentencia {tipo}-{numero:03d} se menciona fuera de un marcador; use [[CITA:id]].")
     return msgs
+
+
+def _detalle_cita(c: CitaVerificada) -> str:
+    motivos = [m for m in c.motivos if not m.startswith(PREFIJO_REGLA)]
+    pasaje = [m for m in motivos if c.pasaje_cercano and c.pasaje_cercano in m]
+    otros = " ".join(m for m in motivos if m not in pasaje)
+    cupo = max(MIN_CHARS_MOTIVOS_EN_MINIMO, MAX_CHARS_CITA_EN_MINIMO - sum(map(len, pasaje)))
+    if len(otros) > cupo:
+        otros = otros[:cupo].rstrip() + "…"
+    return " ".join(x for x in (otros, *pasaje) if x) or "sin detalle."
+
+
+def _ids_repetidas(citas: list[CitaVerificada]) -> list[str]:
+    textos = [f" {normalizar_texto(c.texto_citado)} " for c in citas]
+    contadas: list[str] = []
+    repetidas: set[int] = set()
+    for k in sorted(range(len(citas)), key=lambda k: -len(textos[k])):
+        if any(textos[k] in otra for otra in contadas):
+            repetidas.add(k)
+        else:
+            contadas.append(textos[k])
+    return [c.id for k, c in enumerate(citas) if k in repetidas]
+
+
+def minimo_citas_ok(citas: Iterable[CitaVerificada], minimo: int, min_palabras: int) -> list[str]:
+    citas = list(citas)
+    verificadas = [c for c in citas if c.estado == "ok"]
+    repetidas = _ids_repetidas(verificadas)
+    ok = len(verificadas) - len(repetidas)
+    if ok >= max(minimo, 1):
+        return []
+    if ok >= minimo:
+        return [f"{ALERTA}Las consideraciones no tienen ninguna cita verificada; revise la jurisprudencia que las respalda."]
+    rechazadas = sum(1 for c in citas if c.estado == "rechazada")
+    para_revisar = sum(1 for c in citas if c.estado == "alerta")
+    detalle = "".join(
+        f"\n- Cita {c.id} ({c.sentencia_original}, {_ESTADO_EN_MINIMO[c.estado]}): {_detalle_cita(c)}"
+        for c in citas
+        if c.estado != "ok"
+    )
+    distintas = (" distinta" if ok == 1 else " distintas") if repetidas else ""
+    contenidas = f"; repetidas o contenidas en otra cita verificada: {', '.join(repetidas)}" if repetidas else ""
+    return [
+        f"{BLOQUEA}Las consideraciones tienen {ok} {'cita verificada' if ok == 1 else 'citas verificadas'}{distintas}; "
+        f"se exigen al menos {minimo} (propuestas: {len(citas)}; rechazadas: {rechazadas}; para revisar: {para_revisar}"
+        f"{contenidas}, que no cuentan)."
+        + (f" Citas que no cuentan:{detalle}\n" if detalle else " ")
+        + "Regla: cada cita es un fragmento literal de la ratio decidendi de la sentencia, de una a tres "
+        f"frases completas y de al menos {min_palabras} palabras, tomado de la parte de la mayoría (no de un salvamento "
+        "ni de una aclaración de voto) y que no sea texto de la Constitución, de un decreto ni de una ley. "
+        "Sustituya las citas rechazadas o insuficientes por otras que cumplan la regla y no acorte el fragmento "
+        "para que pase."
+    ]
+
+
+_JURISPRUDENCIA_HA = re.compile(
+    r"\bla\s+jurisprudencia\b"
+    r"(?:\s+(?:constitucional|pac[ií]fica|reiterada|uniforme|de\s+(?:la|esta)\s+corte(?:\s+constitucional)?|de\s+esta\s+corporaci[oó]n))*"
+    r"[\s,]*(?:(?:de\s+(?:manera|forma|modo)\s+\w+|\w+mente)[\s,]*)*\bhan?\b",
+    re.IGNORECASE,
+)
+_FIN_ORACION = re.compile(r"(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡«\"“])|\n+")
+
+
+def jurisprudencia_sin_cita(texto: str, campo: str) -> list[str]:
+    msgs: list[str] = []
+    for oracion in _FIN_ORACION.split(texto):
+        if _JURISPRUDENCIA_HA.search(oracion) and not _MARCADOR.search(oracion):
+            inicio = " ".join(oracion.split())[:80]
+            msgs.append(
+                f"{ALERTA}{campo}: la oración «{inicio}» atribuye una regla a «la jurisprudencia» sin un marcador "
+                "[[CITA:id]] en la misma oración; respáldela con una cita verificada o formúlela sin atribuirla."
+            )
+    return msgs[:MAX_LINEAS_CITADAS]
 
 
 def _contiene_raiz(norm: str, patron: str) -> bool:
@@ -485,16 +664,61 @@ def extension(texto: str, rango: list[int] | tuple[int, int], campo: str) -> lis
     return []
 
 
-def duplicados(parrafos: list[str], umbral: float) -> list[str]:
-    palabras = [set(normalizar_texto(p, False).split()) for p in parrafos]
-    msgs: list[str] = []
-    for i, j in combinations(range(len(parrafos)), 2):
+def _ngramas(texto: str) -> set[tuple[str, ...]]:
+    palabras = normalizar_texto(texto, False).split()
+    return {tuple(palabras[k : k + NGRAMA_CONTENCION]) for k in range(len(palabras) - NGRAMA_CONTENCION + 1)}
+
+
+def _pares_similares(
+    textos: list[str], umbral: float, contencion: float | None
+) -> list[tuple[int, int, float, float | None]]:
+    palabras = [set(normalizar_texto(t, False).split()) for t in textos]
+    ngramas = [_ngramas(t) for t in textos] if contencion is not None else []
+    pares = []
+    for i, j in combinations(range(len(textos)), 2):
         a, b = palabras[i], palabras[j]
         if len(a) < MIN_PALABRAS_DUPLICADO or len(b) < MIN_PALABRAS_DUPLICADO:
             continue
         jaccard = len(a & b) / len(a | b)
-        if jaccard >= umbral:
-            msgs.append(f"{ALERTA}Los párrafos {i + 1} y {j + 1} son casi idénticos (similitud {jaccard:.0%}).")
+        cont = None
+        if contencion is not None and min(len(ngramas[i]), len(ngramas[j])) >= MIN_NGRAMAS_CONTENCION:
+            cont = len(ngramas[i] & ngramas[j]) / min(len(ngramas[i]), len(ngramas[j]))
+        if jaccard >= umbral or (cont is not None and cont >= contencion):
+            pares.append((i, j, jaccard, cont))
+    return pares
+
+
+def _similitud(jaccard: float, cont: float | None) -> str:
+    return f"similitud {jaccard:.0%}" + ("" if cont is None else f", contención {cont:.0%}")
+
+
+def duplicados(
+    parrafos: list[str], umbral: float, contencion: float | None = None, etiquetas: list[str] | None = None
+) -> list[str]:
+    msgs: list[str] = []
+    for i, j, jaccard, cont in _pares_similares(parrafos, umbral, contencion):
+        similitud = _similitud(jaccard, cont)
+        if etiquetas:
+            msgs.append(f"{ALERTA}{etiquetas[i].capitalize()} y {etiquetas[j]} son casi idénticos ({similitud}).")
+        else:
+            msgs.append(f"{ALERTA}Los párrafos {i + 1} y {j + 1} son casi idénticos ({similitud}).")
+    return msgs
+
+
+def duplicados_caso(caso: CasoConcretoLLM, umbral: float, contencion: float = UMBRAL_CONTENCION) -> list[str]:
+    etiquetas = ["el problema jurídico", *(f"el párrafo {i}" for i in range(1, len(caso.parrafos) + 1)), "la conclusión"]
+    textos = [caso.problema_juridico, *(p.texto for p in caso.parrafos), caso.conclusion]
+    ultimo, conclusion = len(textos) - 2, len(textos) - 1
+    msgs: list[str] = []
+    for i, j, jaccard, cont in _pares_similares(textos, umbral, contencion):
+        similitud = _similitud(jaccard, cont)
+        if j == conclusion and i == ultimo and caso.parrafos:
+            msgs.append(
+                f"{BLOQUEA}La conclusión repite el último párrafo (párrafo {i}; {similitud}). La conclusión va solo en el "
+                f"campo conclusion: quite del párrafo {i} lo que ya dice la conclusión y no la reitere en ningún párrafo."
+            )
+        else:
+            msgs.append(f"{ALERTA}En el caso concreto, {etiquetas[i]} y {etiquetas[j]} son casi idénticos ({similitud}).")
     return msgs
 
 

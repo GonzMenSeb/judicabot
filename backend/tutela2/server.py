@@ -275,7 +275,10 @@ def _errores_config(exc: ValidationError) -> dict[str, Any]:
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+    estado = {"status": "ok"}
+    if revision := os.environ.get("JUDICABOT_REVISION"):
+        estado["revision"] = revision
+    return estado
 
 
 def _dist() -> Path:
@@ -321,14 +324,15 @@ def estado_servidor() -> dict[str, Any]:
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "jev_key": bool(os.environ.get("JEV_API_KEY", "").strip()),
         "modelo": modelo_actual(),
-        "modelos": list(cfgmod.MODELOS),
+        "modelos": list(cfgmod.modelos_permitidos()),
     }
 
 
 @app.post("/api/modelo")
 def elegir_modelo(body: ModeloBody) -> dict[str, str]:
-    if body.modelo not in cfgmod.MODELOS:
-        raise HTTPException(422, f"Modelo no permitido: {body.modelo}.")
+    permitidos = cfgmod.modelos_permitidos()
+    if body.modelo not in permitidos:
+        raise HTTPException(422, f"Modelo no permitido: {body.modelo}. Modelos permitidos: {', '.join(permitidos) or 'ninguno'}.")
     from tutela2 import preferencias
 
     preferencias.actualizar(_preferencias(), preferencias.Preferencias(modelo=body.modelo))

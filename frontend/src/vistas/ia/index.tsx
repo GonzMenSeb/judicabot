@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { ModoJev, PreferenciasIa } from "../../api/contrato";
-import { cargarEstadoServidor, mostrarToast, porcentaje, useTitulo } from "../../estado";
+import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje, useTitulo } from "../../estado";
 import { Aviso, Boton, Cargando, Migas } from "../../ui";
 import { DATOS_CLAVE, DialogoClave } from "./DialogoClave";
 import type { TipoClave } from "./DialogoClave";
@@ -162,6 +162,8 @@ export default function InteligenciaArtificial() {
   const errores: ErroresForm = { ...(intentado ? validar(form, base.modelos) : {}), ...errServidor };
   const cambios = !igual(form, aFormulario(base));
   const encendido = form.modo !== "apagado";
+  const sinModelos = base.modelos.length === 0;
+  const modeloNoPermitido = !base.modelos.includes(base.modelo);
   const estado = cambios ? "Hay cambios sin guardar." : guardado ? "Cambios guardados." : "";
 
   return (
@@ -173,15 +175,28 @@ export default function InteligenciaArtificial() {
           <p class="sub" id={`${idModelo}-d`}>
             Vale para todos los casos desde la siguiente redacción.
           </p>
-          <Tarjetas
-            nombre="modelo"
-            legenda="Modelo"
-            opciones={opcionesModelo(base.modelos)}
-            valor={form.modelo}
-            onCambio={(v) => editar({ modelo: v }, ["modelo"])}
-            idDescripcion={`${idModelo}-d`}
-            idError={errores.modelo ? `${idModelo}-e` : undefined}
-          />
+          {sinModelos ? (
+            <Aviso class="ia-aviso-modelo" tipo="alerta" titulo="No hay modelos permitidos en este servidor">
+              La configuración del servidor (TUTELA2_MODELOS_PERMITIDOS) no deja ningún modelo disponible, así que la redacción no funcionará hasta que se corrija.
+            </Aviso>
+          ) : (
+            modeloNoPermitido && (
+              <Aviso class="ia-aviso-modelo" tipo="alerta" titulo="El modelo guardado no está permitido en este servidor">
+                El modelo guardado ({nombreModelo(base.modelo)}) no está entre los que este servidor permite, y la redacción fallará mientras no elija uno de los disponibles y guarde.
+              </Aviso>
+            )
+          )}
+          {!sinModelos && (
+            <Tarjetas
+              nombre="modelo"
+              legenda="Modelo"
+              opciones={opcionesModelo(base.modelos)}
+              valor={form.modelo}
+              onCambio={(v) => editar({ modelo: v }, ["modelo"])}
+              idDescripcion={`${idModelo}-d`}
+              idError={errores.modelo ? `${idModelo}-e` : undefined}
+            />
+          )}
           <MensajeError id={`${idModelo}-e`} texto={errores.modelo} />
         </section>
 

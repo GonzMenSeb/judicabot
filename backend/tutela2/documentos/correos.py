@@ -8,7 +8,7 @@ from docx.enum.text import WD_COLOR_INDEX
 
 from tutela2 import formato_b, formulas, radicado
 from tutela2.config import Config
-from tutela2.models import Decision, Ingesta, Metadatos
+from tutela2.models import Decision, Doc, Ingesta, Metadatos
 
 AVISO = "BORRADOR — no es constancia de envío"
 PARA_REPARTO = "ofjudmed@cendoj.ramajudicial.gov.co"
@@ -96,8 +96,12 @@ def _unicos(correos: list[str]) -> list[str]:
     return list(vistos.values())
 
 
+def es_confiable(ing: Ingesta, d: Doc) -> bool:
+    return not (d.ruido or d.doc_id in ing.docs_ajenos or d.doc_id in ing.docs_revisar)
+
+
 def _ultima_notificacion(ing: Ingesta):
-    docs = [d for d in ing.documentos if d.rol == "notificacion" and d.instancia == "1a"]
+    docs = [d for d in ing.documentos if d.rol == "notificacion" and d.instancia == "1a" and es_confiable(ing, d)]
     return sorted(docs, key=lambda d: d.ruta)[-1] if docs else None
 
 
@@ -105,7 +109,8 @@ def destinatarios_propuestos(ing: Ingesta) -> list[str]:
     doc = _ultima_notificacion(ing)
     if not doc:
         return []
-    completos = [c for t in ing.textos_visibles() for c in _CORREO.findall(t)]
+    visibles = ing.model_copy(update={"docs_ajenos": [*ing.docs_ajenos, *ing.docs_revisar]})
+    completos = [c for t in visibles.textos_visibles() for c in _CORREO.findall(t)]
     return _unicos(_correos_encabezado(doc.texto(), completos))
 
 
@@ -119,6 +124,10 @@ def _cui_2a(md: Metadatos) -> str | None:
 
 def _cui_1a(md: Metadatos) -> str | None:
     return radicado.digitos(md.cui_1a) if md.cui_1a else None
+
+
+def _adjunto(valor: str | None, nombre: str) -> str:
+    return re.sub(r"\.docx$", ".pdf", _o(valor, f"número definitivo del {nombre}"), flags=re.IGNORECASE)
 
 
 def _mayus(valor: str | None, nombre: str) -> str:
@@ -190,10 +199,10 @@ def _guardar(doc, ruta: Path) -> Path:
     return ruta
 
 
-def render_notificacion(md: Metadatos, ing: Ingesta, cfg: Config, adjunto: str, ruta: Path) -> Path:
+def render_notificacion(md: Metadatos, ing: Ingesta, cfg: Config, adjunto: str | None, ruta: Path) -> Path:
     cui = _cui_2a(md)
     para = "; ".join(destinatarios_propuestos(ing)) or _falta("destinatarios")
-    doc = _base(para, f"Notifica fallo de segunda instancia radicado {cui or _falta('radicado')}", adjunto)
+    doc = _base(para, f"Notifica fallo de segunda instancia radicado {cui or _falta('radicado')}", _adjunto(adjunto, "fallo"))
     _parrafo(doc, "Cordial saludo,")
     _parrafo(doc, "Adjunto sentencia de tutela para su conocimiento:")
     tabla = doc.add_table(rows=1, cols=3)
@@ -227,14 +236,14 @@ def _origen_digitos(md: Metadatos) -> str:
 
 
 def render_envio_formato(
-    md: Metadatos, cfg: Config, adjunto: str, ruta: Path, para: str | None = None
+    md: Metadatos, cfg: Config, adjunto: str | None, ruta: Path, para: str | None = None
 ) -> Path:
     cui = _cui_1a(md)
     cui_txt = cui or _falta("radicado")
     doc = _base(
         _o(para, "correo del juzgado de origen"),
         f"Envio formato calificación de calidad radicado {cui_txt}",
-        adjunto,
+        _adjunto(adjunto, "formato"),
     )
     _parrafo(doc, "Señores")
     _parrafo(doc, _origen_digitos(md))
@@ -261,12 +270,12 @@ def _texto_compulsa(decision: Decision, md: Metadatos) -> str:
     return _falta("numeral de compulsa")
 
 
-def render_compulsa(md: Metadatos, decision: Decision, cfg: Config, adjunto: str, ruta: Path) -> Path:
+def render_compulsa(md: Metadatos, decision: Decision, cfg: Config, adjunto: str | None, ruta: Path) -> Path:
     cui = _cui_2a(md)
     doc = _base(
         PARA_REPARTO,
         f"Remisión compulsa copias en tutela radicado: {cui or _falta('radicado')}",
-        adjunto,
+        _adjunto(adjunto, "fallo"),
     )
     organo = decision.compulsa.organo if decision.compulsa else _falta("órgano de la compulsa")
     _parrafo(doc, "Señores")

@@ -497,10 +497,18 @@ export interface components {
         };
         /** DecisionVistaRespuesta */
         DecisionVistaRespuesta: {
+            /** Advertencias */
+            advertencias: components["schemas"]["FaltanteDecision"][];
+            /** Encabezado */
+            encabezado: string;
             /** Errores */
             errores: string[];
             /** Faltantes */
             faltantes: components["schemas"]["FaltanteDecision"][];
+            /** Fecha Fallo */
+            fecha_fallo: string;
+            /** Fecha Por Defecto */
+            fecha_por_defecto: boolean;
             /** Numerales */
             numerales: components["schemas"]["NumeralVista"][];
         };

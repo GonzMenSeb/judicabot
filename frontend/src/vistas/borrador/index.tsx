@@ -12,6 +12,7 @@ import {
   filasJev,
   irA,
   limitePasos,
+  redaccionPorNodo,
   tituloDelCaso,
 } from "./datos";
 import { DialogoCorrecciones } from "./DialogoCorrecciones";
@@ -95,6 +96,7 @@ export default function Borrador({ caso }: PropsVista) {
   const activa = useEspia(idsIndice);
   const items = useMemo(() => construirRevision(citas ?? [], resumen?.alertas), [citas, resumen]);
   const filas = useMemo(() => filasJev(resumen?.jev_metadatos, metadatos), [resumen, metadatos]);
+  const redaccion = useMemo(() => redaccionPorNodo(resumen?.bitacora), [resumen]);
 
   const cita = seleccionada ? (citasPorId.get(seleccionada) ?? null) : null;
 
@@ -223,6 +225,7 @@ export default function Borrador({ caso }: PropsVista) {
         </div>
         <Riel
           indice={indice}
+          redaccion={redaccion}
           activa={activa}
           alSeccion={alSeccion}
           origen={origen}

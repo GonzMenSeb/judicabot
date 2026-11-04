@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from tutela2.config import RESPALDO_CLIENTE, Config
+from tutela2.config import NODOS_LLM, RESPALDO_CLIENTE, VARIABLE_MODELOS_PERMITIDOS, Config, modelo_permitido, modelos_permitidos
 from tutela2.models import (
     AperturaLLM,
     BloqueLLM,
@@ -46,6 +46,57 @@ CITAS_FAKE = {
 
 class ErrorLLM(Exception):
     pass
+
+
+class ErrorLLMDegenerado(ErrorLLM):
+    pass
+
+
+UNIDAD_MIN, UNIDAD_MAX = 4, 80
+REPETICIONES_MIN = 12
+TRAMO_MIN = 240
+RACHA_MIN = 400
+VENTANA_DEGENERACION = max(RACHA_MIN, UNIDAD_MAX * REPETICIONES_MIN, TRAMO_MIN)
+
+
+def detectar_degeneracion(texto: str) -> bool:
+    cola = texto[-VENTANA_DEGENERACION:]
+    if len(cola) >= RACHA_MIN and not cola[-1].isalnum() and cola[-RACHA_MIN:] == cola[-1] * RACHA_MIN:
+        return True
+    for u in range(UNIDAD_MIN, UNIDAD_MAX + 1):
+        largo = max(u * REPETICIONES_MIN, TRAMO_MIN)
+        if len(cola) < largo:
+            break
+        if cola[-u:] != cola[-2 * u : -u] or len(set(cola[-u:])) < 2:
+            continue
+        tramo = cola[-largo:]
+        if tramo[u:] == tramo[:-u]:
+            return True
+    return False
+
+
+def _consumir(flujo: Any):
+    cola = ""
+    for trozo in flujo.text_stream:
+        cola = (cola + trozo)[-VENTANA_DEGENERACION:]
+        if detectar_degeneracion(cola):
+            raise ErrorLLMDegenerado("El modelo entró en un lazo de repetición y la respuesta se abortó.")
+    return flujo.get_final_message()
+
+
+def _transmitir(abrir: Any):
+    try:
+        with abrir() as flujo:
+            return _consumir(flujo)
+    except ErrorLLMDegenerado:
+        log.warning("El modelo entró en un lazo de repetición; se repite la llamada una vez.")
+    try:
+        with abrir() as flujo:
+            return _consumir(flujo)
+    except ErrorLLMDegenerado as e:
+        raise ErrorLLM(
+            "El modelo entró en un lazo de repetición en dos intentos consecutivos; use 'continuar' para reintentar."
+        ) from e
 
 
 class LLMClient(Protocol):
@@ -89,6 +140,8 @@ class AnthropicClient:
         previos: list[Any] = []
         try:
             respaldo = RESPALDO_CLIENTE.get(modelo) if cfg.llm.fallbacks_default else None
+            if respaldo and not modelo_permitido(respaldo):
+                respaldo = None
             resp = self._llamar(cliente, args, cfg.llm.fallbacks_default and modelo not in RESPALDO_CLIENTE)
             if resp.stop_reason == "refusal" and respaldo:
                 log.warning("%s rechazó la solicitud; se repite con %s.", modelo, respaldo)
@@ -132,8 +185,7 @@ class AnthropicClient:
         if not fallbacks:
             return self._una(cliente, args)
         try:
-            with cliente.beta.messages.stream(**args, betas=[BETA_FALLBACK], fallbacks="default") as flujo:
-                return flujo.get_final_message()
+            return _transmitir(lambda: cliente.beta.messages.stream(**args, betas=[BETA_FALLBACK], fallbacks="default"))
         except self._anthropic.BadRequestError as e:
             if "fallback" not in str(e).lower():
                 raise
@@ -142,8 +194,7 @@ class AnthropicClient:
 
     @staticmethod
     def _una(cliente: Any, args: dict):
-        with cliente.messages.stream(**args) as flujo:
-            return flujo.get_final_message()
+        return _transmitir(lambda: cliente.messages.stream(**args))
 
 
 def _tokens(resp: Any) -> tuple[int, int]:
@@ -310,24 +361,42 @@ class FakeClient:
     def _caso(self, secs: dict[str, str]) -> CasoConcretoLLM:
         decision = json.loads(secs.get("DECISION", "{}") or "{}")
         reparos = json.loads(secs.get("REPAROS", "[]") or "[]")
-        citas = [c for c in json.loads(secs.get("CITAS", "[]") or "[]") if c.get("estado") in ("ok", "alerta")]
+        disponibles = json.loads(secs.get("CITAS", "[]") or "[]")
+        citas = [c for c in disponibles if c.get("estado") == "ok"] or [c for c in disponibles if c.get("estado") == "alerta"]
+
+        def apoyo(i: int) -> str:
+            return f" Esto se apoya en la [[CITA:{citas[i % len(citas)]['id']}]]." if citas else ""
+
         parrafos = []
         for i, r in enumerate(reparos):
-            apoyo = f" Esto se apoya en la [[CITA:{citas[i % len(citas)]['id']}]]." if citas else ""
             valoracion = _VALORACION.get(
                 r.get("disposicion"), "El Despacho lo resuelve conforme al eje de la decisión."
             )
             parrafos.append(
                 ParrafoLLM(
                     reparo_ids=[r["id"]],
-                    texto=f"Sobre el reparo {r['id']}, {_minuscula(r['sintesis'])} {valoracion}{apoyo}",
+                    texto=f"Sobre el reparo {r['id']}, {_minuscula(r['sintesis'])} {valoracion}{apoyo(i)}",
                 )
             )
         if not parrafos:
             parrafos.append(
                 ParrafoLLM(
                     reparo_ids=[],
-                    texto="El Despacho revisó la decisión de primera instancia a la luz de lo expuesto en las consideraciones.",
+                    texto=(
+                        "El Despacho revisó la decisión de primera instancia a la luz de lo expuesto en las "
+                        f"consideraciones.{apoyo(0)}"
+                    ),
+                )
+            )
+        plazos = _plazos_de_ordenes(decision.get("ordenes") or [])
+        if plazos:
+            parrafos.append(
+                ParrafoLLM(
+                    reparo_ids=[],
+                    texto=(
+                        f"Frente a las órdenes que se impartirán, el Despacho considera que el plazo de {plazos} "
+                        "resulta proporcional al alcance de la medida y a la urgencia que el caso exige."
+                    ),
                 )
             )
         resultado = _VERBO_RESULTADO.get(decision.get("resultado"), "resolver sobre")
@@ -366,6 +435,28 @@ _VERBO_SUSTITUTIVA = {
     "CARENCIA_DANO_CONSUMADO": "declarar la carencia actual de objeto por daño consumado",
     "CARENCIA_SOBREVINIENTE": "declarar la carencia actual de objeto por situación sobreviniente",
 }
+
+
+_UNIDAD_PLAZO = {
+    "horas_habiles": ("hora hábil", "horas hábiles"),
+    "horas": ("hora", "horas"),
+    "dias_habiles": ("día hábil", "días hábiles"),
+    "dias": ("día", "días"),
+}
+
+
+def _plazos_de_ordenes(ordenes: list[dict]) -> str:
+    plazos: list[str] = []
+    for o in ordenes:
+        if o.get("verbo", "ORDENAR") != "ORDENAR" or o.get("mismo_termino"):
+            continue
+        plazo = o.get("plazo") or {}
+        n = plazo.get("n", 48)
+        singular, plural = _UNIDAD_PLAZO[plazo.get("unidad", "horas_habiles")]
+        texto = f"{n} {singular if n == 1 else plural}"
+        if texto not in plazos:
+            plazos.append(texto)
+    return " y ".join(plazos)
 
 
 def _decision_a_quo(fallo: str) -> str:
@@ -418,7 +509,19 @@ def _repartidas(items: list[str], k: int) -> list[str]:
     return [items[int(j * paso)] for j in range(k)]
 
 
+def _exigir_modelos_permitidos(cfg: Config) -> None:
+    for nodo in NODOS_LLM:
+        modelo = cfg.modelo_para(nodo)
+        if not modelo_permitido(modelo):
+            permitidos = ", ".join(modelos_permitidos()) or "ninguno"
+            raise ErrorLLM(
+                f"El modelo {modelo} (nodo {nodo}) no está permitido en este servidor "
+                f"({VARIABLE_MODELOS_PERMITIDOS}); permitidos: {permitidos}."
+            )
+
+
 def cliente_para(cfg: Config) -> LLMClient:
     if cfg.llm.proveedor == "fake":
         return FakeClient()
+    _exigir_modelos_permitidos(cfg)
     return AnthropicClient()

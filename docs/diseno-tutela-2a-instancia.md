@@ -87,7 +87,7 @@ flowchart TD
 | Extracción por página | `pdftotext`; si la página no tiene texto, OCR en español (tesseract `spa`) y marca `ocr=True` por página | Hay páginas imagen dentro de PDF con texto en los 3 casos; en C1 una contestación completa está escaneada. La detección por archivo no basta |
 | Rol del documento | Por nombre de archivo (`NNNEscritoTutela`, `FalloTutela`, `Impugnacion`, `Respuesta*`, `ActaReparto*`, `Auto*`, `Notifica*`) y palabras clave | La nomenclatura del expediente electrónico es estable en los 3 casos |
 | Filtro de ruido | Descarta certificados de existencia, avisos de correo, duplicados por hash y copias del fallo dentro de la impugnación | En C3 el 97 % de un anexo de 69 páginas eran certificados |
-| Guardia de radicado | CUI de 23 dígitos; los 21 primeros deben coincidir; sufijo 00 en 1ª y 01 en 2ª. Lo que no corresponde va a `docs_ajenos` | C3 traía un documento de otro caso y se notificó a direcciones ajenas |
+| Guardia de radicado | CUI de 23 dígitos; los 21 primeros deben coincidir; sufijo 00 en 1ª y 01 en 2ª. Lo que no corresponde va a `docs_ajenos`, salvo que su texto nombre a las partes o al juzgado a quo (`docs_revisar`) | C3 traía un documento de otro caso y se notificó a direcciones ajenas |
 | Completitud | Exige acta de 2ª, escrito, auto admisorio, fallo a quo, impugnación y auto que concede. Si falta algo, genera el correo de requerimiento y no crea el hilo | En C3 faltaba la impugnación y hubo que pedirla |
 | Metadatos | CUI, fechas de admisión, fallo, notificación, impugnación, concesión y reparto, juzgado a quo y partes del acta de 2ª, con regex anclada; lo dudoso lo resuelve `apertura` | Encabezado, I. ASUNTO y AutoAsume |
 | AutoAsume.docx | Plantilla pura (2 variantes de cierre y de "recibidas el día de ayer") | 3/3 casos; es lo primero que produce el despacho |
@@ -135,6 +135,7 @@ class Decision(BaseModel):
 | `caso_id`, `plantilla_gen` | `plantilla_gen` es `"A"` o `"B"` |
 | `documentos[]` | `{doc_id, rol, sha256, paginas[{n, texto, ocr}]}` |
 | `docs_ajenos[]` | |
+| `docs_revisar[]` | Documentos con CUI de otro radicado cuyo texto nombra al accionante, a la accionada o al juzgado a quo: no son ajenos; van al modelo con una marca de advertencia hasta que el usuario los confirma |
 | `metadatos` | `{cui_1a, cui_2a, fechas{...}, a_quo, accionante, accionadas[], vinculadas[], impugnante{tipo, rol, apoderado}}` |
 | `modelo`, `prompts{nodo: texto}`, `prompts_sha256{}`, `corte_indice` | Se fijan al crear el hilo |
 | `apertura` | `{cronologia[Evento], antecedentes, contestaciones[{entidad, texto, silencio}], sentencia_impugnada, impugnacion, reparos[Reparo], pruebas_nuevas_2a[]}` |
@@ -174,7 +175,7 @@ El `Ctx` no se persiste. Lleva solo la fábrica de LLM y el cliente HTTP, y se r
 | `decision` | humano | Un único `interrupt(payload, response_schema=Decision)`, sin nada antes, porque el nodo se re-ejecuta al reanudar. El payload trae los reparos, la decisión del a quo, el informe de citas, las alertas y las pruebas nuevas de 2ª | Arts. 3.6, 8.3 y 8.4: el humano decide y da el `eje` |
 | `caso_concreto` | LLM | Gem #8 (ítems 1–5) + Argumentador: problema jurídico ("Corresponde al Despacho determinar si…"), párrafos etiquetados por reparo y conclusión que anticipa el RESUELVE. Desarrolla el `eje` y las disposiciones humanas. Puede insertar marcadores `[[IMAGEN doc pág pie]]` | No recibe los documentos crudos. Solo puede citar sentencias ya verificadas |
 | `validar_caso` | code | Jurisprudencia de VI ⊆ jurisprudencia de V, por identificador normalizado; las normas quedan en lista blanca porque en C1 y C3 aparecen normas en VI que no estaban en V. Sin títulos ni viñetas (parámetro `permitir_listas`, ver pregunta 4). Todo reparo no ABSORBIDO tratado. Conclusión coherente con `resultado` y `sustitutiva` (lemas). Extensión en el rango del parámetro. Residuos de borrador ("Nota:", "TODO", "[", párrafos cortos que empiezan en infinitivo). Párrafos casi duplicados (Jaccard ≥0,5). Datos de menores, correos y direcciones como alerta | Defectos reportados por el análisis: "improcedente" en V frente a NEGAR en el RESUELVE (C3), residuos de borrador (C1), párrafos duplicados (C2), un reparo sin resolver en sus propios términos (C3) [análisis] |
-| `ensamblar` | plantilla + code | docxtpl con la plantilla de `plantilla_gen`. Fecha en letras y cifras por código. "Decisión" del encabezado derivada de `Decision`. Citas renderizadas como "Sentencia T-NNN de AAAA, con ponencia del Magistrado X", con M.P. del dataset. RESUELVE desde la biblioteca de numerales, con ordinales consecutivos y numeración romana automática. Por defecto NOTIFICAR (art. 30 D. 2591) y REMITIR a la Corte (art. 32). Las citas rechazadas salen como `⟦CITA NO VERIFICADA⟧`. Además genera `informe_verificacion.docx` y `declaracion_ia.docx` (mapa sección → plantilla/IA/humano, bitácora y decisión con autor y fecha) | **Verificado:** C3 remite a la Corte "de conformidad con el artículo 31", pero la remisión tras el fallo de 2ª la regula el art. 32 ("dentro de los diez días siguientes a la ejecutoria del fallo de segunda instancia, el juez remitirá el expediente a la Corte Constitucional"). C3 no trae numeral NOTIFICAR, aunque cierra con "NOTIFÍQUESE Y CÚMPLASE" (ver pregunta 7). Ninguno de los 3 fallos divulga el uso de IA (art. 10) [análisis] |
+| `ensamblar` | plantilla + code | docxtpl con la plantilla de `plantilla_gen`. Fecha en letras y cifras por código. "Decisión" del encabezado derivada de `Decision`. Citas renderizadas como "Sentencia T-NNN de AAAA, con ponencia del Magistrado X", con M.P. del dataset. RESUELVE desde la biblioteca de numerales, con ordinales consecutivos y numeración romana automática. Por defecto NOTIFICAR (art. 30 D. 2591) y REMITIR a la Corte (el numeral no cita artículo; ver la nota de la pregunta 7). Las citas rechazadas salen como `⟦CITA NO VERIFICADA⟧`. Además genera `informe_verificacion.docx` y `declaracion_ia.docx` (mapa sección → plantilla/IA/humano, bitácora y decisión con autor y fecha) | **Verificado:** C3 remite a la Corte "de conformidad con el artículo 31", pero la remisión tras el fallo de 2ª la regula el art. 32 ("dentro de los diez días siguientes a la ejecutoria del fallo de segunda instancia, el juez remitirá el expediente a la Corte Constitucional"). C3 no trae numeral NOTIFICAR, aunque cierra con "NOTIFÍQUESE Y CÚMPLASE" (ver pregunta 7). Ninguno de los 3 fallos divulga el uso de IA (art. 10) [análisis] |
 
 **Validadores: bloqueantes frente a alertas (v1).**
 - **Bloquean**, es decir, provocan un reintento y, si se agota, una marca visible en el documento:
@@ -263,8 +264,8 @@ El `Ctx` no se persiste. Lleva solo la fábrica de LLM y el cliente HTTP, y se r
 - **Mutación:** se inyectan en un borrador correcto los defectos reales encontrados y los validadores deben marcarlos todos:
   - M.P. de T-892/11;
   - citas no localizadas o atribuidas a otra sentencia;
-  - art. 31 en lugar del 32 al REMITIR;
-  - competencia duplicada [análisis];
+  - art. 31 en lugar del 32 al REMITIR (hoy el numeral REMITIR no cita artículo y no hay validador de este defecto; ver la nota de la pregunta 7);
+  - competencia duplicada [análisis] (la competencia sale de plantilla, `COMPETENCIA_1`, en un solo párrafo; no hay un validador específico);
   - fecha 31/09 [análisis];
   - radicado ajeno [análisis];
   - "improcedente" frente a NEGAR [análisis];
@@ -298,4 +299,6 @@ El `Ctx` no se persiste. Lleva solo la fábrica de LLM y el cliente HTTP, y se r
 5. **¿Consideraciones antes o después de decidir?** Su flujo dice antes. En los 3 casos V está alineado con el eje de la decisión, lo que sugiere que se escribió conociéndola. Este diseño mantiene su orden y usa "rehacer consideraciones con instrucción" para alinear.
 6. **Banco de párrafos.** ¿Tiene uno? ¿Acepta congelar los bloques verificados?
 7. **RESUELVE estándar.** ¿NOTIFICAR va siempre como numeral? C1 y C2 lo traen; C3 solo cierra con "NOTIFÍQUESE Y CÚMPLASE". ¿REMITIR con el art. 32? ¿"Horas hábiles"? ¿El amparo en un SEGUNDO aparte?
+
+    Estado actual del artículo: el numeral REMITIR no cita artículo y el oficio a la Corte cita el 31. Los 9 fallos reales citan, al remitir, el 31 solo (12001, 40601), el 32 solo (37401, 45601, 49501), ambos (45301, 45901) o ninguno (53001, 34601); los 3 oficios reales citan el 31. Falta que el despacho confirme el 31 o el 32 (ver `README.md`, Limitaciones conocidas).
 8. **Más ejemplos.** Para 3–5 casos nuevos, ¿puede guardar las salidas intermedias de cada Gem? Faltan también CONFIRMA, MODIFICA, carencia actual de objeto, una impugnación de la accionada y un caso de salud.

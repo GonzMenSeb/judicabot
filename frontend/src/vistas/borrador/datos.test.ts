@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Bloque } from "../../api/contrato";
-import { agruparBloques, casoOracion, construirRevision, filasJev, limitePasos, tituloDelCaso } from "./datos";
+import { agruparBloques, casoOracion, construirRevision, filasJev, limitePasos, redaccionPorNodo, tituloDelCaso } from "./datos";
 import { VISTA_BORRADOR } from "./mock";
-import type { EstadoCaso } from "./tipos";
+import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const md = { impugnante_rol: "accionante", impugnante: "Marta", decision_a_quo: "negó el amparo" };
 
@@ -89,5 +89,53 @@ describe("utilidades", () => {
     expect(limitePasos(null)).toBe("borrador");
     expect(tituloDelCaso("c1", { accionante: "A", accionadas: ["B", "C"] })).toBe("A c. B, C");
     expect(tituloDelCaso("c1", null)).toBe("c1");
+  });
+});
+
+describe("redaccionPorNodo", () => {
+  const llamada = (nodo: string, pedido: string, efectivo: string | null, extra: Partial<LlamadaBitacora> = {}): LlamadaBitacora => ({
+    nodo,
+    intento: 1,
+    proveedor: "anthropic",
+    modelo_pedido: pedido,
+    modelo_efectivo: efectivo,
+    ...extra,
+  });
+
+  it("toma el modelo de la última llamada de cada nodo, en el orden de las secciones", () => {
+    const filas = redaccionPorNodo([
+      llamada("consideraciones", "claude-sonnet-5-5", "claude-sonnet-5-5"),
+      llamada("apertura", "claude-haiku-5-5", "claude-haiku-5-5"),
+      llamada("apertura", "claude-sonnet-5-5", "claude-sonnet-5-5", { intento: 2 }),
+    ]);
+    expect(filas).toEqual([
+      { nodo: "apertura", secciones: "Secciones II a IV", modelo: "Sonnet 5.5", pedido: null },
+      { nodo: "consideraciones", secciones: "Sección V", modelo: "Sonnet 5.5", pedido: null },
+    ]);
+  });
+
+  it("ignora las lecturas de Jev y los nodos que no escriben el borrador", () => {
+    const filas = redaccionPorNodo([
+      llamada("roles", "jev-1", "jev-1", { proveedor: "jev" }),
+      llamada("apertura", "jev-1", "jev-1", { proveedor: "jev" }),
+      llamada("caso_concreto", "claude-sonnet-5-5", "claude-sonnet-5-5"),
+    ]);
+    expect(filas).toEqual([]);
+  });
+
+  it("indica lo pedido solo cuando el modelo efectivo es otro y quita el sufijo de fecha", () => {
+    const filas = redaccionPorNodo([
+      llamada("apertura", "claude-haiku-5-5", "claude-sonnet-5-5"),
+      llamada("consideraciones", "claude-sonnet-5-5", "claude-sonnet-5-5-20261001"),
+    ]);
+    expect(filas[0]).toMatchObject({ modelo: "Sonnet 5.5", pedido: "Haiku 5.5" });
+    expect(filas[1]).toMatchObject({ modelo: "Sonnet 5.5", pedido: null });
+  });
+
+  it("usa el modelo pedido si no hay efectivo y tolera la bitácora ausente", () => {
+    expect(redaccionPorNodo([llamada("apertura", "claude-opus-5-5", null)])[0]).toMatchObject({ modelo: "Opus 5.5", pedido: null });
+    expect(redaccionPorNodo(undefined)).toEqual([]);
+    expect(redaccionPorNodo(null)).toEqual([]);
+    expect(redaccionPorNodo([])).toEqual([]);
   });
 });

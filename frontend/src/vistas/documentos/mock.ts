@@ -19,6 +19,7 @@ function doc(n: number, rol: RolDoc, paginas: number, evidencia: string, extra: 
     paginas_sin_texto: 0,
     ruido: false,
     ajeno: false,
+    revisar: false,
     jev_rol: rol,
     jev_confianza: 0.97,
     jev_umbral: 0.9,
@@ -31,6 +32,8 @@ const AUTO: DatosAuto = {
   fecha_reparto: "2026-10-21",
   accionante: "MARTA INÉS QUINTERO BEDOYA",
   accionada: "EPS HORIZONTE SALUD S.A.S.",
+  firmante: null,
+  cargo_firmante: null,
 };
 
 function documentosRevision(acc = "MARTA INÉS QUINTERO BEDOYA", ada = "EPS HORIZONTE SALUD S.A.S."): DocResumen[] {
@@ -65,8 +68,17 @@ function documentosCardenas(): DocResumen[] {
   ];
 }
 
+function documentoParaRevisar(): DocResumen {
+  return doc(10, "otro", 2, "Cartas del juzgado de primera instancia a otro despacho; el texto nombra al accionante y a la accionada de este caso.", {
+    jev_rol: null,
+    jev_confianza: null,
+    jev_umbral: null,
+    revisar: true,
+  });
+}
+
 const ingesta = (documentos: DocResumen[], extra: Partial<ResumenIngesta> = {}): ResumenIngesta => {
-  const presentes = new Set(documentos.filter((d) => !d.ajeno).map((d) => d.rol));
+  const presentes = new Set(documentos.filter((d) => !d.ajeno && !d.revisar).map((d) => d.rol));
   return {
     n_documentos: documentos.length,
     documentos,
@@ -74,6 +86,7 @@ const ingesta = (documentos: DocResumen[], extra: Partial<ResumenIngesta> = {}):
     esperados_faltantes: [],
     alertas: [],
     docs_ajenos: documentos.filter((d) => d.ajeno).map((d) => d.doc_id),
+    docs_revisar: documentos.filter((d) => d.revisar).map((d) => d.doc_id),
     auto: { ...AUTO },
     ...extra,
   };
@@ -110,10 +123,13 @@ const AUTO_DOCX = `${PRINCIPAL}/002AutoAsumeSegunda202600412.docx`;
 
 const casos: Record<string, CasoMock> = {
   "arango-londono": {
-    resumen: resumenCaso("arango-londono", "Arango Londoño c. EPS Ceiba Salud", "revision", 0, { n_alertas: 1 }),
-    ingesta: ingesta(documentosRevision("ÁLVARO ARANGO LONDOÑO", "EPS CEIBA SALUD S.A.S."), {
-      alertas: ["d9 009.pdf (otro): páginas sin texto legible: 2, 3."],
-      auto: { fecha: "2026-10-22", fecha_reparto: "2026-10-21", accionante: "ÁLVARO ARANGO LONDOÑO", accionada: "EPS CEIBA SALUD S.A.S." },
+    resumen: resumenCaso("arango-londono", "Arango Londoño c. EPS Ceiba Salud", "revision", 0, { n_alertas: 2, n_insumos: 10 }),
+    ingesta: ingesta([...documentosRevision("ÁLVARO ARANGO LONDOÑO", "EPS CEIBA SALUD S.A.S."), documentoParaRevisar()], {
+      alertas: [
+        "d9 009.pdf (otro): páginas sin texto legible: 2, 3.",
+        "d10 010.pdf: sus CUIs (05001 40 88 014 2025 00911) no corresponden al caso 05001 40 88 009 2026 00412, pero el texto nombra al accionante; queda para revisar y se entrega al modelo con una marca.",
+      ],
+      auto: { ...AUTO, accionante: "ÁLVARO ARANGO LONDOÑO", accionada: "EPS CEIBA SALUD S.A.S." },
     }),
     salidas: [ACTA, AUTO_DOCX, "trabajo/previo.docx"],
   },
@@ -127,7 +143,7 @@ const casos: Record<string, CasoMock> = {
     ingesta: ingesta(documentosCardenas(), {
       esperados_faltantes: ["auto_admisorio", "acta_reparto_2a"],
       alertas: ["d5 005.pdf: sus CUIs (05001 40 88 014 2025 00911) no corresponden al caso 05001 40 88 002 2026 00398; se trata como ajeno."],
-      auto: { fecha: null, fecha_reparto: null, accionante: "JAIME CÁRDENAS OSPINA", accionada: null },
+      auto: { ...AUTO, fecha: null, fecha_reparto: null, accionante: "JAIME CÁRDENAS OSPINA", accionada: null },
     }),
     salidas: ["trabajo/requerimiento.docx"],
   },
@@ -195,7 +211,7 @@ export const mocks: MockRuta[] = [
       const { roles, auto } = (cuerpo ?? {}) as { roles?: Record<string, RolDoc>; auto?: Partial<DatosAuto> };
       const documentos = caso.ingesta.documentos.map((d) => {
         const nuevo = roles?.[d.doc_id];
-        return nuevo ? { ...d, rol: nuevo, rol_origen: "usuario" as const, evidencia: "Rol fijado por el usuario.", ajeno: false } : d;
+        return nuevo ? { ...d, rol: nuevo, rol_origen: "usuario" as const, evidencia: "Rol fijado por el usuario.", ajeno: false, revisar: false } : d;
       });
       caso.ingesta = ingesta(documentos, { auto: { ...caso.ingesta.auto, ...auto }, alertas: caso.ingesta.alertas, esperados_faltantes: caso.ingesta.esperados_faltantes });
       caso.resumen.estado = caso.ingesta.faltantes.length ? "incompleto" : "revision";

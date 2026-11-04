@@ -22,6 +22,7 @@ VARIABLES = (
     "TUTELA2_EFFORT",
     "TUTELA2_MAX_TOKENS",
     "TUTELA2_MAX_RETRIES",
+    "TUTELA2_MODELOS_PERMITIDOS",
     "ANTHROPIC_API_KEY",
     "JEV_API_KEY",
 )
@@ -318,6 +319,47 @@ def test_cargar_sin_entorno_ignora_las_preferencias(cliente, caso):
     cliente.put("/api/ia", json=COMPLETA)
     assert _resumen_ia(cfgmod.cargar(caso, entorno=False)) == _resumen_ia(CONFIG_CASO)
     assert _resumen_ia(cfgmod.cargar(caso)) == COMPLETA
+
+
+def test_modelos_permitidos_filtran_la_lista_que_ofrece_la_api(cliente, monkeypatch):
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-haiku-5-5,claude-sonnet-5-5")
+    r = cliente.get("/api/ia")
+    assert r.status_code == 200
+    assert r.json()["modelos"] == ["claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert r.json()["modelo"] == "claude-sonnet-5-5"
+
+
+def test_put_con_modelo_fuera_de_la_lista_permitida_devuelve_422(cliente, archivo, monkeypatch):
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-sonnet-5-5,claude-haiku-5-5")
+    r = cliente.put("/api/ia", json={"modelo": "claude-opus-5-5"})
+    assert r.status_code == 422
+    assert r.json() == {
+        "detail": {"errores": [{"campo": "modelo", "mensaje": "debe ser uno de: claude-sonnet-5-5 o claude-haiku-5-5."}]}
+    }
+    assert not archivo.exists()
+    assert cliente.put("/api/ia", json={"modelo": "claude-haiku-5-5"}).json()["modelo"] == "claude-haiku-5-5"
+
+
+def test_put_sin_modelos_validos_en_la_lista_lo_dice(cliente, monkeypatch):
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "gpt-5")
+    r = cliente.put("/api/ia", json={"modelo": "claude-sonnet-5-5"})
+    assert r.status_code == 422
+    assert r.json()["detail"]["errores"] == [
+        {"campo": "modelo", "mensaje": "no hay modelos permitidos en este servidor (TUTELA2_MODELOS_PERMITIDOS)."}
+    ]
+    assert cliente.get("/api/ia").json()["modelos"] == []
+
+
+def test_modelo_guardado_o_del_entorno_fuera_de_la_lista_permitida_se_ignora(cliente, archivo, caso, monkeypatch):
+    archivo.parent.mkdir(parents=True, exist_ok=True)
+    archivo.write_text(json.dumps({"modelo": "claude-opus-5-5", "effort": "low"}), encoding="utf-8")
+    monkeypatch.setenv("TUTELA2_MODELOS_PERMITIDOS", "claude-sonnet-5-5")
+    guardadas = pref.leer(archivo)
+    assert guardadas.modelo is None and guardadas.effort == "low"
+    assert cliente.get("/api/ia").json()["modelo"] == "claude-sonnet-5-5"
+    monkeypatch.setenv("TUTELA2_MODELO", "claude-opus-5-5")
+    assert pref.desde_entorno().modelo is None
+    assert cfgmod.cargar(caso).llm.modelo == CONFIG_CASO.llm.modelo
 
 
 def test_los_valores_permitidos_son_coherentes_con_la_configuracion():

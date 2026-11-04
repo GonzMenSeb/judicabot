@@ -16,7 +16,7 @@ from langgraph.types import Command
 from tutela2 import config as cfgmod
 from tutela2 import expediente, fallos, graph, ingest, llm, prompts, render, resumen_caso, salidas
 from tutela2.config import Config
-from tutela2.models import DatosAuto, Ingesta, Rol
+from tutela2.models import DatosAuto, Ingesta, Rol, normalizar_decision
 
 log = logging.getLogger("tutela2")
 
@@ -60,6 +60,7 @@ def _doc_resumen(ing: Ingesta, d: Any) -> dict:
         "paginas_sin_texto": sum(1 for p in d.paginas if p.sin_texto),
         "ruido": d.ruido,
         "ajeno": d.doc_id in ing.docs_ajenos,
+        "revisar": d.doc_id in ing.docs_revisar and not d.ruido,
         "jev_rol": d.jev_rol,
         "jev_confianza": d.jev_confianza,
         "jev_umbral": d.jev_umbral,
@@ -67,6 +68,7 @@ def _doc_resumen(ing: Ingesta, d: Any) -> dict:
 
 
 def _resumen_ingesta(caso_dir: Path, ing: Ingesta) -> dict:
+    ruidosos = {d.doc_id for d in ing.documentos if d.ruido}
     return {
         "n_documentos": len(ing.documentos),
         "documentos": [_doc_resumen(ing, d) for d in ing.documentos],
@@ -74,6 +76,7 @@ def _resumen_ingesta(caso_dir: Path, ing: Ingesta) -> dict:
         "esperados_faltantes": ing.esperados_faltantes,
         "alertas": ing.alertas,
         "docs_ajenos": ing.docs_ajenos,
+        "docs_revisar": [i for i in ing.docs_revisar if i not in ruidosos],
         "metadatos": ing.metadatos.model_dump(mode="json"),
         "auto": expediente.auto_efectivo(caso_dir, ing.metadatos).model_dump(mode="json"),
     }
@@ -318,6 +321,7 @@ def decidir(caso_dir: str | Path, decision: dict) -> dict:
                 if actual == "error":
                     mensaje += ' Si ya envió la decisión, quedó guardada: use "Continuar ejecución" en la pestaña Ejecutar.'
                 return _respuesta(actual, caso_dir, ok=False, error=mensaje)
+            decision = normalizar_decision(decision)
             (caso_dir / "decision.json").write_text(
                 json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
             )

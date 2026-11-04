@@ -3,6 +3,8 @@ import type { Bloque, CitaVista, Segmento, Vista } from "../../api/contrato";
 import { cx, Hoja } from "../../ui";
 import { agruparBloques, ETIQUETA_ESTADO_CITA } from "./datos";
 
+const COLUMNAS_ANCHA = 3;
+
 export interface ContextoDocumento {
   citas: Map<string, CitaVista>;
   seleccionada: string | null;
@@ -91,9 +93,20 @@ function Bloques({ bloques, ...contexto }: ContextoDocumento & { bloques: Bloque
             </ul>
           );
         }
+        const columnas = Math.max(...grupo.bloques.map((f) => f.segmentos.length));
+        const ancha = columnas > COLUMNAS_ANCHA;
         return (
-          <div key={i} class={cx("bor-tabla-caja", plantilla)}>
-            <table class={cx("bor-tabla", grupo.bloques.every((f) => f.segmentos.length === 2) && "bor-tabla-2")}>
+          <div
+            key={i}
+            class={cx("bor-tabla-caja", plantilla)}
+            role={ancha ? "region" : undefined}
+            tabIndex={ancha ? 0 : undefined}
+            aria-label={ancha ? "Tabla, desplazable horizontalmente" : undefined}
+          >
+            <table
+              class={cx("bor-tabla", grupo.bloques.every((f) => f.segmentos.length === 2) && "bor-tabla-2", ancha && "bor-tabla-ancha")}
+              style={ancha ? { "--columnas": columnas } : undefined}
+            >
               <tbody>
                 {grupo.bloques.map((fila) => (
                   <tr key={fila.id}>

@@ -36,6 +36,9 @@ ENV PATH="/app/backend/.venv/bin:$PATH" \
 RUN mkdir -p /data/casos /home/app/.cache/tutela2 \
     && chown -R app:app /data /home/app/.cache
 
+ARG GIT_SHA=
+ENV JUDICABOT_REVISION=$GIT_SHA
+
 USER app
 EXPOSE 8000
 

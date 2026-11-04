@@ -24,6 +24,7 @@ from tutela2.jev import (
     descripcion_error,
     llamada_fallida,
     llamada_ia,
+    transcribir_preguntas,
 )
 from tutela2.models import LlamadaIA
 
@@ -341,6 +342,7 @@ def test_llamada_fallida_registra_el_error_sin_texto_ni_clave():
     assert d["error"] == "Jev respondió 500: boom" and d["modelo_pedido"] == "jev-latest" and d["modelo_efectivo"] is None
     assert d["sha256_entrada"] == hashlib.sha256("texto secreto".encode("utf-8")).hexdigest()
     assert "texto secreto" not in json.dumps(d)
+    assert "¿Qué rol cumple el documento?" in d["instrucciones"] and "- otro: Ninguno de los anteriores." in d["instrucciones"]
 
 
 def test_error_inesperado_se_describe_sin_el_mensaje_original():
@@ -413,7 +415,7 @@ def test_llamada_ia_no_contiene_la_clave_ni_el_texto(monkeypatch):
     d = llamada_ia("roles", "texto secreto", PREGUNTA_EJEMPLO, RESP)
     volcado = json.dumps(d, ensure_ascii=False)
     assert d["proveedor"] == "jev" and "texto secreto" not in volcado and "k-secreta-xyz" not in volcado
-    assert "Sentencia de primera instancia" not in volcado and "fallo_a_quo" not in volcado
+    assert d["instrucciones"] and "texto secreto" not in d["instrucciones"]
 
 
 def test_llamada_ia_es_un_registro_valido_con_los_hashes_de_lo_enviado():
@@ -431,7 +433,11 @@ def test_llamada_ia_es_un_registro_valido_con_los_hashes_de_lo_enviado():
         d["sha256_salida"]
         == hashlib.sha256(json.dumps(RESP.respuestas, ensure_ascii=False).encode("utf-8")).hexdigest()
     )
-    assert d["error"] is None and d["instrucciones"] is None
+    assert d["error"] is None
+    assert d["instrucciones"] == (
+        "=== rol ===\n¿Qué rol cumple el documento?\nOpciones:\n"
+        "- fallo_a_quo: Sentencia de primera instancia.\n- otro: Ninguno de los anteriores."
+    )
 
 
 def test_llamada_ia_hashea_el_estado_objeto_y_distingue_el_orden_de_las_opciones():
@@ -446,6 +452,28 @@ def test_llamada_ia_hashea_el_estado_objeto_y_distingue_el_orden_de_las_opciones
     assert (
         llamada_ia("metadatos", {"a": "ñ"}, invertida, RESP)["sha256_instrucciones"] != directa["sha256_instrucciones"]
     )
+    assert llamada_ia("metadatos", {"a": "ñ"}, invertida, RESP)["instrucciones"] != directa["instrucciones"]
+
+
+def test_transcripcion_de_las_preguntas_incluye_cada_pregunta_con_sus_opciones_y_nunca_el_estado():
+    preguntas = {
+        "sentido": {"type": "choice", "instructions": "¿Qué decide el fallo?", "criteria": {"ampara": "Concede.", "niega": "Deniega."}},
+        "rol": {"type": "choice", "instructions": "¿Quién impugna?", "criteria": {"accionante": "Quien tutela."}},
+    }
+    texto = transcribir_preguntas(preguntas)
+    assert texto.split("\n\n") == [
+        "=== sentido ===\n¿Qué decide el fallo?\nOpciones:\n- ampara: Concede.\n- niega: Deniega.",
+        "=== rol ===\n¿Quién impugna?\nOpciones:\n- accionante: Quien tutela.",
+    ]
+    d = llamada_ia("roles", "texto secreto del expediente", preguntas, RESP)
+    assert d["instrucciones"] == texto and "texto secreto" not in d["instrucciones"]
+
+
+@pytest.mark.parametrize("pregunta", [{}, {"type": "choice"}, {"criteria": {}}, {"instructions": "Solo instrucción"}])
+def test_transcripcion_tolera_preguntas_sin_instrucciones_o_sin_criterios(pregunta):
+    texto = transcribir_preguntas({"p": pregunta})
+    assert texto.startswith("=== p ===") and "Opciones:" not in texto
+    assert transcribir_preguntas({}) == ""
 
 
 def test_llamada_ia_acepta_el_modelo_pedido():

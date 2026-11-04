@@ -1,0 +1,57 @@
+[
+  {
+    "archivo": "C-543-92.min.html",
+    "url": "https://www.corteconstitucional.gov.co/relatoria/1992/C-543-92.htm",
+    "descargado": "2026-11-04",
+    "sha256_original": "5f1455267c7a8d2c3c5922e7135321a30475382be4c9dcefd588952a5edf653b",
+    "bytes_original": 516270,
+    "codificacion_original": "cp1252",
+    "bytes_extracto": 20206,
+    "trozos_conservados": 56,
+    "muestra": "Mayoría con la variante 'otro medio judicial para su defensa'; mención en línea de una aclaración de voto de otro caso; firmas, COMUNICADO, MAGISTRADOS DISIDENTES y título del salvamento; el literal 'no disponga de otro medio de defensa judicial' solo dentro del salvamento."
+  },
+  {
+    "archivo": "C-774-01.min.html",
+    "url": "https://www.corteconstitucional.gov.co/relatoria/2001/C-774-01.htm",
+    "descargado": "2026-11-04",
+    "sha256_original": "4981c7eafccc05e9e336484e6a613332385c264d20d02e218781d5bc82ad7e33",
+    "bytes_original": 430639,
+    "codificacion_original": "cp1252",
+    "bytes_extracto": 12007,
+    "trozos_conservados": 35,
+    "muestra": "Aclaración de voto sin salvamento; 'inmutables, vinculantes y definitivas' en el extracto y en el cuerpo de la mayoría; notas al pie de la mayoría después de la aclaración."
+  },
+  {
+    "archivo": "T-1215-03.min.html",
+    "url": "https://www.corteconstitucional.gov.co/relatoria/2003/T-1215-03.htm",
+    "descargado": "2026-11-04",
+    "sha256_original": "97f24b9c642ce2085f8e9aeb723eb7a0c0825528b47eec87156c20dd83451117",
+    "bytes_original": 82703,
+    "codificacion_original": "cp1252",
+    "bytes_extracto": 6591,
+    "trozos_conservados": 17,
+    "muestra": "Sin votos separados; 'sin motivo expresamente justificado' en el extracto y en el cuerpo de la mayoría."
+  },
+  {
+    "archivo": "C-313-14.min.html",
+    "url": "https://www.corteconstitucional.gov.co/relatoria/2014/C-313-14.htm",
+    "descargado": "2026-11-04",
+    "sha256_original": "05ba2597eef9d44d14a321d36c55536c044f2a0943c7906c88a6623c7354ab4e",
+    "bytes_original": 4616584,
+    "codificacion_original": "cp1252",
+    "bytes_extracto": 18431,
+    "trozos_conservados": 68,
+    "muestra": "Firmas con 'Con aclaración de voto' y 'Con salvamento parcial de voto', ANEXO con el texto de la ley, tres votos separados con títulos distintos, dos autos anexos."
+  },
+  {
+    "archivo": "SU712-13.min.html",
+    "url": "https://www.corteconstitucional.gov.co/relatoria/2013/SU712-13.htm",
+    "descargado": "2026-11-04",
+    "sha256_original": "5b827ffc03b15d071d51b1665ae86d3ef33060e208fb9e320e3c5c1148a21b54",
+    "bytes_original": 727351,
+    "codificacion_original": "cp1252",
+    "bytes_extracto": 7110,
+    "trozos_conservados": 41,
+    "muestra": "Variante de títulos 'SALVAMENTO DE VOTO DEL MAGISTRADO' y 'ACLARACIÓN DE VOTO DEL MAGISTRADO' con marcas 'Con salvamento de voto' en las firmas."
+  }
+]
