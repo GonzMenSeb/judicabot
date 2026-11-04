@@ -9,7 +9,8 @@ DESTINO = Path(__file__).resolve().parents[2] / "frontend" / "openapi.json"
 def generar() -> str:
     from tutela2.server import app
 
-    return json.dumps(app.openapi(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    texto = json.dumps(app.openapi(), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    return texto.replace("Unprocessable Content", "Unprocessable Entity")
 
 
 def main() -> None:
