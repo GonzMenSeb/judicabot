@@ -223,6 +223,17 @@ def test_pregunta_rol_es_una_sola_pregunta_choice_con_descripcion_por_rol():
     assert all(isinstance(d, str) and d.strip() for d in p["criteria"].values())
 
 
+def test_pregunta_rol_instruye_usar_el_nombre_del_archivo_como_apoyo_del_contenido():
+    p = pregunta_rol()["rol"]
+    instrucciones = p["instructions"]
+    assert "Nombre del archivo:" in instrucciones
+    assert "contenido" in instrucciones and "prima" in instrucciones
+    assert "nombre del archivo" in p["criteria"]["otro"]
+    assert "nombrado memorial" in p["criteria"]["memorial"]
+    ops, _ = segunda_opinion([doc_con_texto("1a-001", "012MemorialImpulso.pdf")], FakeJev(choice("memorial")), CFG)
+    assert "Nombre del archivo:" in ops[0].llamada["instrucciones"]
+
+
 def test_invertir_reordena_las_opciones():
     directo = list(pregunta_rol()["rol"]["criteria"])
     inverso = pregunta_rol(invertir=True)["rol"]["criteria"]

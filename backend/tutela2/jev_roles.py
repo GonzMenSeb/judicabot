@@ -16,7 +16,11 @@ EVIDENCIA_JEV = "El código no halló rasgos del documento; el rol lo propone Je
 
 INSTRUCCIONES_ROL = (
     "¿Qué papel cumple este documento dentro de un expediente de acción de tutela? "
-    "Elige el rol que mejor lo describe por su contenido; si ninguno encaja con claridad, elige 'otro'."
+    "El estado trae 'Nombre del archivo:' y un fragmento inicial del documento. "
+    "Elige el rol que mejor lo describe teniendo en cuenta ambos: cuando el contenido sea claro, "
+    "prima sobre el nombre del archivo; cuando el fragmento sea parcial, ambiguo o tenga ruido de "
+    "lectura, apóyate en 'Nombre del archivo:' para desambiguar o completar. Si ni por su contenido "
+    "ni por el nombre del archivo encaja con claridad en un rol, elige 'otro'."
 )
 
 DESCRIPCIONES_ROL: dict[str, str] = {
@@ -31,10 +35,10 @@ DESCRIPCIONES_ROL: dict[str, str] = {
     "auto_concede_impugnacion": "Auto breve del juzgado de primera instancia que concede la impugnación y remite el expediente al superior.",
     "notificacion": "Constancia o correo del juzgado que notifica o comunica una providencia a las partes.",
     "correo": "Mensaje de correo electrónico que no es una notificación, una impugnación ni una contestación.",
-    "memorial": "Escrito breve de una parte dirigido al juzgado durante el trámite, titulado memorial, que no es la tutela, la contestación ni la impugnación.",
+    "memorial": "Escrito breve de una parte dirigido al juzgado durante el trámite, titulado o nombrado memorial, que no es la tutela, la contestación ni la impugnación.",
     "indice": "Índice del expediente digital o electrónico: lista de los documentos que lo componen.",
     "anexo": "Documento aportado como prueba o soporte, como una cédula, un poder, una historia clínica o un certificado, que no es un escrito del proceso.",
-    "otro": "Ninguno de los anteriores, o no se puede determinar por su contenido.",
+    "otro": "Ninguno de los anteriores, o no se puede determinar ni por su contenido ni por el nombre del archivo.",
 }
 
 
