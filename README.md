@@ -18,7 +18,7 @@ El diseño está en `docs/diseno-tutela-2a-instancia.md` y los contratos entre m
 - `poppler-utils` (`pdftotext`): extrae el texto mucho más rápido y en mejor orden. Si falta, se usa `pypdf` y la ingesta deja una alerta.
 - OCR para páginas escaneadas: `tesseract-ocr` y `tesseract-ocr-spa` (Debian/Ubuntu: `sudo apt install tesseract-ocr tesseract-ocr-spa`) y el extra de Python `uv sync --extra ocr`. Si falta alguno (o `ocr` está desactivado en la configuración), esas páginas quedan sin texto, la ingesta deja una alerta y su contenido no llega al modelo.
 - Para la interfaz: Node 24 y pnpm (`corepack enable`). Solo hace falta para compilarla; el servidor solo sirve los archivos ya generados. La imagen Docker la compila en su primera etapa.
-- Red en la primera ejecución, incluso en modo `fake`: se descarga el dataset de sentencias de la Corte (datos.gov.co, unos 3,6 MB) y, con `verificar_relatoria` activo, las páginas de relatoría citadas (corteconstitucional.gov.co). Todo queda en `~/.cache/tutela2` (carpeta configurable con `cache_dir`). El dataset se refresca a los 30 días; sin red se usa la copia local si existe.
+- Red en la primera ejecución, incluso en modo `fake`: se descarga el dataset de sentencias de la Corte (datos.gov.co, unos 3,6 MB) y, con `verificar_relatoria` activo, las páginas de relatoría citadas (corteconstitucional.gov.co). Todo queda en `~/.cache/tutela2` (carpeta configurable con `cache_dir`, o con la variable `TUTELA2_CACHE_DIR`, que manda sobre `cache_dir`; la imagen Docker la fija en `/data/casos/.cache` para que el caché de OCR, relatoría y dataset sobreviva a los despliegues). El dataset se refresca a los 30 días; sin red se usa la copia local si existe.
 
 ## Cómo ejecutar la interfaz
 

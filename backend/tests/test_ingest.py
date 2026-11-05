@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+import time
 import types
 from pathlib import Path
 
@@ -9,7 +11,7 @@ import pytest
 from docx import Document
 from pypdf import PdfWriter
 
-from tutela2 import ingest
+from tutela2 import eventos, ingest
 from tutela2.config import Config
 from tutela2.ingest import (
     ROLES_ESPERADOS,
@@ -20,7 +22,7 @@ from tutela2.ingest import (
     reaplicar,
     texto_para_llm,
 )
-from tutela2.models import Ingesta, Pagina
+from tutela2.models import Ingesta
 
 CUI = "05001408803320270000100"
 OTRO_CUI = "76001310300820150054300"
@@ -538,15 +540,11 @@ def test_pdf_sin_texto_no_obligatorio_no_alerta_por_pagina(tmp_path):
 def test_ocr_aplicado_cuando_esta_disponible(tmp_path, monkeypatch):
     pdf_en_blanco(tmp_path / "insumos" / P1 / "004EscritoTutela.pdf", paginas=2)
 
-    def falso_ocr(ruta, doc_id, sha, dir_cache, paginas, alertas):
-        paginas[0].texto, paginas[0].ocr, paginas[0].sin_texto = (
-            "texto leído por ocr " * 3,
-            True,
-            False,
-        )
+    def falso_ocr(pdf, n, sha, dir_cache):
+        return "texto leído por ocr " * 3 if n == 1 else ""
 
     monkeypatch.setattr(ingest, "_ocr_disponible", lambda: True)
-    monkeypatch.setattr(ingest, "_aplicar_ocr", falso_ocr)
+    monkeypatch.setattr(ingest, "_ocr_pagina", falso_ocr)
     ing = ingerir(tmp_path, Config(ocr=True, cache_dir=str(tmp_path / "cache")))
     p1, p2 = ing.documentos[0].paginas
     assert p1.ocr and not p1.sin_texto and p2.sin_texto and not p2.ocr
@@ -557,7 +555,7 @@ def test_ocr_desactivado_no_lo_invoca(tmp_path, monkeypatch):
     pdf_en_blanco(tmp_path / "insumos" / "a.pdf")
     monkeypatch.setattr(ingest, "_ocr_disponible", lambda: True)
     monkeypatch.setattr(
-        ingest, "_aplicar_ocr", lambda *a: pytest.fail("no debía invocarse")
+        ingest, "_ocr_pagina", lambda *a: pytest.fail("no debía invocarse")
     )
     ing = ingerir(tmp_path, Config(ocr=False))
     assert ing.documentos[0].paginas[0].sin_texto
@@ -569,6 +567,9 @@ class _PaginaFalsa:
 
     def to_pil(self):
         return "imagen"
+
+    def close(self):
+        pass
 
 
 def test_cache_de_ocr_por_sha_y_pagina(tmp_path, monkeypatch):
@@ -769,6 +770,281 @@ def test_ocr_usa_psm_1_y_descarta_pagina_ilegible(tmp_path, monkeypatch):
     assert ing.documentos[0].paginas[0].sin_texto
 
 
+class OcrFalso:
+    def __init__(self) -> None:
+        self.candado = threading.Lock()
+        self.llamadas: list[str] = []
+        self.render_activos = self.render_max = 0
+        self.ocr_activos = self.ocr_max = 0
+        self.omp: set[str | None] = set()
+        self.espera = None
+        self.falla_en: set[str] = set()
+
+    @staticmethod
+    def texto(imagen: str) -> str:
+        return " ".join([f"texto reconocido {imagen}"] * 3)
+
+    def reconocer(self, imagen, lang, config=None):
+        with self.candado:
+            self.llamadas.append(imagen)
+            self.omp.add(os.environ.get("OMP_THREAD_LIMIT"))
+            self.ocr_activos += 1
+            self.ocr_max = max(self.ocr_max, self.ocr_activos)
+        try:
+            if self.espera:
+                self.espera(imagen)
+            if imagen in self.falla_en:
+                raise RuntimeError("tesseract murió")
+            return f"  {self.texto(imagen)}  "
+        finally:
+            with self.candado:
+                self.ocr_activos -= 1
+
+
+class _PaginaDe:
+    def __init__(self, ocr: OcrFalso, nombre: str, n: int) -> None:
+        self.ocr, self.nombre, self.n = ocr, nombre, n
+
+    def render(self, scale):
+        with self.ocr.candado:
+            self.ocr.render_activos += 1
+            self.ocr.render_max = max(self.ocr.render_max, self.ocr.render_activos)
+        time.sleep(0.02)
+        with self.ocr.candado:
+            self.ocr.render_activos -= 1
+        return self
+
+    def to_pil(self):
+        return f"{self.nombre}-p{self.n}"
+
+    def close(self):
+        pass
+
+
+class _PdfDe:
+    def __init__(self, ocr: OcrFalso, nombre: str) -> None:
+        self.ocr, self.nombre = ocr, nombre
+
+    def __getitem__(self, i):
+        return _PaginaDe(self.ocr, self.nombre, i + 1)
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def ocr_falso(monkeypatch):
+    import pypdfium2
+
+    ocr = OcrFalso()
+    monkeypatch.setitem(sys.modules, "pytesseract", types.SimpleNamespace(image_to_string=ocr.reconocer))
+    monkeypatch.setattr(pypdfium2, "PdfDocument", lambda ruta: _PdfDe(ocr, Path(ruta).stem))
+    monkeypatch.setattr(ingest, "_ocr_disponible", lambda: True)
+    monkeypatch.setattr(ingest, "_max_hilos", lambda: 4)
+    monkeypatch.delenv("OMP_THREAD_LIMIT", raising=False)
+    monkeypatch.delenv("TUTELA2_CACHE_DIR", raising=False)
+    return ocr
+
+
+def _escaneados(base: Path, **paginas: int) -> None:
+    for nombre, n in paginas.items():
+        pdf_en_blanco(base / "insumos" / P1 / f"{nombre}.pdf", paginas=n)
+
+
+def _cfg(tmp_path: Path, nombre: str = "cache") -> Config:
+    return Config(ocr=True, cache_dir=str(tmp_path / nombre))
+
+
+def test_ocr_paralelo_por_paginas_da_el_mismo_resultado_que_en_serie(tmp_path, ocr_falso, monkeypatch):
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2, "020Anexo": 4})
+    escribir(tmp_path, P1 + "030Nota.txt", ESCRITO)
+    resultados = {}
+    for hilos in (1, 4):
+        monkeypatch.setattr(ingest, "_max_hilos", lambda h=hilos: h)
+        resultados[hilos] = ingerir(tmp_path, _cfg(tmp_path, f"cache{hilos}"))
+    serie, paralelo = resultados[1], resultados[4]
+    assert paralelo.model_dump() == serie.model_dump()
+    assert [d.doc_id for d in paralelo.documentos] == ["1a-001", "1a-002", "1a-003", "1a-004"]
+    assert [d.nombre for d in paralelo.documentos] == ["004Escrito.pdf", "017Fallo.pdf", "020Anexo.pdf", "030Nota.txt"]
+    for d in paralelo.documentos[:3]:
+        stem = Path(d.nombre).stem
+        assert [p.n for p in d.paginas] == list(range(1, len(d.paginas) + 1))
+        for p in d.paginas:
+            assert (p.texto, p.ocr, p.sin_texto) == (OcrFalso.texto(f"{stem}-p{p.n}"), True, False)
+            en_disco = tmp_path / "cache4" / "ocr-psm1" / d.sha256 / f"{p.n}.txt"
+            assert en_disco.read_text(encoding="utf-8") == p.texto
+    assert not paralelo.documentos[3].paginas[0].ocr
+
+
+def test_dos_paginas_ocr_de_un_mismo_documento_corren_a_la_vez(tmp_path, ocr_falso):
+    barrera = threading.Barrier(2, timeout=5)
+    ocr_falso.espera = lambda imagen: barrera.wait()
+    _escaneados(tmp_path, **{"004Escrito": 2})
+    ing = ingerir(tmp_path, _cfg(tmp_path))
+    assert [p.ocr for p in ing.documentos[0].paginas] == [True, True]
+    assert not any("el OCR falló" in a for a in ing.alertas)
+    assert ocr_falso.ocr_max == 2
+
+
+def test_el_render_de_pdfium_se_serializa_y_el_reconocimiento_no(tmp_path, ocr_falso):
+    barrera = threading.Barrier(2, timeout=5)
+    ocr_falso.espera = lambda imagen: barrera.wait()
+    _escaneados(tmp_path, **{"004Escrito": 4, "017Fallo": 2})
+    ing = ingerir(tmp_path, _cfg(tmp_path))
+    assert all(p.ocr for d in ing.documentos for p in d.paginas)
+    assert ocr_falso.render_max == 1 and ocr_falso.ocr_max == 2
+
+
+def test_ocr_corre_con_omp_thread_limit_1_y_lo_restituye(tmp_path, ocr_falso):
+    _escaneados(tmp_path, **{"004Escrito": 2, "017Fallo": 2})
+    ingerir(tmp_path, _cfg(tmp_path))
+    assert ocr_falso.omp == {"1"} and "OMP_THREAD_LIMIT" not in os.environ
+
+
+def test_si_falla_una_pagina_solo_se_conservan_las_anteriores_y_hay_una_alerta(tmp_path, ocr_falso):
+    ocr_falso.falla_en = {"004Escrito-p2"}
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2})
+    ing = ingerir(tmp_path, _cfg(tmp_path))
+    escrito, fallo = ing.documentos
+    assert [(p.ocr, p.sin_texto) for p in escrito.paginas] == [(True, False), (False, True), (False, True)]
+    assert [(p.ocr, p.sin_texto) for p in fallo.paginas] == [(True, False)] * 2
+    fallos = [a for a in ing.alertas if "el OCR falló" in a]
+    assert len(fallos) == 1 and "004Escrito.pdf" in fallos[0] and "tesseract murió" in fallos[0]
+
+
+def test_la_segunda_lectura_sale_de_la_cache_sin_reconocer(tmp_path, ocr_falso):
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2})
+    primera = ingerir(tmp_path, _cfg(tmp_path))
+    assert len(ocr_falso.llamadas) == 5
+    segunda = ingerir(tmp_path, _cfg(tmp_path))
+    assert len(ocr_falso.llamadas) == 5
+    assert segunda.model_dump() == primera.model_dump()
+
+
+@pytest.fixture
+def buffer_job():
+    buffer = eventos.Buffer()
+    token = eventos.activar(buffer)
+    yield buffer
+    eventos.desactivar(token)
+
+
+def _lee(buffer: eventos.Buffer) -> list[dict]:
+    return [e for e in buffer.leer(0)[0] if e["etapa"] == "ingesta" and e["tipo"] == "lee"]
+
+
+def _de_documento(e: dict) -> bool:
+    return bool(e["datos"]) and "paginas" in e["datos"] and "pagina" not in e["datos"]
+
+
+def _de_pagina(e: dict) -> bool:
+    return bool(e["datos"]) and "pagina" in e["datos"]
+
+
+def _de_arranque(e: dict) -> bool:
+    return bool(e["datos"]) and "ocr_documentos" in e["datos"]
+
+
+def test_el_evento_de_cada_documento_sale_al_terminar_no_en_orden_de_archivo(tmp_path, ocr_falso, buffer_job):
+    _escaneados(tmp_path, **{"004Escrito": 2})
+    escribir(tmp_path, P1 + "030Nota.txt", ESCRITO)
+    ingerir(tmp_path, _cfg(tmp_path))
+    lee = _lee(buffer_job)
+    documentos = [e for e in lee if _de_documento(e)]
+    assert [e["datos"]["doc_id"] for e in documentos] == ["1a-002", "1a-001"]
+    assert [(e["datos"]["n_hecho"], e["datos"]["n_total"]) for e in documentos] == [(1, 2), (2, 2)]
+    posicion = {id(e): i for i, e in enumerate(lee)}
+    [arranque] = [e for e in lee if _de_arranque(e)]
+    assert posicion[id(documentos[0])] < posicion[id(arranque)] < posicion[id(documentos[1])]
+    assert all(set(e["datos"]) >= {"doc_id", "archivo", "paginas", "ocr", "sin_texto", "alertas", "n_hecho", "n_total"} for e in documentos)
+
+
+def test_arranque_del_ocr_y_un_evento_por_pagina_con_contador(tmp_path, ocr_falso, buffer_job):
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2})
+    ingerir(tmp_path, _cfg(tmp_path))
+    lee = _lee(buffer_job)
+    [arranque] = [e for e in lee if _de_arranque(e)]
+    assert arranque["texto"] == "OCR: 2 documentos escaneados, 5 páginas por leer."
+    assert arranque["datos"] == {"ocr_documentos": 2, "ocr_paginas": 5, "desde_cache": 0}
+    paginas = [e for e in lee if _de_pagina(e)]
+    assert len(paginas) == 5
+    assert sorted(e["datos"]["n_ocr_hecho"] for e in paginas) == [1, 2, 3, 4, 5]
+    assert {e["datos"]["n_ocr_total"] for e in paginas} == {5}
+    assert all(set(e["datos"]) == {"doc_id", "archivo", "pagina", "paginas", "ocr", "n_ocr_hecho", "n_ocr_total"} for e in paginas)
+    assert all(e["datos"]["ocr"] is True for e in paginas)
+    por_doc = {(e["datos"]["doc_id"], e["datos"]["pagina"]): e for e in paginas}
+    assert set(por_doc) == {("1a-001", 1), ("1a-001", 2), ("1a-001", 3), ("1a-002", 1), ("1a-002", 2)}
+    ejemplo = por_doc[("1a-001", 2)]
+    assert ejemplo["texto"] == f"OCR: {P1}004Escrito.pdf, página 2 de 3."
+    assert ejemplo["datos"]["archivo"] == f"{P1}004Escrito.pdf" and ejemplo["datos"]["paginas"] == 3
+    posicion = {id(e): i for i, e in enumerate(lee)}
+    assert all(posicion[id(arranque)] < posicion[id(e)] for e in paginas)
+    for d in ("1a-001", "1a-002"):
+        [final] = [e for e in lee if _de_documento(e) and e["datos"]["doc_id"] == d]
+        assert all(posicion[id(e)] < posicion[id(final)] for (doc, _), e in por_doc.items() if doc == d)
+        assert final["datos"]["ocr"] == (3 if d == "1a-001" else 2)
+
+
+def test_arranque_en_singular(tmp_path, ocr_falso, buffer_job):
+    _escaneados(tmp_path, **{"004Escrito": 1})
+    ingerir(tmp_path, _cfg(tmp_path))
+    [arranque] = [e for e in _lee(buffer_job) if _de_arranque(e)]
+    assert arranque["texto"] == "OCR: 1 documento escaneado, 1 página por leer."
+
+
+def test_las_paginas_desde_cache_no_emiten_evento(tmp_path, ocr_falso, buffer_job):
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2})
+    ingerir(tmp_path, _cfg(tmp_path))
+    buffer_job.agregar("sistema", "sistema", "corte")
+    desde = buffer_job.leer(0)[0][-1]["n"]
+    ingerir(tmp_path, _cfg(tmp_path))
+    nuevos = [e for e in buffer_job.leer(desde)[0] if e["etapa"] == "ingesta" and e["tipo"] == "lee"]
+    assert not [e for e in nuevos if _de_pagina(e)]
+    [arranque] = [e for e in nuevos if _de_arranque(e)]
+    assert arranque["texto"] == "OCR: 2 documentos escaneados, 5 páginas por leer (5 ya en caché)."
+    assert arranque["datos"] == {"ocr_documentos": 2, "ocr_paginas": 5, "desde_cache": 5}
+    documentos = [e for e in nuevos if _de_documento(e)]
+    assert sorted(e["datos"]["ocr"] for e in documentos) == [2, 3]
+    assert sorted(e["datos"]["n_hecho"] for e in documentos) == [1, 2]
+
+
+def test_con_cache_parcial_el_contador_llega_al_total_con_un_solo_evento_de_pagina(tmp_path, ocr_falso, buffer_job):
+    _escaneados(tmp_path, **{"004Escrito": 3, "017Fallo": 2})
+    primera = ingerir(tmp_path, _cfg(tmp_path))
+    borrada = tmp_path / "cache" / "ocr-psm1" / primera.documentos[0].sha256 / "2.txt"
+    borrada.unlink()
+    buffer_job.agregar("sistema", "sistema", "corte")
+    desde = buffer_job.leer(0)[0][-1]["n"]
+    segunda = ingerir(tmp_path, _cfg(tmp_path))
+    nuevos = [e for e in buffer_job.leer(desde)[0] if e["etapa"] == "ingesta" and e["tipo"] == "lee"]
+    [arranque] = [e for e in nuevos if _de_arranque(e)]
+    assert arranque["datos"] == {"ocr_documentos": 2, "ocr_paginas": 5, "desde_cache": 4}
+    [pagina] = [e for e in nuevos if _de_pagina(e)]
+    assert (pagina["datos"]["pagina"], pagina["datos"]["n_ocr_hecho"], pagina["datos"]["n_ocr_total"]) == (2, 5, 5)
+    assert segunda.model_dump() == primera.model_dump()
+    assert len(ocr_falso.llamadas) == 6
+
+
+def test_sin_paginas_escaneadas_no_hay_evento_de_arranque_del_ocr(tmp_path, ocr_falso, buffer_job):
+    escribir(tmp_path, P1 + "030Nota.txt", ESCRITO)
+    ingerir(tmp_path, _cfg(tmp_path))
+    lee = _lee(buffer_job)
+    assert not [e for e in lee if _de_arranque(e) or _de_pagina(e)]
+    [documento] = [e for e in lee if _de_documento(e)]
+    assert (documento["datos"]["n_hecho"], documento["datos"]["n_total"]) == (1, 1)
+
+
+def test_un_documento_ilegible_cuenta_como_terminado(tmp_path, ocr_falso, buffer_job):
+    ruta = tmp_path / "insumos" / P1 / "004Escrito.pdf"
+    ruta.parent.mkdir(parents=True)
+    ruta.write_bytes(b"esto no es un pdf")
+    escribir(tmp_path, P1 + "030Nota.txt", ESCRITO)
+    ingerir(tmp_path, _cfg(tmp_path))
+    documentos = [e for e in _lee(buffer_job) if _de_documento(e)]
+    assert sorted(e["datos"]["n_hecho"] for e in documentos) == [1, 2]
+    assert {e["datos"]["n_total"] for e in documentos} == {2}
+
+
 def test_segunda_solo_en_la_carpeta_hermana_de_la_primera(tmp_path):
     escribir(tmp_path, "01PrimeraInstancia/C01Principal/002Escrito.txt", ESCRITO)
     escribir(tmp_path, "01PrimeraInstancia/C01Principal/Sub/02 Anexos/003Escrito.txt", ESCRITO)
@@ -910,10 +1186,13 @@ def test_ocr_con_pdf_que_pdfium_no_abre_genera_alerta(tmp_path, monkeypatch):
         raise pypdfium2.PdfiumError("Data format error")
 
     monkeypatch.setattr(pypdfium2, "PdfDocument", falla)
-    alertas: list[str] = []
-    paginas = [Pagina(n=1, texto="", sin_texto=True)]
-    ingest._aplicar_ocr(tmp_path / "x.pdf", "1a-001", "sha", tmp_path, paginas, alertas)
-    assert len(alertas) == 1 and "x.pdf" in alertas[0] and paginas[0].sin_texto
+    monkeypatch.setitem(sys.modules, "pytesseract", types.SimpleNamespace(image_to_string=lambda *a, **k: "x"))
+    monkeypatch.setattr(ingest, "_ocr_disponible", lambda: True)
+    pdf_en_blanco(tmp_path / "insumos" / "x.pdf", paginas=2)
+    ing = ingerir(tmp_path, Config(ocr=True, cache_dir=str(tmp_path / "cache")))
+    alertas = [a for a in ing.alertas if "el OCR falló" in a]
+    assert len(alertas) == 1 and "x.pdf" in alertas[0] and "Data format error" in alertas[0]
+    assert all(p.sin_texto and not p.ocr for p in ing.documentos[0].paginas)
 
 
 def test_varios_accionantes_no_se_unen(tmp_path):

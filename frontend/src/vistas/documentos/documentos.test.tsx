@@ -1,7 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Evento } from "../../api/contrato";
 import { estadoServidor } from "../../estado";
 import Documentos from "./index";
+import { Progreso } from "./Progreso";
 import type { DocResumen, EstadoCaso, ResumenIngesta } from "./tipos";
 
 interface Llamada {
@@ -566,5 +568,227 @@ describe("Datos del auto: firma", () => {
 
     expect(((await screen.findByLabelText("Firmante")) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByLabelText("Cargo del firmante") as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+class FuenteSimulada {
+  static instancias: FuenteSimulada[] = [];
+  private oyentes = new Map<string, Array<(ev: Event) => void>>();
+  cerrada = false;
+
+  constructor(readonly url: string) {
+    FuenteSimulada.instancias.push(this);
+  }
+
+  addEventListener(tipo: string, oyente: (ev: Event) => void) {
+    this.oyentes.set(tipo, [...(this.oyentes.get(tipo) ?? []), oyente]);
+  }
+
+  close() {
+    this.cerrada = true;
+  }
+
+  emitir(tipo: string, datos?: unknown) {
+    const ev = datos === undefined ? new Event(tipo) : new MessageEvent(tipo, { data: JSON.stringify(datos) });
+    this.oyentes.get(tipo)?.forEach((o) => o(ev));
+  }
+}
+
+const evento = (n: number, texto: string, extra: Partial<Evento> = {}): Evento => ({
+  n,
+  t: new Date(Date.UTC(2026, 11, 3, 12, 0, n * 4)).toISOString(),
+  etapa: "ingesta",
+  tipo: "lee",
+  texto,
+  datos: null,
+  ...extra,
+});
+
+const fuente = () => FuenteSimulada.instancias[FuenteSimulada.instancias.length - 1]!;
+const emitir = (tipo: string, datos?: unknown) => act(() => fuente().emitir(tipo, datos));
+const avanzar = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+async function montarProgreso(job: () => Salida = () => ok({ id: "j1", caso: "c1", cmd: "nuevo", estado: "corriendo", error: null })) {
+  const alTerminar = vi.fn();
+  const llamadas = instalar({ "GET /api/jobs/j1": job });
+  render(<Progreso jobId="j1" onFin={alTerminar} />);
+  await avanzar(0);
+  return { alTerminar, llamadas };
+}
+
+describe("Progreso de la lectura", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FuenteSimulada.instancias = [];
+    vi.stubGlobal("EventSource", FuenteSimulada);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("muestra la barra superior, la etapa de lectura y la línea de tiempo con los pasos", async () => {
+    await montarProgreso();
+    expect(fuente().url).toBe("/api/jobs/j1/eventos");
+
+    emitir("open");
+    emitir("evento", evento(1, "Se leen 3 archivos de insumos (3 PDF).", { datos: { archivos: 3 } }));
+    emitir("evento", evento(2, "01PrimeraInstancia/C01Principal/009_009RespuestaEntidad.pdf: 8 páginas."));
+    emitir("evento", evento(3, "Están los documentos obligatorios: escrito_tutela.", { tipo: "verifica" }));
+
+    expect(screen.getByRole("heading", { level: 2, name: "Lectura del expediente" })).toBeTruthy();
+    expect(screen.getByText("Se leen 3 archivos de insumos (3 PDF).")).toBeTruthy();
+    expect(screen.getByText("01PrimeraInstancia/C01Principal/009_009RespuestaEntidad.pdf: 8 páginas.")).toBeTruthy();
+    expect(screen.getByText("Están los documentos obligatorios: escrito_tutela.")).toBeTruthy();
+    expect(screen.getAllByText("Lee")).toHaveLength(2);
+    expect(screen.getByText("Verifica")).toBeTruthy();
+    expect(screen.getByText("00:04")).toBeTruthy();
+
+    const barra = document.querySelector(".tz-top")!;
+    expect(barra.textContent).toContain("Tiempo");
+    expect(barra.textContent).toContain("Modelo");
+    expect(barra.textContent).toMatch(/Pasos\s*3/);
+    expect(screen.getByText("Conectado · Lectura del expediente")).toBeTruthy();
+    expect(screen.getByText("Esperando el siguiente paso…")).toBeTruthy();
+  });
+
+  it("lista las seis etapas: la lectura en curso y las otras cinco pendientes", async () => {
+    await montarProgreso();
+    emitir("evento", evento(1, "Se leen 2 archivos.", { datos: { archivos: 2 } }));
+
+    const etapas = within(screen.getByRole("list", { name: "Etapas del proceso" })).getAllByRole("button");
+    expect(etapas).toHaveLength(6);
+    expect(etapas[0]!.textContent).toContain("Lectura del expediente");
+    expect(etapas[0]!.textContent).toContain("(en curso)");
+    const pendientes = ["Apertura", "Consideraciones", "Verificación de citas", "Caso concreto", "Documentos"];
+    pendientes.forEach((titulo, i) => {
+      expect(etapas[i + 1]!.textContent).toContain(titulo);
+      expect(etapas[i + 1]!.textContent).toContain("(pendiente)");
+    });
+  });
+
+  it("clasifica en la lectura los eventos reales de la ingesta, incluidos el aviso del sistema y la fase de OCR", async () => {
+    await montarProgreso();
+    emitir("evento", evento(1, "Inicio de «nuevo» en el caso c1.", { etapa: "sistema", tipo: "sistema" }));
+    expect(screen.getByRole("heading", { level: 2, name: "Mensajes del sistema" })).toBeTruthy();
+
+    emitir("evento", evento(2, "Se leen 2 archivos de insumos (2 PDF).", { datos: { archivos: 2 } }));
+    emitir("evento", evento(3, "OCR: 1 documento escaneado, 5 páginas por leer.", { datos: { ocr_documentos: 1, ocr_paginas: 5, desde_cache: 0 } }));
+    emitir("evento", evento(4, "OCR: 02.pdf, página 1 de 5.", { datos: { doc_id: "1a-002", archivo: "02.pdf", pagina: 1, paginas: 5, ocr: true, n_ocr_hecho: 1, n_ocr_total: 5 } }));
+    emitir("evento", evento(5, "02.pdf: 5 páginas, 5 leídas con OCR.", { datos: { doc_id: "1a-002", n_hecho: 1, n_total: 2 } }));
+    emitir("evento", evento(6, "Segunda opinión de Jev (modo sombra): 2 consultas.", { tipo: "verifica" }));
+    emitir("evento", evento(7, "02.pdf: rol escrito_tutela (origen: contenido).", { datos: { doc_id: "1a-002", rol: "escrito_tutela" } }));
+
+    expect(screen.getByRole("heading", { level: 2, name: "Lectura del expediente" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Lectura del expediente/ }).textContent).toContain("7 pasos");
+    expect(screen.getByText("Inicio de «nuevo» en el caso c1.")).toBeTruthy();
+    expect(screen.getByText("OCR: 1 documento escaneado, 5 páginas por leer.")).toBeTruthy();
+    expect(screen.getByText("OCR: 02.pdf, página 1 de 5.")).toBeTruthy();
+    expect(screen.getByText("Segunda opinión de Jev (modo sombra): 2 consultas.")).toBeTruthy();
+  });
+
+  it("al terminar no muestra bloques de final ni consulta el estado del caso", async () => {
+    const { llamadas } = await montarProgreso();
+    emitir("evento", evento(1, "Se leen 1 archivos.", { datos: { archivos: 1 } }));
+    emitir("fin", { estado: "terminado", error: null });
+    await avanzar(0);
+
+    expect(screen.getByText("Ejecución terminada")).toBeTruthy();
+    expect(screen.queryByText("Comprobando el estado del caso…")).toBeNull();
+    expect(screen.queryByText("La ejecución terminó.")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ir a documentos" })).toBeNull();
+    expect(screen.queryByText(/El borrador está listo|El fallo y los documentos están listos/)).toBeNull();
+    expect(llamadas.some((l) => l.ruta.includes("/api/casos/"))).toBe(false);
+  });
+
+  it("si el proceso termina con error no muestra «La ejecución se detuvo»: lo decide la pantalla de documentos", async () => {
+    const { llamadas } = await montarProgreso();
+    emitir("evento", evento(1, "No se pudo leer 02.pdf.", { tipo: "error" }));
+    emitir("fin", { estado: "error", error: "El OCR falló." });
+    await avanzar(0);
+
+    expect(screen.getByText("Ejecución detenida por un error")).toBeTruthy();
+    expect(screen.getByText("No se pudo leer 02.pdf.")).toBeTruthy();
+    expect(screen.queryByText("La ejecución se detuvo")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continuar" })).toBeNull();
+    expect(llamadas.some((l) => l.ruta.includes("/api/casos/"))).toBe(false);
+  });
+
+  it("si se pierde la conexión con los eventos lo dice en la barra, sin aviso ni «Reintentar»", async () => {
+    await montarProgreso();
+    emitir("evento", evento(1, "Se leen 1 archivos."));
+    for (let i = 0; i < 9; i++) {
+      emitir("error");
+      await avanzar(5000);
+    }
+
+    expect(screen.getByText("Sin conexión con el servidor")).toBeTruthy();
+    expect(screen.queryByText("Se perdió la conexión con el servidor")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+  });
+
+  it("sondea el job cada 1200 ms y avisa una sola vez al terminar", async () => {
+    let consultas = 0;
+    const { alTerminar } = await montarProgreso(() => {
+      consultas += 1;
+      return ok({ id: "j1", caso: "c1", cmd: "nuevo", estado: consultas < 3 ? "corriendo" : "terminado", error: null });
+    });
+    expect(consultas).toBe(1);
+
+    await avanzar(1199);
+    expect(consultas).toBe(1);
+    await avanzar(1);
+    expect(consultas).toBe(2);
+    expect(alTerminar).not.toHaveBeenCalled();
+
+    await avanzar(1200);
+    expect(consultas).toBe(3);
+    expect(alTerminar).toHaveBeenCalledTimes(1);
+    expect(alTerminar.mock.calls[0]![0]).toMatchObject({ id: "j1", estado: "terminado" });
+
+    await avanzar(10_000);
+    expect(consultas).toBe(3);
+  });
+
+  it("avisa con null si el sondeo falla", async () => {
+    const { alTerminar } = await montarProgreso(() => fallo(500, "boom"));
+
+    expect(alTerminar).toHaveBeenCalledTimes(1);
+    expect(alTerminar).toHaveBeenCalledWith(null);
+  });
+
+  it("al desmontar deja de sondear y cierra el flujo de eventos", async () => {
+    const { alTerminar, llamadas } = await montarProgreso();
+    const antes = llamadas.length;
+
+    cleanup();
+    await avanzar(10_000);
+
+    expect(llamadas.length).toBe(antes);
+    expect(fuente().cerrada).toBe(true);
+    expect(alTerminar).not.toHaveBeenCalled();
+  });
+
+  it("sin EventSource muestra el spinner y el reloj, sin barra ni línea de tiempo, y sigue sondeando", async () => {
+    vi.stubGlobal("EventSource", undefined);
+    let consultas = 0;
+    const { alTerminar } = await montarProgreso(() => {
+      consultas += 1;
+      return ok({ id: "j1", caso: "c1", cmd: "nuevo", estado: consultas < 2 ? "corriendo" : "terminado", error: null });
+    });
+
+    expect(FuenteSimulada.instancias).toHaveLength(0);
+    expect(screen.getByText("Leyendo el expediente…")).toBeTruthy();
+    expect(document.querySelector(".giro")).toBeTruthy();
+    expect(screen.getByText(/Lleva 0 s\./)).toBeTruthy();
+    expect(document.querySelector(".tz-top")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Etapas del proceso" })).toBeNull();
+
+    await avanzar(3000);
+    expect(screen.getByText(/Lleva 3 s\./)).toBeTruthy();
+    expect(alTerminar).toHaveBeenCalledTimes(1);
   });
 });

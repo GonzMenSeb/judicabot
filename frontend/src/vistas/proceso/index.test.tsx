@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Evento } from "../../api/contrato";
 import { casoActual, jobActual, toasts } from "../../estado";
 import Proceso from "./index";
+import { Seguimiento } from "./Seguimiento";
 
 class FuenteSimulada {
   static instancias: FuenteSimulada[] = [];
@@ -401,5 +402,56 @@ describe("errores de la API", () => {
     fireEvent.click(within(alerta).getByRole("button", { name: "Continuar" }));
     await waitFor(() => expect(ultima().url).toBe("/api/jobs/j9/eventos"));
     expect(toasts.value.some((t) => t.texto.includes("Ya hay una ejecución en curso"))).toBe(true);
+  });
+});
+
+describe("seguimiento incrustado", () => {
+  const alfa = () => undefined;
+  const fin = { estado: "terminado", error: null };
+
+  it("al terminar no pide el estado del caso ni muestra los bloques de final", async () => {
+    render(<Seguimiento incrustado jobId="j1" />);
+    await waitFor(() => expect(FuenteSimulada.instancias).toHaveLength(1));
+    emitir("evento", evento(1, "ingesta"));
+    emitir("fin", fin);
+
+    expect(screen.getByText("Ejecución terminada")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(servidor.llamadas.filter((l) => l.includes("/api/casos/"))).toEqual([]);
+    expect(screen.queryByText("Comprobando el estado del caso…")).toBeNull();
+    expect(screen.queryByText("La ejecución terminó.")).toBeNull();
+    expect(document.querySelector(".tz-fin")).toBeNull();
+  });
+
+  it("si termina con error no ofrece continuar ni volver", async () => {
+    render(<Seguimiento incrustado jobId="j1" />);
+    await waitFor(() => expect(FuenteSimulada.instancias).toHaveLength(1));
+    emitir("evento", evento(1, "ingesta", "error", "Falló la lectura"));
+    emitir("fin", { estado: "error", error: "Falló la lectura" });
+
+    expect(screen.getByText("Ejecución detenida por un error")).toBeTruthy();
+    expect(screen.queryByText("La ejecución se detuvo")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continuar" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Volver a documentos" })).toBeNull();
+  });
+
+  it("sin la marca de incrustado, el mismo componente sí consulta el estado al terminar", async () => {
+    render(<Seguimiento caso="c1" jobId="j1" cmd="iniciar" alNuevoJob={alfa} alReintentar={alfa} alEstado={alfa} />);
+    await waitFor(() => expect(FuenteSimulada.instancias).toHaveLength(1));
+    emitir("evento", evento(1, "ingesta"));
+    emitir("fin", fin);
+
+    await waitFor(() => expect(servidor.llamadas).toContain("/api/casos/c1/estado"));
+  });
+
+  it("conserva la lista de las seis etapas con la primera en curso", async () => {
+    render(<Seguimiento incrustado jobId="j1" />);
+    await waitFor(() => expect(FuenteSimulada.instancias).toHaveLength(1));
+    emitir("evento", evento(1, "ingesta"));
+
+    const etapas = within(screen.getByRole("list", { name: "Etapas del proceso" })).getAllByRole("button");
+    expect(etapas).toHaveLength(6);
+    expect(etapas[0]!.textContent).toContain("(en curso)");
+    expect(etapas.slice(1).every((b) => b.textContent?.includes("(pendiente)"))).toBe(true);
   });
 });

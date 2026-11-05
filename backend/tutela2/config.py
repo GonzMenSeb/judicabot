@@ -13,6 +13,7 @@ NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
 RESPALDO_CLIENTE = {"claude-haiku-5-5": "claude-sonnet-5-5"}
 VARIABLE_MODELOS_PERMITIDOS = "TUTELA2_MODELOS_PERMITIDOS"
+VARIABLE_CACHE = "TUTELA2_CACHE_DIR"
 
 
 def _modelos_pedidos() -> set[str]:
@@ -132,7 +133,8 @@ class Config(BaseModel):
         return self.llm.effort_por_nodo.get(nodo) or self.llm.effort
 
     def cache_path(self) -> Path:
-        p = Path(self.cache_dir).expanduser()
+        """TUTELA2_CACHE_DIR, si está definida y no vacía, manda sobre cache_dir (los config.json de caso ya guardan el valor por defecto)."""
+        p = Path(os.environ.get(VARIABLE_CACHE, "").strip() or self.cache_dir).expanduser()
         p.mkdir(parents=True, exist_ok=True)
         return p
 

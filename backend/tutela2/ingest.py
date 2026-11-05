@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import threading
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
@@ -60,6 +60,13 @@ def _es_primera(carpeta: str) -> bool:
     return re.match(r"01(?!\d)\W*(?:primera|1a|instancia)", c) is not None or "primera" in c
 
 
+_PDFIUM = threading.RLock()
+
+
+def _max_hilos() -> int:
+    return min(8, os.cpu_count() or 4)
+
+
 def _sha256(ruta: Path) -> str:
     with ruta.open("rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
@@ -75,11 +82,12 @@ def _partir(texto: str) -> list[str]:
 def _textos_pdfium(ruta: Path) -> list[str]:
     import pypdfium2
 
-    pdf = pypdfium2.PdfDocument(str(ruta))
-    try:
-        return [p.get_textpage().get_text_range() for p in pdf]
-    finally:
-        pdf.close()
+    with _PDFIUM:
+        pdf = pypdfium2.PdfDocument(str(ruta))
+        try:
+            return [p.get_textpage().get_text_range() for p in pdf]
+        finally:
+            pdf.close()
 
 
 def _textos_pypdf(ruta: Path) -> list[str]:
@@ -217,15 +225,50 @@ def _legible(texto: str) -> bool:
     return buenos / len(tokens) >= MIN_PROPORCION_LEGIBLE
 
 
+class _PdfOcr:
+    def __init__(self, ruta: Path) -> None:
+        self._ruta = ruta
+        self._pdf = None
+
+    def __getitem__(self, i: int):
+        with _PDFIUM:
+            if self._pdf is None:
+                import pypdfium2
+
+                self._pdf = pypdfium2.PdfDocument(str(self._ruta))
+            return self._pdf[i]
+
+    def close(self) -> None:
+        with _PDFIUM:
+            pdf, self._pdf = self._pdf, None
+            if pdf is not None:
+                pdf.close()
+
+
+def _renderizar(pdf, n: int):
+    with _PDFIUM:
+        pagina = pdf[n - 1]
+        try:
+            return pagina.render(scale=OCR_DPI / 72).to_pil()
+        finally:
+            pagina.close()
+
+
+def _de_cache(f: Path) -> str | None:
+    try:
+        return f.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def _ocr_pagina(pdf, n: int, sha: str, dir_cache: Path) -> str:
     import pytesseract
 
     f = dir_cache / sha / f"{n}.txt"
-    try:
-        return f.read_text(encoding="utf-8")
-    except OSError:
-        pass
-    imagen = pdf[n - 1].render(scale=OCR_DPI / 72).to_pil()
+    en_cache = _de_cache(f)
+    if en_cache is not None:
+        return en_cache
+    imagen = _renderizar(pdf, n)
     texto = _limpiar(
         pytesseract.image_to_string(imagen, lang="spa", config="--psm 1")
     )
@@ -239,36 +282,7 @@ def _ocr_pagina(pdf, n: int, sha: str, dir_cache: Path) -> str:
     return texto
 
 
-def _aplicar_ocr(
-    ruta: Path,
-    doc_id: str,
-    sha: str,
-    dir_cache: Path,
-    paginas: list[Pagina],
-    alertas: list[str],
-) -> None:
-    import pypdfium2
-
-    pdf = None
-    try:
-        pdf = pypdfium2.PdfDocument(str(ruta))
-        for p in paginas:
-            if not p.sin_texto:
-                continue
-            texto = _ocr_pagina(pdf, p.n, sha, dir_cache)
-            if len(texto) >= MIN_CHARS_PAGINA and _legible(texto):
-                p.texto, p.ocr, p.sin_texto = texto, True, False
-    except Exception as e:
-        log.warning("OCR falló en %s: %s", ruta.name, e)
-        alertas.append(f"{doc_id} {ruta.name}: el OCR falló ({e}).")
-    finally:
-        if pdf is not None:
-            pdf.close()
-
-
-def _leer_documento(
-    ruta: Path, doc_id: str, sha: str, dir_cache: Path | None
-) -> tuple[list[Pagina], list[str]]:
+def _leer_documento(ruta: Path, doc_id: str) -> tuple[list[Pagina], list[str]]:
     alertas: list[str] = []
     try:
         textos = _textos(ruta)
@@ -283,13 +297,168 @@ def _leer_documento(
         alertas.append(
             f"{doc_id} {ruta.name}: el Word no tiene texto extraíble; conviértalo a PDF."
         )
-    if (
-        dir_cache is not None
-        and ruta.suffix.lower() == ".pdf"
-        and any(p.sin_texto for p in paginas)
-    ):
-        _aplicar_ocr(ruta, doc_id, sha, dir_cache, paginas, alertas)
     return paginas, alertas
+
+
+def _necesita_ocr(ruta: Path, paginas: list[Pagina]) -> bool:
+    return ruta.suffix.lower() == ".pdf" and any(p.sin_texto for p in paginas)
+
+
+def _cuenta(n: int, uno: str, varios: str) -> str:
+    return f"{n} {uno if n == 1 else varios}"
+
+
+def _emitir_documento(d: Doc, paginas: list[Pagina], alertas: list[str], n_hecho: int, n_total: int) -> None:
+    n_ocr = sum(1 for p in paginas if p.ocr)
+    n_sin = sum(1 for p in paginas if p.sin_texto)
+    eventos.emitir(
+        "ingesta",
+        "lee",
+        f"{d.ruta}: {len(paginas)} página{'' if len(paginas) == 1 else 's'}"
+        + (f", {n_ocr} leídas con OCR" if n_ocr else "")
+        + (f", {n_sin} sin texto legible" if n_sin else "")
+        + ".",
+        {
+            "doc_id": d.doc_id,
+            "archivo": d.ruta,
+            "paginas": len(paginas),
+            "ocr": n_ocr,
+            "sin_texto": n_sin,
+            "alertas": alertas,
+            "n_hecho": n_hecho,
+            "n_total": n_total,
+        },
+    )
+
+
+def _leer_expediente(
+    archivos: list[Path], docs: list[Doc], dir_cache: Path | None
+) -> list[tuple[list[Pagina], list[str]]]:
+    leidos: list = [None] * len(docs)
+    terminados = 0
+
+    def terminar(i: int) -> None:
+        nonlocal terminados
+        terminados += 1
+        _emitir_documento(docs[i], *leidos[i], terminados, len(docs))
+
+    with ThreadPoolExecutor(max_workers=_max_hilos()) as pool:
+        futuros = {
+            pool.submit(_leer_documento, ruta, d.doc_id): i
+            for i, (ruta, d) in enumerate(zip(archivos, docs))
+        }
+        con_ocr: list[int] = []
+        for futuro in as_completed(futuros):
+            i = futuros[futuro]
+            leidos[i] = futuro.result()
+            if dir_cache is not None and _necesita_ocr(archivos[i], leidos[i][0]):
+                con_ocr.append(i)
+            else:
+                terminar(i)
+        if con_ocr:
+            _leer_con_ocr(pool, sorted(con_ocr), archivos, docs, leidos, dir_cache, terminar)
+    return leidos
+
+
+def _leer_con_ocr(
+    pool: ThreadPoolExecutor,
+    indices: list[int],
+    archivos: list[Path],
+    docs: list[Doc],
+    leidos: list[tuple[list[Pagina], list[str]]],
+    dir_cache: Path,
+    terminar,
+) -> None:
+    pdfs = {i: _PdfOcr(archivos[i]) for i in indices}
+    textos: dict[int, dict[int, str]] = {i: {} for i in indices}
+    fallos: dict[int, dict[int, BaseException]] = {i: {} for i in indices}
+    cola: list[tuple[int, int]] = []
+    total = 0
+    for i in indices:
+        for p in leidos[i][0]:
+            if not p.sin_texto:
+                continue
+            total += 1
+            texto = _de_cache(dir_cache / docs[i].sha256 / f"{p.n}.txt")
+            if texto is None:
+                cola.append((i, p.n))
+            else:
+                textos[i][p.n] = texto
+    hecho = total - len(cola)
+    eventos.emitir(
+        "ingesta",
+        "lee",
+        f"OCR: {_cuenta(len(indices), 'documento escaneado', 'documentos escaneados')}, "
+        f"{_cuenta(total, 'página', 'páginas')} por leer"
+        + (f" ({hecho} ya en caché)" if hecho else "")
+        + ".",
+        {"ocr_documentos": len(indices), "ocr_paginas": total, "desde_cache": hecho},
+    )
+    pendientes = Counter(i for i, _ in cola)
+    candado = threading.Lock()
+    primer_fallo: dict[int, int] = {}
+
+    def reconocer(i: int, n: int) -> str | None:
+        with candado:
+            tope = primer_fallo.get(i)
+        if tope is not None and n > tope:
+            return None
+        try:
+            return _ocr_pagina(pdfs[i], n, docs[i].sha256, dir_cache)
+        except Exception:
+            with candado:
+                primer_fallo[i] = min(primer_fallo.get(i, n), n)
+            raise
+
+    def cerrar(i: int) -> None:
+        paginas, alertas = leidos[i]
+        for p in paginas:
+            if not p.sin_texto:
+                continue
+            if p.n in fallos[i]:
+                e = fallos[i][p.n]
+                log.warning("OCR falló en %s: %s", archivos[i].name, e)
+                alertas.append(f"{docs[i].doc_id} {archivos[i].name}: el OCR falló ({e}).")
+                break
+            texto = textos[i][p.n]
+            if len(texto) >= MIN_CHARS_PAGINA and _legible(texto):
+                p.texto, p.ocr, p.sin_texto = texto, True, False
+        pdfs[i].close()
+        terminar(i)
+
+    try:
+        for i in indices:
+            if not pendientes[i]:
+                cerrar(i)
+        futuros = {pool.submit(reconocer, i, n): (i, n) for i, n in cola}
+        for futuro in as_completed(futuros):
+            i, n = futuros[futuro]
+            hecho += 1
+            error = futuro.exception()
+            if error is not None:
+                fallos[i][n] = error
+            elif (texto := futuro.result()) is not None:
+                textos[i][n] = texto
+                eventos.emitir(
+                    "ingesta",
+                    "lee",
+                    f"OCR: {docs[i].ruta}, página {n} de {len(leidos[i][0])}.",
+                    {
+                        "doc_id": docs[i].doc_id,
+                        "archivo": docs[i].ruta,
+                        "pagina": n,
+                        "paginas": len(leidos[i][0]),
+                        "ocr": True,
+                        "n_ocr_hecho": hecho,
+                        "n_ocr_total": total,
+                    },
+                )
+            pendientes[i] -= 1
+            if not pendientes[i]:
+                cerrar(i)
+    finally:
+        for pdf in pdfs.values():
+            pdf.close()
 
 
 _CERTIFICADO = "certificado de existencia y representacion legal"
@@ -897,30 +1066,7 @@ def ingerir(caso_dir: Path, cfg: Config, jev: JevClient | None = None) -> Ingest
     previo = os.environ.get("OMP_THREAD_LIMIT")
     os.environ["OMP_THREAD_LIMIT"] = "1"
     try:
-        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as pool:
-            leidos = []
-            for d, leido in zip(
-                docs,
-                pool.map(
-                    lambda t: _leer_documento(
-                        t[0], t[1].doc_id, t[1].sha256, dir_cache
-                    ),
-                    zip(archivos, docs),
-                ),
-            ):
-                leidos.append(leido)
-                paginas = leido[0]
-                n_ocr = sum(1 for p in paginas if p.ocr)
-                n_sin = sum(1 for p in paginas if p.sin_texto)
-                eventos.emitir(
-                    "ingesta",
-                    "lee",
-                    f"{d.ruta}: {len(paginas)} página{'' if len(paginas) == 1 else 's'}"
-                    + (f", {n_ocr} leídas con OCR" if n_ocr else "")
-                    + (f", {n_sin} sin texto legible" if n_sin else "")
-                    + ".",
-                    {"doc_id": d.doc_id, "archivo": d.ruta, "paginas": len(paginas), "ocr": n_ocr, "sin_texto": n_sin, "alertas": leido[1]},
-                )
+        leidos = _leer_expediente(archivos, docs, dir_cache)
     finally:
         if previo is None:
             os.environ.pop("OMP_THREAD_LIMIT", None)

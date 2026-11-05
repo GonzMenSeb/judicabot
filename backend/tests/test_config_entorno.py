@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from tutela2 import config as cfgmod
@@ -90,3 +92,52 @@ def test_cliente_para_acepta_los_modelos_permitidos_y_no_restringe_sin_variable(
 def test_cliente_falso_no_depende_de_la_lista_permitida(monkeypatch):
     monkeypatch.setenv(VARIABLE, HAIKU)
     assert isinstance(llm.cliente_para(Config(llm=LLMConfig(proveedor="fake"))), FakeClient)
+
+
+VARIABLE_CACHE = "TUTELA2_CACHE_DIR"
+
+
+def test_cache_path_sin_variable_usa_cache_dir_y_lo_crea(tmp_path, monkeypatch):
+    monkeypatch.delenv(VARIABLE_CACHE, raising=False)
+    destino = tmp_path / "a" / "b"
+    assert Config(cache_dir=str(destino)).cache_path() == destino
+    assert destino.is_dir()
+
+
+def test_cache_path_la_variable_manda_sobre_cache_dir(tmp_path, monkeypatch):
+    elegido = tmp_path / "volumen" / ".cache"
+    monkeypatch.setenv(VARIABLE_CACHE, str(elegido))
+    cfg = Config(cache_dir=str(tmp_path / "del_config"))
+    assert cfg.cache_path() == elegido
+    assert elegido.is_dir() and not (tmp_path / "del_config").exists()
+    assert os.access(elegido, os.W_OK | os.X_OK)
+
+
+def test_cache_path_la_variable_manda_sobre_el_config_json_del_caso(tmp_path, monkeypatch):
+    elegido = tmp_path / "volumen" / ".cache"
+    monkeypatch.setenv(VARIABLE_CACHE, str(elegido))
+    (tmp_path / "caso").mkdir()
+    cfgmod.guardar(tmp_path / "caso", Config())
+    assert cfgmod.cargar(tmp_path / "caso").cache_dir == "~/.cache/tutela2"
+    assert cfgmod.cargar(tmp_path / "caso").cache_path() == elegido
+
+
+def test_cache_path_expande_la_tilde_de_la_variable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(VARIABLE_CACHE, "~/mi-cache")
+    assert Config().cache_path() == tmp_path / "mi-cache"
+
+
+@pytest.mark.parametrize("valor", ["", "   "])
+def test_cache_path_ignora_una_variable_vacia(tmp_path, monkeypatch, valor):
+    monkeypatch.setenv(VARIABLE_CACHE, valor)
+    destino = tmp_path / "del_config"
+    assert Config(cache_dir=str(destino)).cache_path() == destino
+
+
+def test_cache_path_es_idempotente_con_el_directorio_existente(tmp_path, monkeypatch):
+    monkeypatch.setenv(VARIABLE_CACHE, str(tmp_path / ".cache"))
+    cfg = Config()
+    primero = cfg.cache_path()
+    (primero / "ocr-psm1").mkdir()
+    assert cfg.cache_path() == primero and (primero / "ocr-psm1").is_dir()

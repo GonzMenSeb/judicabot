@@ -18,6 +18,7 @@ import {
 } from "./modelo";
 import type { EstadoEtapa, EtapaProceso } from "./modelo";
 import type { EstadoCaso } from "./tipos";
+import "./estilos.css";
 
 const MARGEN_PEGADO = 48;
 
@@ -28,14 +29,22 @@ const TEXTO_ESTADO: Record<EstadoEtapa, string> = {
   error: " (con error)",
 };
 
-export interface PropsSeguimiento {
-  caso: string;
+export interface PropsSeguimientoCompleto {
+  incrustado?: false;
   jobId: string;
+  caso: string;
   cmd: string | null;
   alNuevoJob: (jobId: string) => void;
   alReintentar: () => void;
   alEstado: (estado: EstadoCaso) => void;
 }
+
+export interface PropsSeguimientoIncrustado {
+  incrustado: true;
+  jobId: string;
+}
+
+export type PropsSeguimiento = PropsSeguimientoCompleto | PropsSeguimientoIncrustado;
 
 function useTranscurrido(eventos: readonly Evento[], corriendo: boolean): number {
   const [ahora, setAhora] = useState(() => Date.now());
@@ -65,7 +74,9 @@ function Fila({ evento, inicio }: { evento: Evento; inicio: number }) {
   );
 }
 
-export function Seguimiento({ caso, jobId, cmd, alNuevoJob, alReintentar, alEstado }: PropsSeguimiento) {
+export function Seguimiento(props: PropsSeguimiento) {
+  const { jobId } = props;
+  const completo = props.incrustado ? null : props;
   const { eventos, fin, conexion } = useEventos(`/api/jobs/${encodeURIComponent(jobId)}/eventos`);
   const { porEtapa, huerfanos, activa } = useMemo(() => agrupar(eventos), [eventos]);
   const hayRazona = useMemo(() => eventos.some((e) => e.tipo === "razona"), [eventos]);
@@ -89,11 +100,12 @@ export function Seguimiento({ caso, jobId, cmd, alNuevoJob, alReintentar, alEsta
   const [falloFinal, setFalloFinal] = useState(false);
   const senal = useRef(cancelable()).current;
   const consultar = () => {
+    if (!completo) return;
     setFalloFinal(false);
-    api.get<EstadoCaso>(`/api/casos/${encodeURIComponent(caso)}/estado`, { signal: senal() }).then(
+    api.get<EstadoCaso>(`/api/casos/${encodeURIComponent(completo.caso)}/estado`, { signal: senal() }).then(
       (estado) => {
         setFinal(estado);
-        alEstado(estado);
+        completo.alEstado(estado);
       },
       (error) => {
         if (!esAbortado(error)) setFalloFinal(true);
@@ -172,16 +184,16 @@ export function Seguimiento({ caso, jobId, cmd, alNuevoJob, alReintentar, alEsta
         </span>
       </div>
 
-      {errorFin && (
+      {completo && errorFin && (
         <BloqueError
-          caso={caso}
+          caso={completo.caso}
           mensaje={fin?.estado === "error" ? mensajeError(fin, eventos) : (final?.error ?? mensajeError(fin, eventos))}
-          cmd={cmd}
-          alNuevoJob={alNuevoJob}
-          alReintentar={alReintentar}
+          cmd={completo.cmd}
+          alNuevoJob={completo.alNuevoJob}
+          alReintentar={completo.alReintentar}
         />
       )}
-      {fin && !errorFin && !final && !falloFinal && <Cargando texto="Comprobando el estado del caso…" />}
+      {completo && fin && !errorFin && !final && !falloFinal && <Cargando texto="Comprobando el estado del caso…" />}
       {fin && !errorFin && falloFinal && (
         <Aviso
           class="tz-aviso"
@@ -192,26 +204,26 @@ export function Seguimiento({ caso, jobId, cmd, alNuevoJob, alReintentar, alEsta
           La ejecución terminó. Use los pasos del caso para continuar.
         </Aviso>
       )}
-      {fin && !errorFin && final && <AccionFinal caso={caso} estado={final.estado} />}
-      {fin && !errorFin && final && final.estado !== "esperando_decision" && final.estado !== "terminado" && (
+      {completo && fin && !errorFin && final && <AccionFinal caso={completo.caso} estado={final.estado} />}
+      {completo && fin && !errorFin && final && final.estado !== "esperando_decision" && final.estado !== "terminado" && (
         <div class="tz-fin" role="status">
           <b>La ejecución terminó.</b>
-          <Boton variante="primario" href={`${baseCaso(caso)}/documentos`}>
+          <Boton variante="primario" href={`${baseCaso(completo.caso)}/documentos`}>
             Ir a documentos
           </Boton>
         </div>
       )}
-      {fallido && !fin && (
+      {completo && fallido && !fin && (
         <Aviso
           class="tz-aviso"
           tipo="alerta"
           titulo="Se perdió la conexión con el servidor"
-          acciones={<Boton onClick={alReintentar}>Reintentar</Boton>}
+          acciones={<Boton onClick={completo.alReintentar}>Reintentar</Boton>}
         >
           La ejecución puede seguir en el servidor.
         </Aviso>
       )}
-      {fallido && !fin && final && <AccionFinal caso={caso} estado={final.estado} />}
+      {completo && fallido && !fin && final && <AccionFinal caso={completo.caso} estado={final.estado} />}
 
       <div class="tz">
         <ol class="tz-izq" aria-label="Etapas del proceso">

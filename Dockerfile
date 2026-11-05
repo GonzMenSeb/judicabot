@@ -31,6 +31,7 @@ ENV PATH="/app/backend/.venv/bin:$PATH" \
     HOST=0.0.0.0 \
     PORT=8000 \
     CASOS_DIR=/data/casos \
+    TUTELA2_CACHE_DIR=/data/casos/.cache \
     PYTHONUNBUFFERED=1
 
 RUN mkdir -p /data/casos /home/app/.cache/tutela2 \

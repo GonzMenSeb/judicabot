@@ -1,22 +1,35 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, esAbortado, useEventos } from "../../api";
+import { api, esAbortado } from "../../api";
+import { Seguimiento } from "../proceso/Seguimiento";
 import type { JobEstado } from "./tipos";
 
 const INTERVALO_MS = 1200;
 
-export function Progreso({ jobId, onFin }: { jobId: string; onFin: (job: JobEstado | null) => void }) {
+function Espera() {
   const [segundos, setSegundos] = useState(0);
-  const fin = useRef(onFin);
-  fin.current = onFin;
-  const url = typeof EventSource === "undefined" ? null : `/api/jobs/${encodeURIComponent(jobId)}/eventos`;
-  const { eventos } = useEventos(url);
-  const ultimo = eventos[eventos.length - 1];
 
   useEffect(() => {
     const inicio = Date.now();
     const reloj = setInterval(() => setSegundos(Math.floor((Date.now() - inicio) / 1000)), 1000);
     return () => clearInterval(reloj);
   }, []);
+
+  return (
+    <section class="docs-progreso" role="status" aria-live="polite">
+      <span class="giro" aria-hidden="true" />
+      <div>
+        <b>Leyendo el expediente…</b>
+        <p class="sub">
+          Se extrae el texto de cada PDF, se asigna su rol y se genera el auto que asume el conocimiento. Lleva {segundos} s.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export function Progreso({ jobId, onFin }: { jobId: string; onFin: (job: JobEstado | null) => void }) {
+  const fin = useRef(onFin);
+  fin.current = onFin;
 
   useEffect(() => {
     const control = new AbortController();
@@ -38,16 +51,6 @@ export function Progreso({ jobId, onFin }: { jobId: string; onFin: (job: JobEsta
     };
   }, [jobId]);
 
-  return (
-    <section class="docs-progreso" role="status" aria-live="polite">
-      <span class="giro" aria-hidden="true" />
-      <div>
-        <b>Leyendo el expediente…</b>
-        <p class="sub">
-          Se extrae el texto de cada PDF, se asigna su rol y se genera el auto que asume el conocimiento. Lleva {segundos} s.
-        </p>
-        {ultimo && <p class="docs-evento">{ultimo.texto}</p>}
-      </div>
-    </section>
-  );
+  if (typeof EventSource === "undefined") return <Espera />;
+  return <Seguimiento incrustado jobId={jobId} />;
 }

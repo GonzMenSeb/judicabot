@@ -649,6 +649,25 @@ def test_get_resumen_de_caso_inexistente_u_oculto_es_404(cliente):
         assert r.status_code == 404 and r.json() == {"detail": "Caso no encontrado."}
 
 
+def test_la_cache_persistente_dentro_de_casos_dir_no_es_un_caso(cliente, monkeypatch):
+    raiz = server.casos_dir()
+    monkeypatch.setenv("TUTELA2_CACHE_DIR", str(raiz / ".cache"))
+    cache = Config().cache_path()
+    assert cache == raiz / ".cache" and cache.is_dir()
+    (cache / "ocr-psm1" / "abc").mkdir(parents=True)
+    (cache / "ocr-psm1" / "abc" / "1.txt").write_text("texto", encoding="utf-8")
+    (cache / "relatoria").mkdir()
+    assert cliente.get("/api/casos").json() == []
+    _subir(cliente, {"Raiz/a.pdf": b"%PDF"})
+    assert [c["id"] for c in cliente.get("/api/casos").json()] == ["raiz"]
+    assert resumen_caso.nombres_de_casos(raiz) == ["raiz"]
+    resumen_caso.calentar(raiz)
+    assert not list(cache.rglob(resumen_caso.ARCHIVO))
+    r = cliente.get("/api/casos/.cache/resumen")
+    assert r.status_code == 404 and r.json() == {"detail": "Caso no encontrado."}
+    assert server._slug(".cache") == "cache"
+
+
 def test_get_resumen_de_un_caso_corrupto_devuelve_estado_error(cliente):
     _subir(cliente, {"Raiz/a.pdf": b"%PDF"})
     (server.casos_dir() / "raiz" / "caso.json").write_text("{ roto", encoding="utf-8")
