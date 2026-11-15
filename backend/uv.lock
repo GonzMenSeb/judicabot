@@ -1267,6 +1267,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-multipart" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -1295,6 +1296,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.1" },
     { name = "python-multipart", specifier = ">=0.0.33" },
     { name = "uvicorn", specifier = ">=0.54.0" },
+    { name = "websockets", specifier = ">=17.4" },
 ]
 provides-extras = ["ocr"]
 

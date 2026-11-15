@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from tutela2 import citas
+from tutela2 import citas, eventos, extension
 from tutela2.config import Config
+from tutela2.extension import Entrega
 from tutela2.models import CitaPropuesta, CitaVerificada
 
 COLUMNAS = [
@@ -733,6 +734,93 @@ def test_consultar_relatoria_el_shell_guardado_en_la_cache_tampoco_cuenta(cfg):
     assert citas.consultar_relatoria(URL_T200, cfg).estado == "no_publicada"
 
 
+def _extension(monkeypatch, entrega: Entrega) -> list[str]:
+    llamadas: list[str] = []
+
+    def pedir_pagina(url: str, espera_s: float = extension.ESPERA_S) -> Entrega:
+        llamadas.append(url)
+        return entrega
+
+    monkeypatch.setattr(extension, "pedir_pagina", pedir_pagina)
+    return llamadas
+
+
+def _red_bloqueada(monkeypatch) -> list[str]:
+    return _red(monkeypatch, error=urllib.error.HTTPError(URL_T200, 403, "Forbidden", {}, None))
+
+
+def test_consultar_relatoria_sin_extension_conectada_lo_dice(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    llamadas = _extension(monkeypatch, extension.NO_CONECTADA)
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r == citas.Relatoria(None, "inaccesible", "HTTP 403", "no_conectada")
+    assert llamadas == [URL_T200]
+    assert not (cfg.cache_path() / "relatoria").exists()
+
+
+def test_consultar_relatoria_usa_la_extension_cuando_el_servidor_no_puede(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    llamadas = _extension(monkeypatch, Entrega("ok", _pagina("T-200/22")))
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r.estado == "ok" and r.extension is None and "idóneos" in (r.texto or "")
+    assert llamadas == [URL_T200]
+    assert (cfg.cache_path() / "relatoria" / "T-200-22.htm").read_bytes() == _pagina("T-200/22")
+
+
+def test_consultar_relatoria_no_pide_a_la_extension_si_la_descarga_directa_funciona(cfg, monkeypatch):
+    _red(monkeypatch, _pagina("T-200-22"))
+    llamadas = _extension(monkeypatch, extension.NO_CONECTADA)
+    assert citas.consultar_relatoria(URL_T200, cfg).estado == "ok"
+    assert llamadas == []
+
+
+def test_consultar_relatoria_no_pide_a_la_extension_si_esta_en_cache(cfg, monkeypatch):
+    _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
+    llamadas = _extension(monkeypatch, extension.NO_CONECTADA)
+    assert citas.consultar_relatoria(URL_T200, cfg).estado == "ok"
+    assert llamadas == []
+
+
+def test_consultar_relatoria_shell_desde_la_extension_es_no_publicada(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("ok", SHELL_ANGULAR))
+    assert citas.consultar_relatoria(URL_T200, cfg) == citas.Relatoria(None, "no_publicada", "")
+    assert not (cfg.cache_path() / "relatoria").exists()
+
+
+def test_consultar_relatoria_pagina_de_otra_sentencia_desde_la_extension_no_se_guarda(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("ok", _pagina("T-892-11")))
+    assert citas.consultar_relatoria(URL_T200, cfg).estado == "ok"
+    assert not (cfg.cache_path() / "relatoria" / "T-200-22.htm").exists()
+
+
+def test_consultar_relatoria_rechazo_de_la_relatoria_a_la_extension(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("rechazo", None, "HTTP 403"))
+    assert citas.consultar_relatoria(URL_T200, cfg) == citas.Relatoria(None, "inaccesible", "HTTP 403", "rechazo")
+
+
+def test_consultar_relatoria_pagina_corta_desde_la_extension_es_rechazo(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("ok", b"<html>challenge</html>"))
+    assert citas.consultar_relatoria(URL_T200, cfg) == citas.Relatoria(
+        None, "inaccesible", "la respuesta es demasiado corta para ser una providencia", "rechazo"
+    )
+    assert not (cfg.cache_path() / "relatoria").exists()
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    (motivo,) = cv.motivos
+    assert motivo.startswith("La relatoría de la Corte Constitucional rechazó la petición de la extensión de judicabot (")
+
+
+def test_consultar_relatoria_extension_sin_respuesta(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("sin_respuesta", None, "la extensión no respondió a tiempo"))
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r == citas.Relatoria(None, "inaccesible", "la extensión no respondió a tiempo", "sin_respuesta")
+    assert not (cfg.cache_path() / "relatoria").exists()
+
+
 def _verificar(cfg: Config, *propuestas: CitaPropuesta) -> list[CitaVerificada]:
     return citas.verificar_citas(list(propuestas), cfg, citas.cargar_dataset(cfg))
 
@@ -804,6 +892,62 @@ def test_verificar_relatoria_sin_acceso_por_otra_causa_no_atribuye_un_bloqueo(cf
     (cv,) = _verificar(cfg, _p("SU-082/95"))
     assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
     assert "timed out" in cv.motivos[0] and "bloquear" not in cv.motivos[0]
+
+
+def test_verificar_motivo_dice_que_la_extension_no_estaba_conectada(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, extension.NO_CONECTADA)
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
+    (motivo,) = cv.motivos
+    assert "No se pudo consultar la relatoría" in motivo and "HTTP 403" in motivo and "bloquear" in motivo
+    assert "la extensión de judicabot no estaba conectada" in motivo and cv.url in motivo
+
+
+def test_verificar_motivo_dice_que_la_relatoria_rechazo_a_la_extension(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("rechazo", None, "HTTP 403"))
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
+    assert cv.motivos == [
+        "La relatoría de la Corte Constitucional rechazó la petición de la extensión de judicabot (HTTP 403); "
+        "la cita no se pudo verificar y esto no indica que la sentencia no exista. "
+        f"Verifique el pasaje en {cv.url}."
+    ]
+
+
+def test_verificar_motivo_dice_que_la_extension_no_trajo_la_pagina(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("sin_respuesta", None, "la extensión no respondió a tiempo"))
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
+    assert cv.motivos == [
+        "La extensión de judicabot no trajo la página de la relatoría (la extensión no respondió a tiempo); "
+        "la cita no se pudo verificar y esto no indica que la sentencia no exista. "
+        f"Verifique el pasaje en {cv.url}."
+    ]
+
+
+def test_verificar_aviso_distingue_extension_no_conectada_de_rechazo(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    respuestas = {
+        citas.url_relatoria("SU", 82, 1995): extension.NO_CONECTADA,
+        citas.url_relatoria("T", 892, 2011): Entrega("rechazo", None, "HTTP 403"),
+    }
+    monkeypatch.setattr(extension, "pedir_pagina", lambda url, espera_s=extension.ESPERA_S: respuestas[url])
+    buffer = eventos.crear("prueba")
+    token = eventos.activar(buffer)
+    try:
+        _verificar(cfg, _p("SU-082/95"), _p("T-892/11", id_="c2"))
+    finally:
+        eventos.desactivar(token)
+        eventos.olvidar("prueba")
+    avisos = {e["datos"]["extension"]: e for e in buffer.leer(0)[0] if "sin_acceso" in (e["datos"] or {})}
+    assert set(avisos) == {"no_conectada", "rechazo"}
+    assert "no estaba conectada" in avisos["no_conectada"]["texto"]
+    assert avisos["no_conectada"]["datos"]["sin_acceso"] == ["SU-082/95"]
+    assert "rechazó la petición de la extensión" in avisos["rechazo"]["texto"]
+    assert avisos["rechazo"]["datos"]["sin_acceso"] == ["T-892/11"]
 
 
 def test_verificar_relatoria_aun_no_publicada_queda_para_revisar(cfg, monkeypatch):

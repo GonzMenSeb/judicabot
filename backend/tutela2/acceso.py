@@ -5,9 +5,11 @@ import hmac
 import os
 import time
 from html import escape
+from typing import Literal
 from urllib.parse import parse_qs
 
 from fastapi import Request
+from fastapi.requests import HTTPConnection
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 COOKIE = "judicabot_acceso"
@@ -27,11 +29,15 @@ def _token(pw: str) -> str:
     return hmac.new(pw.encode(), b"judicabot-acceso", hashlib.sha256).hexdigest()
 
 
-def _cliente(request: Request) -> str:
-    reenviado = request.headers.get("x-forwarded-for")
+def ficha_extension(pw: str) -> str:
+    return hmac.new(pw.encode(), b"judicabot-extension", hashlib.sha256).hexdigest()
+
+
+def _cliente(conexion: HTTPConnection) -> str:
+    reenviado = conexion.headers.get("x-forwarded-for")
     if reenviado:
         return reenviado.split(",")[-1].strip()
-    return request.client.host if request.client else "desconocido"
+    return conexion.client.host if conexion.client else "desconocido"
 
 
 def _bloqueado(cliente: str) -> bool:
@@ -39,6 +45,16 @@ def _bloqueado(cliente: str) -> bool:
     recientes = [t for t in _fallos.get(cliente, []) if ahora - t < VENTANA_S]
     _fallos[cliente] = recientes
     return len(recientes) >= MAX_FALLOS
+
+
+def verificar_contrasena(cliente: str, enviada: str, pw: str) -> Literal["ok", "mal", "bloqueado"]:
+    if _bloqueado(cliente):
+        return "bloqueado"
+    if hmac.compare_digest(enviada.encode(), pw.encode()):
+        _fallos.pop(cliente, None)
+        return "ok"
+    _fallos.setdefault(cliente, []).append(time.monotonic())
+    return "mal"
 
 
 def _formulario(error: str = "", estado: int = 200) -> HTMLResponse:
@@ -75,14 +91,12 @@ def _con_cookie(respuesta: Response, request: Request, pw: str) -> Response:
 async def _login(request: Request, pw: str) -> Response:
     if request.method == "GET":
         return _formulario()
-    cliente = _cliente(request)
-    if _bloqueado(cliente):
-        return _formulario("Demasiados intentos. Espere unos minutos.", 429)
     enviado = parse_qs((await request.body()).decode()).get("password", [""])[0]
-    if hmac.compare_digest(enviado.encode(), pw.encode()):
-        _fallos.pop(cliente, None)
+    resultado = verificar_contrasena(_cliente(request), enviado, pw)
+    if resultado == "bloqueado":
+        return _formulario("Demasiados intentos. Espere unos minutos.", 429)
+    if resultado == "ok":
         return _con_cookie(RedirectResponse("/", status_code=303), request, pw)
-    _fallos.setdefault(cliente, []).append(time.monotonic())
     return _formulario("Contraseña incorrecta.", 401)
 
 

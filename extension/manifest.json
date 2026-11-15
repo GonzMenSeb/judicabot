@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Judicabot: relatoría de la Corte Constitucional",
+  "version": "1.0.0",
+  "description": "Descarga para judicabot las sentencias de la relatoría de la Corte Constitucional desde este navegador.",
+  "minimum_chrome_version": "120",
+  "permissions": ["alarms", "storage"],
+  "host_permissions": ["https://www.corteconstitucional.gov.co/relatoria/*"],
+  "background": {
+    "service_worker": "trabajador.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "ventana.html",
+    "default_title": "Judicabot: relatoría",
+    "default_icon": {
+      "16": "iconos/16.png",
+      "32": "iconos/32.png",
+      "48": "iconos/48.png",
+      "128": "iconos/128.png"
+    }
+  },
+  "icons": {
+    "16": "iconos/16.png",
+    "32": "iconos/32.png",
+    "48": "iconos/48.png",
+    "128": "iconos/128.png"
+  }
+}
