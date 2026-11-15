@@ -193,7 +193,7 @@ Aviso de `verificar_citas`: un evento `("verificacion", "verifica", texto, {"sin
   - `pedido fuera de la relatoría no descarga`: `descargar` no se llama y la respuesta es `codigo: null` con detalle "URL fuera de la relatoría".
   - `error de red responde codigo null con el mensaje`, `redirección fuera de la relatoría no entrega bytes` y `403 se entrega con su código`.
   - `latido cada 20 s mientras está abierto, y se cancela al cerrar`.
-- [ ] **Paso 2:** `node --test extension/pruebas/`. Esperado: FALLA. **Paso 3:** implementar `puente.js`. **Paso 4:** `node --test extension/pruebas/`, que pasa. Commit `feat: núcleo de la extensión de la relatoría`.
+- [ ] **Paso 2:** `node --test extension/pruebas/*.test.js`. Esperado: FALLA. **Paso 3:** implementar `puente.js`. **Paso 4:** `node --test extension/pruebas/*.test.js`, que pasa. Commit `feat: núcleo de la extensión de la relatoría`.
 
 ### Tarea 5: envoltura MV3, ventana, íconos y prueba manual local
 
@@ -233,7 +233,7 @@ Aviso de `verificar_citas`: un evento `("verificacion", "verifica", texto, {"sin
   - Que debe quedar el navegador abierto.
   - Que en equipos con políticas que bloquean el modo de desarrollador no se puede instalar así.
 
-- [ ] **Paso 1:** escribir los archivos y `node --test extension/pruebas/`, que sigue pasando.
+- [ ] **Paso 1:** escribir los archivos y `node --test extension/pruebas/*.test.js`, que sigue pasando.
 - [ ] **Paso 2: prueba manual local con Chrome**, forzando el camino de la extensión. urllib respeta `https_proxy`, así que la descarga directa falla al instante:
   - `cd backend && JUDICABOT_PASSWORD=clave-local-1234 https_proxy=http://127.0.0.1:9 uv run tutela2-ui`.
   - Cargar `extension/` descomprimida.
@@ -252,7 +252,7 @@ Aviso de `verificar_citas`: un evento `("verificacion", "verifica", texto, {"sin
 
 - [ ] **Paso 1: Jenkinsfile.**
   - En `testPaths` agregar `extension\/`: `~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/|extension\/)/`.
-  - En el stage Frontend (`node:24-slim`), agregar `node --test ../extension/pruebas/` después de `pnpm size`, desde `frontend/`.
+  - En el stage Frontend (`node:24-slim`), agregar `node --test ../extension/pruebas/*.test.js` después de `pnpm size`, desde `frontend/`.
   - `extension/` queda fuera de la imagen porque `.dockerignore` es una lista blanca.
 - [ ] **Paso 2: README.**
   - Línea 21 (Requisitos): las páginas de relatoría las descarga el servidor y, si la Corte lo bloquea, la extensión.
@@ -261,13 +261,13 @@ Aviso de `verificar_citas`: un evento `("verificacion", "verifica", texto, {"sin
   - "Estructura": `extension/` con enlace a `extension/LEEME.md`.
   - Línea 303 (Limitaciones): reemplazar el párrafo de "Mientras el servidor no tenga salida desde una IP colombiana…" por el funcionamiento con la extensión y su condición (navegador abierto en Colombia).
   - Privacidad: la extensión solo recibe URLs públicas de sentencias.
-- [ ] **Paso 3:** `cd backend && uv run --extra ocr pytest` y `node --test extension/pruebas/`; los dos pasan. Commit `docs: extensión de la relatoría en el README y pruebas de la extensión en Jenkins`.
+- [ ] **Paso 3:** `cd backend && uv run --extra ocr pytest` y `node --test extension/pruebas/*.test.js`; los dos pasan. Commit `docs: extensión de la relatoría en el README y pruebas de la extensión en Jenkins`.
 
 ## Verificación
 
 **Antes de abrir el PR:**
 - `cd backend && uv run --extra ocr pytest`: todo pasa salvo `test_sdk_real_sin_clave_da_error_claro`, que ya falla.
-- `node --test extension/pruebas/` pasa.
+- `node --test extension/pruebas/*.test.js` pasa.
 - `cd frontend && pnpm check:tipos && pnpm typecheck && pnpm test` pasa, para confirmar que el contrato no cambió.
 - Prueba manual de la tarea 5 en Chrome y en Edge.
 

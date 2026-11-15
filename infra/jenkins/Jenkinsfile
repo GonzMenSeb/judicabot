@@ -37,7 +37,7 @@ pipeline {
                         : null
 
                     def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|frontend\/|Dockerfile$)/
-                    def testPaths  = ~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/)/
+                    def testPaths  = ~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/|extension\/)/
 
                     if (changed == null) {
                         env.RUN_TESTS = 'true'
@@ -84,6 +84,7 @@ pipeline {
                     pnpm test
                     pnpm build
                     pnpm size
+                    node --test ../extension/pruebas/*.test.js
                 '''
             }
         }
