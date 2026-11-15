@@ -40,6 +40,7 @@ export type VerificacionContrato = [
   RunCuerpoForzar: Afirmar<Igual<NonNullable<C.RunCuerpo["forzar"]>, S["RunBody"]["forzar"]>>,
   RunCuerpoDecision: Afirmar<C.RunCuerpo["decision"] extends S["RunBody"]["decision"] ? true : false>,
   EstadoServidor: Afirmar<Igual<C.EstadoServidor, S["EstadoServidor"]>>,
+  EstadoDataset: Afirmar<Igual<C.EstadoDataset, S["EstadoDataset"]>>,
   JobInicio: Afirmar<Igual<C.JobInicio, S["JobInicio"]>>,
   ErroresCampo: Afirmar<Igual<C.ErroresCampo["errores"], S["FormatoErroresDetalle"]["errores"]>>,
 ];

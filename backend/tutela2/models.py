@@ -260,6 +260,7 @@ class CitaVerificada(BaseModel):
     fecha_dataset: Optional[str] = None
     url: Optional[str] = None
     pagina_ok: bool = False
+    relatoria: Optional[Literal["no_publicada", "inaccesible"]] = None
     cobertura: Optional[float] = None
     n_palabras: int = 0
     seccion: Optional[Literal["mayoria", "salvamento", "desconocida"]] = None

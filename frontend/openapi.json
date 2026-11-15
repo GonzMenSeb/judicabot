@@ -100,6 +100,20 @@
         "title": "Body_crear_caso_api_casos_post",
         "type": "object"
       },
+      "Body_subir_dataset_api_dataset_put": {
+        "properties": {
+          "archivo": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Archivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archivo"
+        ],
+        "title": "Body_subir_dataset_api_dataset_put",
+        "type": "object"
+      },
       "CampoFormato": {
         "properties": {
           "ayuda": {
@@ -685,6 +699,24 @@
           "titulo"
         ],
         "title": "EntradaIndice",
+        "type": "object"
+      },
+      "EstadoDataset": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "vigente": {
+            "title": "Vigente",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "vigente",
+          "url"
+        ],
+        "title": "EstadoDataset",
         "type": "object"
       },
       "EstadoServidor": {
@@ -2067,6 +2099,53 @@
           }
         },
         "summary": "Config Default"
+      }
+    },
+    "/api/dataset": {
+      "get": {
+        "operationId": "estado_dataset_api_dataset_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoDataset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Estado Dataset"
+      },
+      "put": {
+        "operationId": "subir_dataset_api_dataset_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_subir_dataset_api_dataset_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subir Dataset"
       }
     },
     "/api/estado-servidor": {

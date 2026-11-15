@@ -6,7 +6,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
+CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://www.datos.gov.co"
 CACHE_INMUTABLE = "public, max-age=31536000, immutable"
 CACHE_REVALIDAR = "no-cache"
 PREFIJOS_SIN_CSP = ("/docs", "/redoc")

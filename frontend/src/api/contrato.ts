@@ -195,6 +195,11 @@ export interface EstadoServidor {
   modelos: string[];
 }
 
+export interface EstadoDataset {
+  vigente: boolean;
+  url: string;
+}
+
 export interface RunCuerpo {
   cmd: "nuevo" | "iniciar" | "decidir" | "continuar";
   decision?: Record<string, unknown>;

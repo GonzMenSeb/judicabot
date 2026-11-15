@@ -463,6 +463,35 @@ def test_minimo_citas_ok_insuficientes_bloquea_con_la_regla(estados):
     assert f"propuestas: {len(estados)}" in texto
 
 
+def _sin_acceso(*estados: str) -> list[CitaVerificada]:
+    return [
+        cv.model_copy(update={"relatoria": "inaccesible"}) if cv.estado == "alerta" else cv for cv in _cvs(*estados)
+    ]
+
+
+def test_minimo_citas_ok_con_la_relatoria_inaccesible_avisa_sin_bloquear():
+    (msg,) = lint.minimo_citas_ok(_sin_acceso("alerta", "alerta"), 2, 25)
+    assert msg.startswith("ALERTA: ") and "BLOQUEA" not in msg
+    assert "tienen 0 citas verificadas" in msg and "no respondió desde el servidor" in msg
+    (msg,) = lint.minimo_citas_ok(_sin_acceso("ok", "alerta"), 2, 25)
+    assert msg.startswith("ALERTA: ") and "tienen 1 cita verificada " in msg
+
+
+def test_minimo_citas_ok_sigue_bloqueando_si_ni_verificadas_las_citas_sin_acceso_bastarian():
+    (msg,) = lint.minimo_citas_ok(_sin_acceso("alerta"), 2, 25)
+    assert msg.startswith("BLOQUEA: ")
+    (msg,) = lint.minimo_citas_ok(_sin_acceso("rechazada", "rechazada", "alerta"), 2, 25)
+    assert msg.startswith("BLOQUEA: ")
+
+
+def test_minimo_citas_ok_una_alerta_por_otra_causa_no_se_confunde_con_falta_de_acceso():
+    (msg,) = lint.minimo_citas_ok(_cvs("alerta", "alerta"), 2, 25)
+    assert msg.startswith("BLOQUEA: ")
+    publicada = [cv.model_copy(update={"relatoria": "no_publicada"}) for cv in _cvs("alerta", "alerta")]
+    (msg,) = lint.minimo_citas_ok(publicada, 2, 25)
+    assert msg.startswith("BLOQUEA: ")
+
+
 def test_minimo_citas_ok_cuenta_solo_las_ok():
     msgs = lint.minimo_citas_ok(_cvs("ok", "alerta", "alerta", "rechazada"), 2, 14)
     assert "tienen 1 cita verificada;" in msgs[0]

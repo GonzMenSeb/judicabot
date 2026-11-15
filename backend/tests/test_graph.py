@@ -1616,6 +1616,38 @@ def test_cita_en_alerta_sigue_sin_contar_como_ok_aunque_tenga_pasaje_cercano(cfg
     assert v["errores"] and any("se exigen al menos 2" in m for m in v["alertas"]["consideraciones"] if m.startswith("BLOQUEA:"))
 
 
+def test_relatoria_inaccesible_no_gasta_reintentos_y_deja_las_citas_para_revisar(cfg_relatoria_real, tmp_path, monkeypatch):
+    (cfg_relatoria_real.cache_path() / "relatoria" / "T-200-22.htm").unlink()
+    monkeypatch.setattr(citas_real, "_bajar_pagina", lambda url: (None, "HTTP 403"))
+    cliente = ClienteQueCopiaElPasajeCercano()
+    g, h, _ = arrancar(cfg_relatoria_real, tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert cliente.n == 1 and v["intentos"]["consideraciones"] == 1
+    assert v["errores"] == []
+    assert [c["estado"] for c in v["citas"]] == ["alerta", "alerta"]
+    assert [c["relatoria"] for c in v["citas"]] == ["inaccesible", "inaccesible"]
+    mensajes = v["alertas"]["consideraciones"]
+    assert not [m for m in mensajes if m.startswith("BLOQUEA:")]
+    assert any(m.startswith("ALERTA:") and "no respondió desde el servidor" in m for m in mensajes)
+    assert not any("no se encontró" in m.lower() for m in mensajes)
+    assert g.get_state(h).next == ("decision",)
+
+
+def test_relatoria_aun_no_publicada_si_reintenta_porque_otra_sentencia_si_puede_verificarse(
+    cfg_relatoria_real, tmp_path, monkeypatch
+):
+    (cfg_relatoria_real.cache_path() / "relatoria" / "T-200-22.htm").unlink()
+    shell = b'<!DOCTYPE html><html data-beasties-container><body><app-root></app-root></body></html>'
+    monkeypatch.setattr(citas_real, "_bajar_pagina", lambda url: (shell, ""))
+    cfg = cfg_relatoria_real.model_copy(update={"max_intentos": 2})
+    cliente = ClienteQueCopiaElPasajeCercano()
+    g, h, _ = arrancar(cfg, tmp_path, cliente=cliente)
+    v = g.get_state(h).values
+    assert cliente.n == 2 and v["errores"]
+    assert [c["relatoria"] for c in v["citas"]] == ["no_publicada", "no_publicada"]
+    assert any(m.startswith("BLOQUEA:") for m in v["alertas"]["consideraciones"])
+
+
 def test_cita_rechazada_con_pasaje_cercano_aparece_una_sola_vez_en_los_errores(cfg_relatoria_real, tmp_path):
     estado = _estado_en_verificacion(cfg_relatoria_real, tmp_path)
     cons = ConsideracionesLLM.model_validate(estado["consideraciones"])

@@ -7,14 +7,16 @@ import logging
 import re
 import time
 import unicodedata
+import urllib.error
 import urllib.request
+from http.client import HTTPException
 from bisect import bisect_right
 from collections import Counter
 from difflib import SequenceMatcher
 from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 from urllib.parse import urlparse
 
 from tutela2 import eventos
@@ -29,6 +31,10 @@ USER_AGENT = (
     "Chrome/124.0 Safari/537.36"
 )
 MIN_BYTES_PAGINA = 20_000
+MARCA_PROVIDENCIA = b"encabezado.js"
+MARCAS_SHELL = (b"data-beasties-container", b"<app-root")
+VENTANA_MARCA = 1024
+VENTANA_SHELL = 16_384
 EDAD_MAX_DATASET_S = 30 * 24 * 3600
 TIMEOUT_S = 60
 VENTANA_ID = 6000
@@ -117,20 +123,32 @@ def _indexar(texto: str) -> dict[str, dict]:
     return {f["sentencia"].strip(): f for f in lector if f.get("sentencia")}
 
 
-def _descargar_dataset(url: str, destino: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
-        datos = r.read()
+def guardar_dataset(datos: bytes, destino: Path) -> None:
     _indexar(datos.decode("utf-8-sig"))
     tmp = destino.with_name(destino.name + ".tmp")
     tmp.write_bytes(datos)
     tmp.replace(destino)
 
 
+def _descargar_dataset(url: str, destino: Path) -> None:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+        datos = r.read()
+    guardar_dataset(datos, destino)
+
+
+def ruta_dataset(cfg: Config) -> Path:
+    return cfg.cache_path() / "cc_sentencias.csv"
+
+
+def dataset_vigente(cfg: Config) -> bool:
+    ruta = ruta_dataset(cfg)
+    return ruta.is_file() and time.time() - ruta.stat().st_mtime < EDAD_MAX_DATASET_S
+
+
 def cargar_dataset(cfg: Config) -> dict[str, dict]:
-    ruta = cfg.cache_path() / "cc_sentencias.csv"
-    vigente = ruta.is_file() and time.time() - ruta.stat().st_mtime < EDAD_MAX_DATASET_S
-    if not vigente:
+    ruta = ruta_dataset(cfg)
+    if not dataset_vigente(cfg):
         try:
             _descargar_dataset(cfg.dataset_csv_url, ruta)
         except (OSError, ValueError, csv.Error) as e:
@@ -199,14 +217,31 @@ def _decodificar(crudo: bytes) -> str:
         return crudo.decode("cp1252", errors="replace")
 
 
-def _bajar_pagina(url: str) -> bytes | None:
+class Relatoria(NamedTuple):
+    texto: str | None
+    estado: Literal["ok", "no_publicada", "inaccesible"]
+    detalle: str = ""
+
+
+def _bajar_pagina(url: str) -> tuple[bytes | None, str]:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
-            return r.read()
-    except OSError as e:
-        log.warning("No se pudo descargar %s: %s", url, e)
-        return None
+            return r.read(), ""
+    except urllib.error.HTTPError as e:
+        detalle = f"HTTP {e.code}"
+    except (OSError, HTTPException) as e:
+        detalle = str(getattr(e, "reason", None) or e) or type(e).__name__
+    log.warning("No se pudo descargar %s: %s", url, detalle)
+    return None, detalle
+
+
+def _clasificar_pagina(crudo: bytes) -> tuple[Literal["ok", "no_publicada", "inaccesible"], str]:
+    if MARCA_PROVIDENCIA not in crudo[:VENTANA_MARCA] and any(m in crudo[:VENTANA_SHELL] for m in MARCAS_SHELL):
+        return "no_publicada", ""
+    if len(crudo) < MIN_BYTES_PAGINA:
+        return "inaccesible", "la respuesta es demasiado corta para ser una providencia"
+    return "ok", ""
 
 
 def _es_pagina_de(url: str, texto: str) -> bool:
@@ -214,19 +249,26 @@ def _es_pagina_de(url: str, texto: str) -> bool:
     return partes is None or _pagina_corresponde(normalizar_texto(texto), *partes)
 
 
-def texto_relatoria(url: str, cfg: Config) -> str | None:
+def consultar_relatoria(url: str, cfg: Config) -> Relatoria:
     destino = cfg.cache_path() / "relatoria" / Path(urlparse(url).path).name
     en_cache = destino.is_file()
-    crudo = destino.read_bytes() if en_cache else _bajar_pagina(url)
-    if crudo is None or len(crudo) < MIN_BYTES_PAGINA:
-        return None
+    crudo, error = (destino.read_bytes(), "") if en_cache else _bajar_pagina(url)
+    if crudo is None:
+        return Relatoria(None, "inaccesible", error)
+    estado, detalle = _clasificar_pagina(crudo)
+    if estado != "ok":
+        return Relatoria(None, estado, detalle)
     texto = _html_a_texto(_decodificar(crudo))
     if not en_cache and _es_pagina_de(url, texto):
         destino.parent.mkdir(parents=True, exist_ok=True)
         tmp = destino.with_name(destino.name + ".tmp")
         tmp.write_bytes(crudo)
         tmp.replace(destino)
-    return texto
+    return Relatoria(texto, "ok")
+
+
+def texto_relatoria(url: str, cfg: Config) -> str | None:
+    return consultar_relatoria(url, cfg).texto
 
 
 class SeccionesRelatoria(NamedTuple):
@@ -1023,12 +1065,11 @@ def _mp_coincide(declarado: str, mp_dataset: str) -> bool:
 def verificar_citas(
     citas: list[CitaPropuesta], cfg: Config, dataset: dict[str, dict]
 ) -> list[CitaVerificada]:
-    paginas: dict[str, str | None] = {}
+    paginas: dict[str, Relatoria] = {}
 
-    def pagina(url: str) -> str | None:
+    def pagina(url: str) -> Relatoria:
         if url not in paginas:
-            texto = texto_relatoria(url, cfg)
-            paginas[url] = texto
+            paginas[url] = consultar_relatoria(url, cfg)
         return paginas[url]
 
     eventos.emitir(
@@ -1056,6 +1097,14 @@ def verificar_citas(
                 "motivos": cv.motivos,
             },
         )
+    sin_acceso = sorted({cv.sentencia_norm for cv in verificadas if cv.relatoria == "inaccesible" and cv.sentencia_norm})
+    if sin_acceso:
+        eventos.emitir(
+            "verificacion",
+            "verifica",
+            f"La relatoría de la Corte no respondió desde el servidor para {', '.join(sin_acceso)}: esas citas quedan para revisar, no rechazadas.",
+            {"sin_acceso": sin_acceso},
+        )
     return verificadas
 
 
@@ -1065,7 +1114,7 @@ _ETIQUETA_ESTADO = {"ok": "verificada", "alerta": "para revisar", "rechazada": "
 def _verificar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina) -> CitaVerificada:
     cv = _aplicar_reglas_de_texto(_contrastar(c, cfg, dataset, pagina), cfg)
     if cv.estado != "ok" and cv.pagina_ok and _necesita_pasaje(cv, cfg):
-        _agregar_pasaje_cercano(cv, cfg, pagina(cv.url))
+        _agregar_pasaje_cercano(cv, cfg, pagina(cv.url).texto)
     return cv
 
 
@@ -1174,6 +1223,20 @@ def _ubicar_en_seccion(cv: CitaVerificada, cita: str, texto: str, cfg: Config) -
     cv.seccion = "mayoria" if en_mayoria >= max(en_votos, en_resto) else "desconocida"
 
 
+def _motivo_sin_relatoria(cv: CitaVerificada, relatoria: Relatoria) -> str:
+    if relatoria.estado == "no_publicada":
+        return (
+            f"La sentencia {cv.sentencia_norm} figura en el dataset oficial, pero la relatoría de la Corte aún no "
+            f"publica su texto ({cv.url}); la cita no se pudo verificar."
+        )
+    causa = relatoria.detalle or "sin respuesta"
+    bloqueo = " (la Corte puede bloquear las conexiones desde servidores fuera de Colombia)" if relatoria.detalle == "HTTP 403" else ""
+    return (
+        f"No se pudo consultar la relatoría de la Corte Constitucional desde el servidor ({causa}){bloqueo}; la cita "
+        f"no se pudo verificar y esto no indica que la sentencia no exista. Verifique el pasaje en {cv.url}."
+    )
+
+
 def _contrastar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina) -> CitaVerificada:
     cv = CitaVerificada(
         id=c.id,
@@ -1226,9 +1289,12 @@ def _contrastar(c: CitaPropuesta, cfg: Config, dataset: dict[str, dict], pagina)
         )
         return cv
 
-    texto = pagina(cv.url)
+    relatoria = pagina(cv.url)
+    texto = relatoria.texto
     if texto is None:
-        cv.motivos.append(f"No se encontró la página de la relatoría ({cv.url}); no se puede verificar la cita.")
+        cv.estado = "alerta"
+        cv.relatoria = relatoria.estado
+        cv.motivos.append(_motivo_sin_relatoria(cv, relatoria))
         return cv
     if not _pagina_corresponde(normalizar_texto(texto), tipo, numero, anio):
         cv.motivos.append(f"La página de la relatoría ({cv.url}) no corresponde a la sentencia {cv.sentencia_norm}.")

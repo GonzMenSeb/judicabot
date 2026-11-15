@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import http.client
 import io
 import os
 import shutil
@@ -44,6 +45,12 @@ PARRAFO_HTML = (
     "irremediable sobre sus derechos fundamentales.</p>"
 )
 SOFT_404 = b"<html><body>" + b"x" * 8587 + b"</body></html>"
+SHELL_ANGULAR = (
+    b'<!DOCTYPE html>\n<html lang="es" data-beasties-container>\n  <head><meta charset="utf-8">'
+    b"<title>CORTE CONSTITUCIONAL DE COLOMBIA</title></head>\n  <body><app-root></app-root>"
+    + b"<!-- " + b"x" * 8400 + b" --></body></html>"
+)
+BLOQUEO_WAF = b"<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>"
 
 
 def _csv_bytes() -> bytes:
@@ -572,6 +579,35 @@ def test_cargar_dataset_cache_vieja_con_red_la_renueva(cfg, monkeypatch):
     assert ruta.read_bytes() == nuevo
 
 
+def test_dataset_vigente_segun_la_edad_de_la_cache(cfg):
+    ruta = cfg.cache_path() / "cc_sentencias.csv"
+    assert citas.dataset_vigente(cfg)
+    viejo = time.time() - 40 * 24 * 3600
+    os.utime(ruta, (viejo, viejo))
+    assert not citas.dataset_vigente(cfg)
+    ruta.unlink()
+    assert not citas.dataset_vigente(cfg)
+
+
+def test_guardar_dataset_enviado_por_el_navegador_renueva_la_cache_sin_red(cfg):
+    ruta = cfg.cache_path() / "cc_sentencias.csv"
+    viejo = time.time() - 40 * 24 * 3600
+    os.utime(ruta, (viejo, viejo))
+    nuevo = _csv_bytes().replace(b"T-200/22", b"T-201/22")
+    citas.guardar_dataset(nuevo, ruta)
+    assert citas.dataset_vigente(cfg) and ruta.read_bytes() == nuevo
+    assert "T-201/22" in citas.cargar_dataset(cfg)
+
+
+@pytest.mark.parametrize("basura", [b"", b"<html>Servicio no disponible</html>", b"\xff\xfe\x00"])
+def test_guardar_dataset_invalido_no_pisa_la_cache(cfg, basura):
+    ruta = cfg.cache_path() / "cc_sentencias.csv"
+    antes = ruta.read_bytes()
+    with pytest.raises(ValueError):
+        citas.guardar_dataset(basura, ruta)
+    assert ruta.read_bytes() == antes and not list(ruta.parent.glob("*.tmp"))
+
+
 def test_cargar_dataset_sin_cache_ni_red_falla_claro(cfg):
     (cfg.cache_path() / "cc_sentencias.csv").unlink()
     with pytest.raises(citas.ErrorDataset, match="No se pudo descargar"):
@@ -652,6 +688,51 @@ def test_texto_relatoria_error_http_devuelve_none(cfg, monkeypatch):
     assert citas.texto_relatoria(citas.url_relatoria("T", 200, 2022), cfg) is None
 
 
+URL_T200 = citas.url_relatoria("T", 200, 2022)
+
+
+@pytest.mark.parametrize(
+    "error,detalle",
+    [
+        (urllib.error.HTTPError("u", 403, "Forbidden", {}, None), "HTTP 403"),
+        (urllib.error.HTTPError("u", 404, "Not Found", {}, None), "HTTP 404"),
+        (urllib.error.HTTPError("u", 429, "Too Many Requests", {}, None), "HTTP 429"),
+        (urllib.error.URLError(TimeoutError("timed out")), "timed out"),
+        (TimeoutError("timed out"), "timed out"),
+        (http.client.IncompleteRead(b"abc"), "IncompleteRead"),
+    ],
+)
+def test_consultar_relatoria_un_fallo_de_red_es_inaccesible_con_su_causa(cfg, monkeypatch, error, detalle):
+    _red(monkeypatch, error=error)
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r.texto is None and r.estado == "inaccesible" and detalle in r.detalle
+    assert not (cfg.cache_path() / "relatoria").exists()
+
+
+def test_consultar_relatoria_el_shell_de_la_spa_es_no_publicada_y_no_se_guarda(cfg, monkeypatch):
+    _red(monkeypatch, SHELL_ANGULAR)
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r == citas.Relatoria(None, "no_publicada", "")
+    assert not (cfg.cache_path() / "relatoria").exists()
+
+
+def test_consultar_relatoria_una_respuesta_corta_que_no_es_providencia_es_inaccesible(cfg, monkeypatch):
+    _red(monkeypatch, BLOQUEO_WAF)
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r.texto is None and r.estado == "inaccesible" and "demasiado corta" in r.detalle
+
+
+def test_consultar_relatoria_providencia_real_es_ok(cfg, monkeypatch):
+    _red(monkeypatch, _pagina("T-200-22"))
+    r = citas.consultar_relatoria(URL_T200, cfg)
+    assert r.estado == "ok" and r.detalle == "" and "idóneos" in (r.texto or "")
+
+
+def test_consultar_relatoria_el_shell_guardado_en_la_cache_tampoco_cuenta(cfg):
+    _poner_pagina(cfg, "T-200-22.htm", SHELL_ANGULAR)
+    assert citas.consultar_relatoria(URL_T200, cfg).estado == "no_publicada"
+
+
 def _verificar(cfg: Config, *propuestas: CitaPropuesta) -> list[CitaVerificada]:
     return citas.verificar_citas(list(propuestas), cfg, citas.cargar_dataset(cfg))
 
@@ -707,16 +788,56 @@ def test_verificar_sufijo_de_letra_no_se_confunde_con_otra_sentencia(cfg):
     assert cv.estado == "rechazada" and cv.sentencia_norm is None
 
 
-def test_verificar_pagina_no_encontrada(cfg):
+def test_verificar_relatoria_sin_acceso_queda_para_revisar_y_no_dice_que_no_existe(cfg, monkeypatch):
+    _red(monkeypatch, error=urllib.error.HTTPError("u", 403, "Forbidden", {}, None))
     (cv,) = _verificar(cfg, _p("SU-082/95"))
-    assert cv.estado == "rechazada" and cv.en_dataset and not cv.pagina_ok and cv.cobertura is None
-    assert "No se encontró la página" in cv.motivos[0]
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
+    assert cv.en_dataset and not cv.pagina_ok and cv.cobertura is None
+    (motivo,) = cv.motivos
+    assert "No se pudo consultar la relatoría" in motivo and "HTTP 403" in motivo and "bloquear" in motivo
+    assert "no indica que la sentencia no exista" in motivo and cv.url in motivo
+    assert "No se encontró" not in motivo
 
 
-def test_verificar_soft_404_en_cache(cfg):
+def test_verificar_relatoria_sin_acceso_por_otra_causa_no_atribuye_un_bloqueo(cfg, monkeypatch):
+    _red(monkeypatch, error=TimeoutError("timed out"))
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible"
+    assert "timed out" in cv.motivos[0] and "bloquear" not in cv.motivos[0]
+
+
+def test_verificar_relatoria_aun_no_publicada_queda_para_revisar(cfg, monkeypatch):
+    _red(monkeypatch, SHELL_ANGULAR)
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    assert cv.estado == "alerta" and cv.relatoria == "no_publicada" and not cv.pagina_ok
+    assert "figura en el dataset oficial" in cv.motivos[0] and "aún no publica su texto" in cv.motivos[0]
+    assert "no exista" not in cv.motivos[0]
+
+
+def test_verificar_respuesta_corta_en_cache_es_inaccesible_no_inexistente(cfg):
     _poner_pagina(cfg, "SU082-95.htm", SOFT_404)
     (cv,) = _verificar(cfg, _p("SU-082/95"))
-    assert cv.estado == "rechazada" and not cv.pagina_ok
+    assert cv.estado == "alerta" and cv.relatoria == "inaccesible" and not cv.pagina_ok
+
+
+def test_verificar_cita_corta_sin_acceso_a_la_relatoria_sigue_rechazada_por_su_longitud(cfg, monkeypatch):
+    _red(monkeypatch, error=urllib.error.HTTPError("u", 403, "Forbidden", {}, None))
+    (cv,) = _verificar(cfg, _p("SU-082/95", "La tutela es subsidiaria."))
+    assert cv.estado == "rechazada" and cv.relatoria == "inaccesible"
+    assert any("mínimo exigido" in m for m in cv.motivos)
+
+
+def test_verificar_sentencia_ausente_del_dataset_sigue_rechazada_sin_consultar_la_relatoria(cfg, monkeypatch):
+    llamadas = _red(monkeypatch, error=urllib.error.HTTPError("u", 403, "Forbidden", {}, None))
+    (cv,) = _verificar(cfg, _p("T-999 de 2022"))
+    assert cv.estado == "rechazada" and cv.relatoria is None and llamadas == []
+
+
+def test_verificar_consulta_una_sola_vez_una_relatoria_inaccesible(cfg, monkeypatch):
+    llamadas = _red(monkeypatch, error=urllib.error.HTTPError("u", 403, "Forbidden", {}, None))
+    resultado = _verificar(cfg, _p("SU-082/95"), _p("SU-082/95", id_="c2"))
+    assert len(llamadas) == 1
+    assert [r.relatoria for r in resultado] == ["inaccesible", "inaccesible"]
 
 
 def test_verificar_pagina_de_otra_sentencia(cfg):
@@ -785,13 +906,13 @@ def test_verificar_ponencia_compuesta_se_avisa(cfg):
 def test_verificar_descarga_la_pagina_una_sola_vez(cfg, monkeypatch):
     _poner_pagina(cfg, "T-200-22.htm", _pagina("T-200-22"))
     llamadas: list[str] = []
-    original = citas.texto_relatoria
+    original = citas.consultar_relatoria
 
     def contar(url, c):
         llamadas.append(url)
         return original(url, c)
 
-    monkeypatch.setattr(citas, "texto_relatoria", contar)
+    monkeypatch.setattr(citas, "consultar_relatoria", contar)
     resultado = _verificar(cfg, _p("T-200/22"), _p("T-200 de 2022", "otra cosa distinta " * 5, "c2"))
     assert len(llamadas) == 1
     assert [r.estado for r in resultado] == ["ok", "rechazada"]
@@ -1787,10 +1908,11 @@ def test_rechazo_por_cobertura_tambien_enuncia_la_regla(cfg):
     assert len(cv.motivos) == 2
 
 
-def test_motivos_de_dataset_o_pagina_no_agregan_la_regla_si_la_cita_es_valida(cfg):
+def test_motivos_de_dataset_o_pagina_no_agregan_la_regla_si_la_cita_es_valida(cfg, monkeypatch):
+    _red(monkeypatch, error=urllib.error.HTTPError("u", 403, "Forbidden", {}, None))
     no_existe, sin_pagina = _verificar(cfg, _p("T-999 de 2022"), _p("SU-082/95", id_="c2"))
-    for cv in (no_existe, sin_pagina):
-        assert cv.estado == "rechazada" and len(cv.motivos) == 1
+    assert no_existe.estado == "rechazada" and len(no_existe.motivos) == 1
+    assert sin_pagina.estado == "alerta" and len(sin_pagina.motivos) == 1
 
 
 def test_alerta_por_cobertura_parcial_no_agrega_la_regla(cfg):

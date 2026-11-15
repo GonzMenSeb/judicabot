@@ -479,6 +479,13 @@ def minimo_citas_ok(citas: Iterable[CitaVerificada], minimo: int, min_palabras: 
         return []
     if ok >= minimo:
         return [f"{ALERTA}Las consideraciones no tienen ninguna cita verificada; revise la jurisprudencia que las respalda."]
+    sin_acceso = sum(1 for c in citas if c.relatoria == "inaccesible" and c.estado == "alerta")
+    if ok + sin_acceso >= minimo:
+        return [
+            f"{ALERTA}Las consideraciones tienen {ok} {'cita verificada' if ok == 1 else 'citas verificadas'} y se exigen "
+            f"al menos {minimo}, pero {sin_acceso} no se pudieron verificar porque la relatoría de la Corte no respondió "
+            "desde el servidor (no están rechazadas); verifíquelas en la relatoría antes de firmar."
+        ]
     rechazadas = sum(1 for c in citas if c.estado == "rechazada")
     para_revisar = sum(1 for c in citas if c.estado == "alerta")
     detalle = "".join(
