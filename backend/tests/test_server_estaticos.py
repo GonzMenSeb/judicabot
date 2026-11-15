@@ -104,7 +104,7 @@ def test_index_y_resto_de_estaticos_van_sin_cache(cliente, ruta):
 
 def test_csp_solo_en_respuestas_html(cliente):
     csp = estaticos.CSP
-    assert "script-src 'self'" in csp and "connect-src 'self'" in csp
+    assert "script-src 'self'" in csp and "connect-src 'self' https://www.datos.gov.co" in csp
     assert cliente.get("/").headers["content-security-policy"] == csp
     assert cliente.get("/segunda/caso-1/fallo").headers["content-security-policy"] == csp
     assert "content-security-policy" not in cliente.get("/api/config-default").headers

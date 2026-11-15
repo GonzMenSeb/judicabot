@@ -476,7 +476,7 @@ class _Assets:
         await _servidor_assets(directorio)(scope, receive, send)
 
 
-for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia"):
+for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia", "rutas_dataset"):
     try:
         _m = importlib.import_module(f"tutela2.{_modulo}")
     except ModuleNotFoundError as exc:

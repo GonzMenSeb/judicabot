@@ -227,6 +227,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dataset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Estado Dataset */
+        get: operations["estado_dataset_api_dataset_get"];
+        /** Subir Dataset */
+        put: operations["subir_dataset_api_dataset_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/estado-servidor": {
         parameters: {
             query?: never;
@@ -416,6 +434,11 @@ export interface components {
             files: string[];
             /** Nombre */
             nombre?: string | null;
+        };
+        /** Body_subir_dataset_api_dataset_put */
+        Body_subir_dataset_api_dataset_put: {
+            /** Archivo */
+            archivo: string;
         };
         /** CampoFormato */
         CampoFormato: {
@@ -674,6 +697,13 @@ export interface components {
             id: string;
             /** Titulo */
             titulo: string;
+        };
+        /** EstadoDataset */
+        EstadoDataset: {
+            /** Url */
+            url: string;
+            /** Vigente */
+            vigente: boolean;
         };
         /** EstadoServidor */
         EstadoServidor: {
@@ -1430,6 +1460,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    estado_dataset_api_dataset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstadoDataset"];
+                };
+            };
+        };
+    };
+    subir_dataset_api_dataset_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_subir_dataset_api_dataset_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
