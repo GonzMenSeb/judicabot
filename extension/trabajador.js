@@ -8,7 +8,7 @@ const puente = crearPuente({
   },
   descargar: (url, opciones) => fetch(url, opciones),
   almacen: {
-    leer: () => chrome.storage.local.get(["servidor", "ficha"]),
+    leer: () => chrome.storage.local.get(["servidor", "ficha", "estado"]),
     guardar: (parcial) => chrome.storage.local.set(parcial),
   },
   reloj: {
@@ -32,7 +32,10 @@ chrome.alarms.onAlarm.addListener((alarma) => {
 chrome.runtime.onMessage.addListener((mensaje, _remitente, responder) => {
   if (mensaje?.tipo !== "configurar") return false;
   chrome.storage.local
-    .set({ servidor: mensaje.servidor, ficha: null })
+    .get("servidor")
+    .then(({ servidor }) =>
+      chrome.storage.local.set(servidor === mensaje.servidor ? { servidor } : { servidor: mensaje.servidor, ficha: null }),
+    )
     .then(() => puente.conectar(mensaje.contrasena))
     .then(
       () => responder({ ok: true }),

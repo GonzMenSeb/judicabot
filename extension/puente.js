@@ -7,6 +7,7 @@ export const SERVIDOR_POR_DEFECTO = "https://judicabot.web.vespiridion.org";
 const ESQUEMAS_SOCKET = { "https:": "wss:", "http:": "ws:" };
 const LATIDO = JSON.stringify({ tipo: "latido" });
 const VACIO = new Uint8Array(0);
+const TERMINALES = new Set(["rechazada", "bloqueada"]);
 
 export function urlPermitida(url) {
   let destino;
@@ -20,7 +21,8 @@ export function urlPermitida(url) {
     destino.host === "www.corteconstitucional.gov.co" &&
     destino.username === "" &&
     destino.password === "" &&
-    destino.pathname.startsWith("/relatoria/")
+    destino.pathname.startsWith("/relatoria/") &&
+    !destino.pathname.includes("%")
   );
 }
 
@@ -94,12 +96,15 @@ export function crearPuente({ crearSocket, descargar, almacen, reloj, version, a
   }
 
   async function abrir(mio, contrasena) {
-    const { servidor, ficha } = await almacen.leer();
+    const { servidor, ficha, estado } = await almacen.leer();
     if (mio !== turno) return;
     let credencial;
     if (contrasena) credencial = { contrasena };
     else if (typeof ficha === "string") credencial = { ficha };
-    else return alCambiarEstado("sin_contrasena", "");
+    else {
+      if (!TERMINALES.has(estado)) alCambiarEstado("sin_contrasena", "");
+      return;
+    }
     alCambiarEstado("conectando", "");
     let socket;
     try {
@@ -132,7 +137,7 @@ export function crearPuente({ crearSocket, descargar, almacen, reloj, version, a
       if (actual !== conexion) return;
       actual = null;
       if (evento.code === 4401) {
-        almacen.guardar({ ficha: null });
+        if ("ficha" in credencial) almacen.guardar({ ficha: null });
         alCambiarEstado("rechazada", "");
       } else if (evento.code === 4429) {
         alCambiarEstado("bloqueada", "");

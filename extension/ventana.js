@@ -16,8 +16,9 @@ const boton = document.getElementById("conectar");
 const linea = document.getElementById("estado");
 
 async function mostrarEstado() {
-  const { servidor, estado } = await chrome.storage.local.get(["servidor", "estado"]);
-  linea.textContent = TEXTOS[estado]?.(servidor || SERVIDOR_POR_DEFECTO) ?? "";
+  const { servidor, estado, detalle } = await chrome.storage.local.get(["servidor", "estado", "detalle"]);
+  const texto = TEXTOS[estado]?.(servidor || SERVIDOR_POR_DEFECTO) ?? "";
+  linea.textContent = estado === "desconectada" && detalle ? `${texto} (${detalle})` : texto;
 }
 
 formulario.addEventListener("submit", async (evento) => {

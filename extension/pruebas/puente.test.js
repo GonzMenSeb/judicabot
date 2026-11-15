@@ -93,7 +93,10 @@ function armar({ servidor = "https://judicabot.example", ficha, descargar = asyn
     almacen,
     reloj,
     version: "1.0.0",
-    alCambiarEstado: (estado, detalle) => estados.push([estado, detalle]),
+    alCambiarEstado: (estado, detalle) => {
+      estados.push([estado, detalle]);
+      datos.estado = estado;
+    },
   });
   return { puente, sockets, estados, reloj, almacen, datos };
 }
@@ -118,6 +121,9 @@ test("urlPermitida acepta la relatoría y rechaza el resto", () => {
     "https://corteconstitucional.gov.co/relatoria/2022/T-200-22.htm",
     "https://www.corteconstitucional.gov.co/otra/2022/T-200-22.htm",
     "https://www.corteconstitucional.gov.co/relatoria/../x",
+    "https://www.corteconstitucional.gov.co/relatoria/..%2f..%2fx",
+    "https://www.corteconstitucional.gov.co/relatoria/%2e%2e%5cx",
+    "https://www.corteconstitucional.gov.co/relatoria/2022/T%2D200-22.htm",
     "https://u:p@www.corteconstitucional.gov.co/relatoria/x",
     "https://evil.com/relatoria/x",
     "no es una url",
@@ -191,6 +197,35 @@ test("cierre 4401 borra la ficha y no reintenta", async () => {
   assert.equal(datos.ficha, null);
   assert.equal(reloj.luegos.length, 0);
 });
+
+test("cierre 4401 tras una contraseña conserva la ficha guardada", async () => {
+  const { puente, sockets, estados, reloj, almacen, datos } = armar({ ficha: "abc" });
+  await puente.conectar("mala");
+  sockets[0].abrir();
+  sockets[0].cerrar(4401);
+  assert.deepEqual(estados.at(-1), ["rechazada", ""]);
+  assert.deepEqual(almacen.guardados, []);
+  assert.equal(datos.ficha, "abc");
+  assert.equal(reloj.luegos.length, 0);
+});
+
+for (const [codigo, estado] of [
+  [4429, "bloqueada"],
+  [4401, "rechazada"],
+]) {
+  test(`el estado ${estado} sobrevive a la vigilia sin credencial`, async () => {
+    const { puente, sockets, estados } = armar({ ficha: null });
+    await puente.conectar("mala");
+    sockets[0].abrir();
+    sockets[0].cerrar(codigo);
+    await puente.conectar();
+    assert.equal(sockets.length, 1);
+    assert.deepEqual(estados, [
+      ["conectando", ""],
+      [estado, ""],
+    ]);
+  });
+}
 
 test("cierre 4429 da estado bloqueada y no reintenta", async () => {
   const { socket, estados, reloj } = await conectado();
