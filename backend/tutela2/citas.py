@@ -221,6 +221,7 @@ class Relatoria(NamedTuple):
     texto: str | None
     estado: Literal["ok", "no_publicada", "inaccesible"]
     detalle: str = ""
+    extension: Literal["no_conectada", "sin_respuesta", "rechazo"] | None = None
 
 
 def _bajar_pagina(url: str) -> tuple[bytes | None, str]:
@@ -254,7 +255,13 @@ def consultar_relatoria(url: str, cfg: Config) -> Relatoria:
     en_cache = destino.is_file()
     crudo, error = (destino.read_bytes(), "") if en_cache else _bajar_pagina(url)
     if crudo is None:
-        return Relatoria(None, "inaccesible", error)
+        from tutela2 import extension
+
+        entrega = extension.pedir_pagina(url)
+        if entrega.estado != "ok":
+            detalle = error if entrega.estado == "no_conectada" else entrega.detalle
+            return Relatoria(None, "inaccesible", detalle, entrega.estado)
+        crudo = entrega.cuerpo
     estado, detalle = _clasificar_pagina(crudo)
     if estado != "ok":
         return Relatoria(None, estado, detalle)
@@ -1097,15 +1104,31 @@ def verificar_citas(
                 "motivos": cv.motivos,
             },
         )
-    sin_acceso = sorted({cv.sentencia_norm for cv in verificadas if cv.relatoria == "inaccesible" and cv.sentencia_norm})
-    if sin_acceso:
-        eventos.emitir(
-            "verificacion",
-            "verifica",
-            f"La relatoría de la Corte no respondió desde el servidor para {', '.join(sin_acceso)}: esas citas quedan para revisar, no rechazadas.",
-            {"sin_acceso": sin_acceso},
-        )
+    for clave, aviso in _AVISO_SIN_ACCESO.items():
+        sin_acceso = sorted({
+            cv.sentencia_norm
+            for cv in verificadas
+            if cv.relatoria == "inaccesible" and cv.sentencia_norm and paginas[cv.url].extension == clave
+        })
+        if sin_acceso:
+            eventos.emitir("verificacion", "verifica", aviso.format(lista=", ".join(sin_acceso)), {"sin_acceso": sin_acceso, "extension": clave})
     return verificadas
+
+
+_AVISO_SIN_ACCESO = {
+    None: "La relatoría de la Corte no respondió desde el servidor para {lista}: esas citas quedan para revisar, no rechazadas.",
+    "no_conectada": (
+        "La relatoría de la Corte no respondió desde el servidor para {lista} y la extensión de judicabot no estaba "
+        "conectada: esas citas quedan para revisar, no rechazadas."
+    ),
+    "rechazo": (
+        "La relatoría de la Corte rechazó la petición de la extensión de judicabot para {lista}: esas citas quedan "
+        "para revisar, no rechazadas."
+    ),
+    "sin_respuesta": (
+        "La extensión de judicabot no trajo a tiempo la relatoría para {lista}: esas citas quedan para revisar, no rechazadas."
+    ),
+}
 
 
 _ETIQUETA_ESTADO = {"ok": "verificada", "alerta": "para revisar", "rechazada": "rechazada"}
@@ -1229,11 +1252,22 @@ def _motivo_sin_relatoria(cv: CitaVerificada, relatoria: Relatoria) -> str:
             f"La sentencia {cv.sentencia_norm} figura en el dataset oficial, pero la relatoría de la Corte aún no "
             f"publica su texto ({cv.url}); la cita no se pudo verificar."
         )
+    if relatoria.extension == "rechazo":
+        return (
+            f"La relatoría de la Corte Constitucional rechazó la petición de la extensión de judicabot ({relatoria.detalle}); "
+            f"la cita no se pudo verificar y esto no indica que la sentencia no exista. Verifique el pasaje en {cv.url}."
+        )
+    if relatoria.extension == "sin_respuesta":
+        return (
+            f"La extensión de judicabot no trajo la página de la relatoría ({relatoria.detalle}); la cita no se pudo "
+            f"verificar y esto no indica que la sentencia no exista. Verifique el pasaje en {cv.url}."
+        )
     causa = relatoria.detalle or "sin respuesta"
     bloqueo = " (la Corte puede bloquear las conexiones desde servidores fuera de Colombia)" if relatoria.detalle == "HTTP 403" else ""
+    sin_extension = " y la extensión de judicabot no estaba conectada" if relatoria.extension == "no_conectada" else ""
     return (
-        f"No se pudo consultar la relatoría de la Corte Constitucional desde el servidor ({causa}){bloqueo}; la cita "
-        f"no se pudo verificar y esto no indica que la sentencia no exista. Verifique el pasaje en {cv.url}."
+        f"No se pudo consultar la relatoría de la Corte Constitucional desde el servidor ({causa}){bloqueo}{sin_extension}; "
+        f"la cita no se pudo verificar y esto no indica que la sentencia no exista. Verifique el pasaje en {cv.url}."
     )
 
 
