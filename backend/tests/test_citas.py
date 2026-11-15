@@ -801,6 +801,18 @@ def test_consultar_relatoria_rechazo_de_la_relatoria_a_la_extension(cfg, monkeyp
     assert citas.consultar_relatoria(URL_T200, cfg) == citas.Relatoria(None, "inaccesible", "HTTP 403", "rechazo")
 
 
+def test_consultar_relatoria_pagina_corta_desde_la_extension_es_rechazo(cfg, monkeypatch):
+    _red_bloqueada(monkeypatch)
+    _extension(monkeypatch, Entrega("ok", b"<html>challenge</html>"))
+    assert citas.consultar_relatoria(URL_T200, cfg) == citas.Relatoria(
+        None, "inaccesible", "la respuesta es demasiado corta para ser una providencia", "rechazo"
+    )
+    assert not (cfg.cache_path() / "relatoria").exists()
+    (cv,) = _verificar(cfg, _p("SU-082/95"))
+    (motivo,) = cv.motivos
+    assert motivo.startswith("La relatoría de la Corte Constitucional rechazó la petición de la extensión de judicabot (")
+
+
 def test_consultar_relatoria_extension_sin_respuesta(cfg, monkeypatch):
     _red_bloqueada(monkeypatch)
     _extension(monkeypatch, Entrega("sin_respuesta", None, "la extensión no respondió a tiempo"))

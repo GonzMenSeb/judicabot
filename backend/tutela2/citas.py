@@ -254,7 +254,8 @@ def consultar_relatoria(url: str, cfg: Config) -> Relatoria:
     destino = cfg.cache_path() / "relatoria" / Path(urlparse(url).path).name
     en_cache = destino.is_file()
     crudo, error = (destino.read_bytes(), "") if en_cache else _bajar_pagina(url)
-    if crudo is None:
+    por_extension = crudo is None
+    if por_extension:
         from tutela2 import extension
 
         entrega = extension.pedir_pagina(url)
@@ -263,6 +264,8 @@ def consultar_relatoria(url: str, cfg: Config) -> Relatoria:
             return Relatoria(None, "inaccesible", detalle, entrega.estado)
         crudo = entrega.cuerpo
     estado, detalle = _clasificar_pagina(crudo)
+    if estado == "inaccesible" and por_extension:
+        return Relatoria(None, estado, detalle, "rechazo")
     if estado != "ok":
         return Relatoria(None, estado, detalle)
     texto = _html_a_texto(_decodificar(crudo))

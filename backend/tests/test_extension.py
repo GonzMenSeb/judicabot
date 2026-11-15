@@ -83,6 +83,29 @@ def test_primer_mensaje_ilegible_o_tardio_cierra_con_4401(cliente, monkeypatch, 
     assert cierre.value.code == 4401
 
 
+def test_hola_anidado_en_exceso_cierra_con_4401(cliente):
+    with pytest.raises(WebSocketDisconnect) as cierre:
+        with cliente.websocket_connect(SOCKET) as ws:
+            ws.send_text("[" * 200000)
+            ws.receive_json()
+    assert cierre.value.code == 4401
+
+
+def test_origen_de_pagina_web_cierra_con_4401(cliente, monkeypatch):
+    monkeypatch.delenv("JUDICABOT_PASSWORD")
+    with pytest.raises(WebSocketDisconnect) as cierre:
+        with cliente.websocket_connect(SOCKET, headers={"origin": "https://evil.example"}) as ws:
+            _hola(ws)
+            ws.receive_json()
+    assert cierre.value.code == 4401
+
+
+def test_origen_de_extension_se_acepta(cliente):
+    with cliente.websocket_connect(SOCKET, headers={"origin": "chrome-extension://abc"}) as ws:
+        _hola(ws, contrasena=CLAVE)
+        assert ws.receive_json()["tipo"] == "listo"
+
+
 def test_contrasena_correcta_entrega_la_ficha(cliente):
     ficha = acceso.ficha_extension(CLAVE)
     with cliente.websocket_connect(SOCKET) as ws:
@@ -204,6 +227,24 @@ def test_desconexion_con_pedido_pendiente_es_sin_respuesta(cliente):
             ws.receive_json()
         assert futuro.result(timeout=5) == Entrega("sin_respuesta", None, "la extensión se desconectó")
     assert extension.conectada() is False
+
+
+def test_entrega_anidada_en_exceso_se_descarta(cliente):
+    with _conectada(cliente) as ws:
+        ws.send_bytes(b"[" * 200000 + b"\n")
+        assert _responder(ws, 200, b"pagina") == Entrega("ok", b"pagina", "")
+
+
+def test_desconexion_de_la_mas_reciente_reintenta_en_otra(cliente):
+    with _conectada(cliente) as vieja, ThreadPoolExecutor() as hilos:
+        with _conectada(cliente) as nueva:
+            futuro = hilos.submit(extension.pedir_pagina, URL)
+            assert nueva.receive_json()["url"] == URL
+        pedido = vieja.receive_json()
+        assert pedido["url"] == URL
+        vieja.send_bytes(_entrega(pedido["id"], 200, b"pagina"))
+        assert futuro.result(timeout=5) == Entrega("ok", b"pagina", "")
+        assert extension.conectada() is True
 
 
 def test_paginas_de_varios_megabytes_pasan(cliente):

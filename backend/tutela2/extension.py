@@ -53,7 +53,7 @@ class _Conexion:
             id_, codigo, detalle = meta["id"], meta["codigo"], meta.get("detalle") or ""
             with _candado:
                 futuro = self.pendientes.pop(id_, None)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, RecursionError):
             log.warning("Se descartó una entrega ilegible de la extensión")
             return
         if futuro is None:
@@ -106,11 +106,25 @@ async def atender(socket: WebSocket, version: str) -> None:
 def pedir_pagina(url: str, espera_s: float = ESPERA_S) -> Entrega:
     if not url.startswith(BASE_RELATORIA + "/"):
         raise ValueError(f"La extensión solo descarga páginas de la relatoría: {url}")
+    with _candado:
+        intentos = len(_conexiones)
+    entrega = NO_CONECTADA
+    for _ in range(intentos):
+        siguiente = _pedir_a_la_ultima(url, espera_s)
+        if siguiente is None:
+            break
+        entrega = siguiente
+        if entrega is not DESCONECTADA and entrega is not VENCIDA:
+            break
+    return entrega
+
+
+def _pedir_a_la_ultima(url: str, espera_s: float) -> Entrega | None:
     id_ = uuid.uuid4().hex
     futuro: concurrent.futures.Future[Entrega] = concurrent.futures.Future()
     with _candado:
         if not _conexiones:
-            return NO_CONECTADA
+            return None
         conexion = _conexiones[-1]
         conexion.pendientes[id_] = futuro
     asyncio.run_coroutine_threadsafe(conexion.pedir(id_, url), conexion.bucle)

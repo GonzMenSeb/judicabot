@@ -32,11 +32,14 @@ def _rechazo(socket: WebSocket, hola: object, pw: str) -> int | None:
 @router.websocket("/api/extension")
 async def socket_extension(socket: WebSocket) -> None:
     await socket.accept()
+    if socket.headers.get("origin", "").startswith(("http://", "https://")):
+        await socket.close(CIERRE_RECHAZADA)
+        return
     try:
         hola = json.loads(await asyncio.wait_for(socket.receive_text(), extension.ESPERA_HOLA_S))
     except WebSocketDisconnect:
         return
-    except (TimeoutError, ValueError, KeyError):
+    except (TimeoutError, ValueError, KeyError, RecursionError):
         hola = None
     pw = acceso.password()
     codigo = _rechazo(socket, hola, pw)
