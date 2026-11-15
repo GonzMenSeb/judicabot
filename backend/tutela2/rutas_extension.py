@@ -4,9 +4,10 @@ import asyncio
 import hmac
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from tutela2 import acceso, extension
+from tutela2 import acceso, citas, extension
+from tutela2.config import Config
 
 router = APIRouter()
 
@@ -44,3 +45,21 @@ async def socket_extension(socket: WebSocket) -> None:
         return
     await socket.send_json({"tipo": "listo", "ficha": acceso.ficha_extension(pw) if pw else ""})
     await extension.atender(socket, str(hola.get("version", "")))
+
+
+@router.get("/api/relatoria", include_in_schema=False)
+def consulta_relatoria(sentencia: str) -> dict:
+    partes = citas.normalizar_sentencia(sentencia)
+    if partes is None:
+        raise HTTPException(422, f"No se pudo interpretar la sentencia «{sentencia}».")
+    url = citas.url_relatoria(*partes)
+    relatoria = citas.consultar_relatoria(url, Config())
+    return {
+        "sentencia": citas.clave_dataset(*partes),
+        "url": url,
+        "estado": relatoria.estado,
+        "detalle": relatoria.detalle,
+        "extension": relatoria.extension,
+        "caracteres": len(relatoria.texto) if relatoria.texto is not None else None,
+        "extension_conectada": extension.conectada(),
+    }

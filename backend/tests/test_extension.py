@@ -4,12 +4,16 @@ import json
 import os
 import re
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from test_citas import SHELL_ANGULAR, _pagina
 
 from tutela2 import acceso, extension, server
 from tutela2.extension import Entrega
@@ -206,3 +210,73 @@ def test_paginas_de_varios_megabytes_pasan(cliente):
     cuerpo = os.urandom(5 * 1024 * 1024)
     with _conectada(cliente) as ws:
         assert _responder(ws, 200, cuerpo) == Entrega("ok", cuerpo, "")
+
+
+@pytest.fixture
+def relatoria_bloqueada(tmp_path, monkeypatch) -> Path:
+    monkeypatch.setenv("TUTELA2_CACHE_DIR", str(tmp_path / "cache"))
+
+    def bloqueada(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", bloqueada)
+    return tmp_path / "cache" / "relatoria"
+
+
+def _iniciar_sesion(cliente: TestClient) -> None:
+    r = cliente.post(
+        "/login",
+        content=f"password={CLAVE}",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+
+def test_consulta_relatoria_exige_sesion(cliente, relatoria_bloqueada):
+    assert cliente.get("/api/relatoria", params={"sentencia": "T-200/22"}).status_code == 401
+
+
+def test_consulta_relatoria_sentencia_invalida(cliente, relatoria_bloqueada):
+    _iniciar_sesion(cliente)
+    assert cliente.get("/api/relatoria", params={"sentencia": "xyz"}).status_code == 422
+
+
+def test_consulta_relatoria_por_la_extension_queda_en_cache(cliente, relatoria_bloqueada):
+    _iniciar_sesion(cliente)
+    with _conectada(cliente) as ws, ThreadPoolExecutor() as hilos:
+        consulta = hilos.submit(cliente.get, "/api/relatoria", params={"sentencia": "T-200/22"})
+        pedido = ws.receive_json()
+        assert pedido["url"] == URL
+        ws.send_bytes(_entrega(pedido["id"], 200, _pagina("T-200/22")))
+        r = consulta.result(timeout=10)
+        assert r.status_code == 200
+        cuerpo = r.json()
+        assert cuerpo["estado"] == "ok" and cuerpo["extension_conectada"] is True
+        assert cuerpo["sentencia"] == "T-200/22" and cuerpo["url"] == URL
+        assert cuerpo["detalle"] == "" and cuerpo["extension"] is None and cuerpo["caracteres"] > 0
+        assert (relatoria_bloqueada / "T-200-22.htm").read_bytes() == _pagina("T-200/22")
+
+        consulta = hilos.submit(cliente.get, "/api/relatoria", params={"sentencia": "SU-319/26"})
+        pedido = ws.receive_json()
+        assert pedido["url"].endswith("/relatoria/2026/SU319-26.htm")
+        ws.send_bytes(_entrega(pedido["id"], 200, SHELL_ANGULAR))
+        cuerpo = consulta.result(timeout=10).json()
+        assert cuerpo["estado"] == "no_publicada" and cuerpo["caracteres"] is None
+        assert not (relatoria_bloqueada / "SU319-26.htm").exists()
+
+
+def test_consulta_relatoria_sin_extension_es_inaccesible(cliente, relatoria_bloqueada):
+    _iniciar_sesion(cliente)
+    r = cliente.get("/api/relatoria", params={"sentencia": "T-200/22"})
+    assert r.status_code == 200
+    assert r.json() == {
+        "sentencia": "T-200/22",
+        "url": URL,
+        "estado": "inaccesible",
+        "detalle": "HTTP 403",
+        "extension": "no_conectada",
+        "caracteres": None,
+        "extension_conectada": False,
+    }
+    assert not relatoria_bloqueada.exists()
