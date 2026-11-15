@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <title>Judicabot: relatoría</title>
+    <style>
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 16px;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #1f2328;
+        background: #fff;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 15px;
+      }
+      form {
+        display: grid;
+        gap: 10px;
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        font-weight: 600;
+      }
+      input {
+        padding: 6px 8px;
+        border: 1px solid #c8ccd1;
+        border-radius: 6px;
+        font: inherit;
+        font-weight: 400;
+      }
+      button {
+        padding: 7px 12px;
+        border: 0;
+        border-radius: 6px;
+        background: #1f4e79;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #estado {
+        margin: 12px 0 0;
+        min-height: 1.4em;
+      }
+    </style>
+    <script type="module" src="ventana.js"></script>
+  </head>
+  <body>
+    <h1>Judicabot: relatoría de la Corte Constitucional</h1>
+    <form id="formulario">
+      <label>
+        Servidor
+        <input id="servidor" type="url" required>
+      </label>
+      <label>
+        Contraseña de judicabot
+        <input id="contrasena" type="password" autocomplete="current-password" required>
+      </label>
+      <button id="conectar" type="submit">Conectar</button>
+    </form>
+    <p id="estado" role="status"></p>
+  </body>
+</html>
