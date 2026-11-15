@@ -187,6 +187,15 @@ def _referencia(cv: CitaVerificada) -> str:
     return formatear_referencia(cv)
 
 
+def _sin_relatoria(cv: CitaVerificada) -> str:
+    causa = (
+        "la relatoría de la Corte no respondió desde el servidor"
+        if cv.relatoria == "inaccesible"
+        else "la relatoría de la Corte aún no publica su texto"
+    )
+    return _falta(f"cita sin verificar contra la relatoría ({causa}); verifíquela en {cv.url}")
+
+
 def _compactar(texto: str, maximo: int = _MAX_PALABRAS_CITA_CASO, minimo: int = 0) -> str:
     plano = " ".join(texto.split())
     if len(plano.split()) <= maximo:
@@ -508,7 +517,7 @@ class _Docx:
         if cv is None or cv.estado == "rechazada":
             nombre = id_ if cv is None else cv.sentencia_original
             return _falta(f"cita verificada {nombre}") if self.en_caso else f"⟦CITA NO VERIFICADA: {nombre}⟧"
-        return _referencia(cv)
+        return f"{_referencia(cv)} {_sin_relatoria(cv)}" if cv.relatoria else _referencia(cv)
 
     def _bloques_citados(self, texto: str) -> None:
         for id_ in _CITA.findall(texto):

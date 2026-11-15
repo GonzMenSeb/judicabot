@@ -455,6 +455,47 @@ def test_cita_rechazada_resaltada(tmp_path, estado):
     assert [r.text for r in marcadas] == ["⟦CITA NO VERIFICADA: T-999 de 2020⟧"]
 
 
+@pytest.mark.parametrize(
+    "relatoria,causa",
+    [
+        ("inaccesible", "la relatoría de la Corte no respondió desde el servidor"),
+        ("no_publicada", "la relatoría de la Corte aún no publica su texto"),
+    ],
+)
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_cita_sin_verificar_contra_la_relatoria_lleva_marcador_resaltado(tmp_path, gen, relatoria, causa):
+    estado = construir_estado()
+    for c in estado["citas"]:
+        if c["id"] == "c1":
+            c.update(estado="alerta", relatoria=relatoria, pagina_ok=False, cobertura=None, url="https://example.test/T-200-22.htm")
+    ruta = render_fallo(tmp_path, estado, gen)
+    texto = lineas(ruta)
+    marcador = f"⟦FALTA: cita sin verificar contra la relatoría ({causa}); verifíquela en https://example.test/T-200-22.htm⟧"
+    primera = next(linea for linea in texto if linea.startswith("PROCEDIBILIDAD_P1"))
+    assert primera.count(marcador) == 2 and primera.count("Sentencia T-200 de 2022") == 2
+    assert marcador in next(linea for linea in texto if linea.startswith("CASO_P1"))
+    parrafo = next(p for p in parrafos(ruta) if p.text.startswith("PROCEDIBILIDAD_P1"))
+    marcadas = [r.text for r in parrafo.runs if r.font.highlight_color == WD_COLOR_INDEX.YELLOW]
+    assert marcadas == [marcador, marcador]
+
+
+def test_cita_en_alerta_por_otra_causa_no_lleva_marcador_de_relatoria(tmp_path, estado):
+    texto = "\n".join(lineas(render_fallo(tmp_path, estado, "B")))
+    assert "cita sin verificar contra la relatoría" not in texto
+
+
+def test_el_informe_lista_la_cita_sin_verificar_entre_los_pendientes(tmp_path):
+    from tutela2 import expediente
+
+    estado = construir_estado()
+    for c in estado["citas"]:
+        if c["id"] == "c1":
+            c.update(estado="alerta", relatoria="inaccesible", url="https://example.test/T-200-22.htm")
+    ruta = render_fallo(tmp_path, estado, "B")
+    marcadores = expediente._FALTA.findall("\n".join(lineas(ruta)))
+    assert any("cita sin verificar contra la relatoría" in m for m in marcadores)
+
+
 def test_cita_con_id_desconocido_se_trata_como_rechazada(tmp_path):
     estado = construir_estado()
     estado["consideraciones"]["procedibilidad"] += " Cierra con [[CITA:zz]]."
