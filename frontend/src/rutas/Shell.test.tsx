@@ -101,6 +101,19 @@ describe("Shell", () => {
     expect(principal.getAttribute("aria-busy")).toBeNull();
   });
 
+  it("ensancha el lienzo solo en el borrador", async () => {
+    render(<Montaje />);
+    await screen.findByRole("heading", { name: "Inicio" });
+    const principal = document.querySelector<HTMLElement>("main#contenido")!;
+    expect(principal.classList.contains("lienzo-ancho")).toBe(false);
+    await irA("#/segunda/caso-7/borrador");
+    await screen.findByRole("heading", { name: "Borrador" });
+    expect(principal.classList.contains("lienzo-ancho")).toBe(true);
+    await irA("#/");
+    await screen.findByRole("heading", { name: "Inicio" });
+    expect(principal.classList.contains("lienzo-ancho")).toBe(false);
+  });
+
   it("mantiene la vista anterior mientras carga la siguiente, sin pantalla de carga", async () => {
     render(<Montaje />);
     await screen.findByRole("heading", { name: "Inicio" });

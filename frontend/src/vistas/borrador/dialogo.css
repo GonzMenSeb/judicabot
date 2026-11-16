@@ -1,0 +1,20 @@
+dialog.dialogo.bor-dialogo { width: min(34rem, calc(100vw - 2rem)); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3); }
+.bor-dialogo .dialogo-cuerpo { padding: 1.5rem 1.6rem 1.4rem; }
+.bor-dialogo-intro { margin-bottom: 1rem; font-size: 0.93rem; }
+.bor-dlg-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0 0 1.1rem; padding: 0; border: 0; min-width: 0; }
+.bor-dlg-opciones legend { margin-bottom: 0.5rem; padding: 0; font-size: 0.88rem; font-weight: 500; }
+.bor-dlg-opciones > .bor-error { grid-column: 1 / -1; }
+.bor-dlg-opcion { position: relative; display: grid; align-content: start; gap: 0.25rem; min-width: 0; padding: 0.8rem 0.9rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; cursor: pointer; }
+.bor-dlg-opcion:hover { border-color: var(--acento); }
+.bor-dlg-opcion:has(input:checked) { border-color: var(--acento); background: #f2f8fa; box-shadow: 0 0 0 1px var(--acento); }
+.bor-dlg-opcion:has(input:focus-visible) { outline: 2px solid var(--foco); outline-offset: 2px; }
+.bor-dlg-opcion input { position: absolute; opacity: 0; pointer-events: none; }
+.bor-dlg-opcion b { font-weight: 600; }
+.bor-dlg-opcion small { color: var(--suave); font-size: 0.82rem; line-height: 1.4; }
+.bor-dlg-seccion { color: var(--acento); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.bor-error { color: var(--mal); font-size: 0.86rem; }
+.bor-dialogo-error { margin-top: 1rem; }
+
+@media (max-width: 760px) {
+  .bor-dlg-opciones { grid-template-columns: 1fr; }
+}

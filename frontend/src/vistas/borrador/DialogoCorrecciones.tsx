@@ -3,17 +3,20 @@ import { api, ErrorApi } from "../../api";
 import type { JobInicio } from "../../api/contrato";
 import { Aviso, Boton, Dialogo } from "../../ui";
 import type { CorreccionCuerpo } from "./tipos";
+import "./dialogo.css";
 
 type Accion = CorreccionCuerpo["decision"]["accion"];
 
-const OPCIONES: { valor: Accion; titulo: string; detalle: string }[] = [
+const OPCIONES: { valor: Accion; secciones: string; titulo: string; detalle: string }[] = [
   {
     valor: "rehacer_apertura",
+    secciones: "Secciones II a IV",
     titulo: "Rehacer la apertura",
     detalle: "Asunto, antecedentes, sentencia impugnada e impugnación. Después se rehacen también las consideraciones.",
   },
   {
     valor: "rehacer_consideraciones",
+    secciones: "Sección V",
     titulo: "Rehacer las consideraciones",
     detalle: "Solo la sección V. La apertura se conserva.",
   },
@@ -87,15 +90,21 @@ export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: Prop
       }
     >
       <p class="sub bor-dialogo-intro">El modelo vuelve a redactar la parte que elija, siguiendo su instrucción.</p>
-      <fieldset class="bor-opciones" aria-describedby={intentado && faltaAccion ? "bor-err-accion" : undefined}>
+      <fieldset class="bor-dlg-opciones" aria-describedby={intentado && faltaAccion ? "bor-err-accion" : undefined}>
         <legend>¿Qué parte quiere rehacer?</legend>
         {OPCIONES.map((o) => (
-          <label key={o.valor} class="bor-opcion">
-            <input type="radio" name="bor-accion" checked={accion === o.valor} onChange={() => setAccion(o.valor)} />
-            <span>
-              <b>{o.titulo}</b>
-              <small>{o.detalle}</small>
-            </span>
+          <label key={o.valor} class="bor-dlg-opcion">
+            <input
+              type="radio"
+              name="bor-accion"
+              aria-labelledby={`bor-op-${o.valor}`}
+              aria-describedby={`bor-op-det-${o.valor}`}
+              checked={accion === o.valor}
+              onChange={() => setAccion(o.valor)}
+            />
+            <span class="bor-dlg-seccion">{o.secciones}</span>
+            <b id={`bor-op-${o.valor}`}>{o.titulo}</b>
+            <small id={`bor-op-det-${o.valor}`}>{o.detalle}</small>
           </label>
         ))}
         {intentado && faltaAccion && (

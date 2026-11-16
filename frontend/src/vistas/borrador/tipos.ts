@@ -1,4 +1,4 @@
-import type { Bloque, EstadoCasoApi } from "../../api/contrato";
+import type { Bloque, CitaVista, EstadoCasoApi } from "../../api/contrato";
 
 export type PreguntaJev = "sentido_fallo" | "sentido_clausula" | "rol_impugnante";
 
@@ -68,12 +68,25 @@ export interface FilaJev {
   motivo: string | null;
 }
 
-export interface ItemRevision {
+export type NivelRevision = "mal" | "alerta" | "info" | "ok";
+
+export type DetalleRevision =
+  | { tipo: "cita"; cita: CitaVista; motivos: string[] }
+  | { tipo: "jev"; fila: FilaJev }
+  | { tipo: "archivo"; archivo: string; nota: string }
+  | { tipo: "comparar"; lecturas: { etiqueta: string; valores: string[] }[] };
+
+export interface AlertaLegible {
+  nivel: NivelRevision;
+  origen: string;
+  titulo: string;
+  linea: string | null;
+  lineaCompleta: boolean;
+  detalle: DetalleRevision | null;
+}
+
+export interface ItemRevision extends AlertaLegible {
   clave: string;
-  tono: "alerta" | "mal";
-  etiqueta: string;
-  texto: string;
-  detalle: string | null;
   cita: string | null;
 }
 
@@ -81,6 +94,12 @@ export interface EntradaIndice {
   id: string;
   titulo: string;
   sub: boolean;
+  anexo: boolean;
+}
+
+export interface MarcaIndice {
+  n: number;
+  mal: boolean;
 }
 
 export type GrupoBloque =
