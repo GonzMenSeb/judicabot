@@ -118,9 +118,38 @@ export function protegerSalida(guardia: Guardia): () => void {
   };
 }
 
+interface MarcaPanel {
+  profundidad: number;
+  desdePagina: boolean;
+}
+
+interface Salida {
+  destino: string;
+  reemplazar: boolean;
+}
+
+let marca: MarcaPanel | null = null;
+let primera = true;
+let salida: Salida | null = null;
+
+export const saliendoDelPanel = () => salida !== null;
+
+function salirDelPanel(destino: string): void {
+  const { profundidad, desdePagina } = marca ?? { profundidad: 0, desdePagina: false };
+  const pasos = desdePagina ? profundidad + 1 : profundidad;
+  if (pasos === 0) {
+    history.replaceState(null, "", destino);
+    sincronizar();
+    return;
+  }
+  salida = { destino, reemplazar: !desdePagina };
+  history.go(-pasos);
+}
+
 export function navegarDirecto(destino: string): void {
   for (const guardia of guardias) if (guardia(destino)) return;
-  location.hash = destino;
+  if (configuracion.value !== null && !coincidir(destino).configuracion) salirDelPanel(destino);
+  else location.hash = destino;
 }
 
 export function navegar(destino: string): void {
@@ -129,10 +158,36 @@ export function navegar(destino: string): void {
   else if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
 }
 
+function marcarEntrada(abierta: boolean): void {
+  const previa = configuracion.value !== null ? marca : null;
+  if (!abierta) {
+    marca = null;
+    return;
+  }
+  const guardada = (history.state as { panel?: MarcaPanel } | null)?.panel;
+  if (guardada) {
+    marca = guardada;
+    return;
+  }
+  marca = previa ? { profundidad: previa.profundidad + 1, desdePagina: previa.desdePagina } : { profundidad: 0, desdePagina: !primera };
+  history.replaceState({ ...history.state, panel: marca }, "");
+}
+
 export function sincronizar(): void {
+  if (salida) {
+    const { destino, reemplazar } = salida;
+    if (!reemplazar && destino !== location.hash) {
+      location.hash = destino;
+      return;
+    }
+    salida = null;
+    if (reemplazar) history.replaceState(null, "", destino);
+  }
   const { configuracion: pedida } = coincidir(location.hash);
   if (pedida && location.hash !== hashConfiguracion(pedida)) history.replaceState(history.state, "", hashConfiguracion(pedida));
   const { configuracion: seccion, ...pagina } = coincidir(location.hash);
+  marcarEntrada(seccion !== undefined);
+  primera = false;
   configuracion.value = seccion ?? null;
   if (!seccion && claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
 }

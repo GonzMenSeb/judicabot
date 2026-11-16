@@ -120,6 +120,46 @@ describe("panel de configuración", () => {
     expect(ruta.value).toBe(fondo);
   });
 
+  it("tras cambiar de sección, cerrar vuelve a la entrada de la página y Atrás sale de ella como si el panel no se hubiera abierto", async () => {
+    await abrirSobreCasos();
+    await esperarHash(() => fireEvent.click(within(navegacion()).getByRole("link", { name: /Inteligencia artificial/ })));
+    await esperarHash(() => fireEvent.click(within(panel()).getByRole("button", { name: "Cerrar configuración" })));
+    expect(location.hash).toBe("#/segunda");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await esperarHash(() => history.back());
+    expect(location.hash).toBe("");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(configuracion.value).toBeNull();
+  });
+
+  it("cerrar con Escape y con el fondo también retrocede en el historial", async () => {
+    await abrirSobreCasos();
+    await esperarHash(() => fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" }));
+    await esperarHash(() => history.back());
+    expect(location.hash).toBe("");
+
+    await esperarHash(() => (location.hash = "#/segunda"));
+    await esperarHash(() => fireEvent.click(engranaje()));
+    const dialogo = document.querySelector("dialog.panel") as HTMLElement;
+    fireEvent.mouseDown(dialogo);
+    await esperarHash(() => fireEvent.click(dialogo));
+    await esperarHash(() => history.back());
+    expect(location.hash).toBe("");
+  });
+
+  it("si la página de fondo cambió con el panel abierto, cerrar retrocede y navega a la nueva página conservando la anterior", async () => {
+    await abrirSobreCasos();
+    await act(async () => {
+      navegar("#/segunda/c1/documentos");
+    });
+    await esperarHash(() => fireEvent.click(within(panel()).getByRole("button", { name: "Cerrar configuración" })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+    expect(await screen.findByRole("heading", { name: "Documentos" })).toBeTruthy();
+    await esperarHash(() => history.back());
+    expect(location.hash).toBe("#/segunda");
+  });
+
   it("con cambios sin guardar en el formato, cerrar pide confirmación", async () => {
     await abrirSobreCasos();
     fireEvent.input(within(panel()).getByLabelText("Ciudad"), { target: { value: "Cali" } });
@@ -162,8 +202,8 @@ describe("panel de configuración", () => {
     fireEvent.click(within(panel()).getByRole("button", { name: "Cerrar configuración" }));
     const guardia = await within(panel()).findByRole("dialog", { name: "Hay cambios sin guardar" });
     await esperarHash(() => fireEvent.click(within(guardia).getByRole("button", { name: "Salir sin guardar" })));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(location.hash).toBe("#/segunda/c1/documentos");
-    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "Documentos" })).toBeTruthy();
   });
 

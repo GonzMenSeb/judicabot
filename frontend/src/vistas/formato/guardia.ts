@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { navegarDirecto, protegerSalida } from "../../rutas";
+import { navegarDirecto, protegerSalida, saliendoDelPanel } from "../../rutas";
 
 export interface GuardiaSalida {
   destino: string | null;
@@ -35,7 +35,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
     };
     const alNavegar = (e: Event) => {
       const { destination, navigationType } = e as EventoNavegar;
-      if (libre.current || !e.cancelable || !destination.sameDocument || navigationType === "replace") return;
+      if (libre.current || saliendoDelPanel() || !e.cancelable || !destination.sameDocument || navigationType === "replace") return;
       const hash = new URL(destination.url).hash;
       if (hash === location.hash) return;
       e.preventDefault();

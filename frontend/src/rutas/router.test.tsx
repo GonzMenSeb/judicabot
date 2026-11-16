@@ -143,10 +143,8 @@ describe("configuración", () => {
     expect(pedidos).toEqual([]);
 
     soltar();
-    const cambio = cambioDeHash();
     navegarDirecto(hashDe(ruta.value));
-    await cambio;
-    expect(location.hash).toBe("#/segunda/c1/documentos");
+    await vi.waitFor(() => expect(location.hash).toBe("#/segunda/c1/documentos"));
     expect(configuracion.value).toBeNull();
     expect(ruta.value).toEqual({ vista: "documentos", params: { caso: "c1" } });
   });
