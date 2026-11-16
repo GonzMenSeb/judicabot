@@ -127,7 +127,7 @@ test("iniciar redacción: pide la clave, se puede cancelar y luego continuar al 
   await capturar(page, "06-proceso");
 });
 
-test("borrador: bloques, citas clicables, índice y sin tarjeta de Jev", async ({ page }) => {
+test("borrador: bloques, citas clicables, índice, revisión y sin Jev", async ({ page }) => {
   await page.goto(ruta("proceso"));
   await page.getByRole("link", { name: "Ver el borrador" }).click();
   await expect(page).toHaveURL(/\/borrador$/);
@@ -151,14 +151,37 @@ test("borrador: bloques, citas clicables, índice y sin tarjeta de Jev", async (
   await page.keyboard.press("Escape");
   await expect(detalle).toBeHidden();
   await expect(cita).toHaveAttribute("aria-pressed", "false");
+  await expect(cita).toBeFocused();
 
-  const indice = page.getByRole("region", { name: "Secciones" });
+  const indice = page.getByRole("navigation", { name: "Contenido del borrador" });
+  await expect(indice).toBeVisible();
   await indice.getByRole("button", { name: "El término razonable de conservación del dato negativo" }).click();
   await expect(texto.getByRole("heading", { name: "El término razonable de conservación del dato negativo" })).toBeInViewport();
 
-  await page.getByRole("region", { name: "Qué conviene revisar" }).getByRole("button", { name: "Ver en el texto" }).first().click();
-  await page.getByRole("checkbox", { name: "Marcar el texto que sale de plantillas" }).check();
-  await page.getByRole("checkbox", { name: "Marcar el texto que sale de plantillas" }).uncheck();
+  const panel = page.getByRole("complementary", { name: "Antes de decidir" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Revisar" })).toBeVisible();
+  await panel.getByRole("button", { name: /^Cita.*Sentencia T-200/ }).click();
+  await panel.getByRole("button", { name: "Ver en el texto" }).click();
+  await expect(detalle).toBeVisible();
+  await expect(cita).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(detalle).toBeHidden();
+
+  const revisado = panel.getByRole("button", { name: "Revisado: Sentencia T-200 de 2022" });
+  await revisado.click();
+  await expect(revisado).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/^Lleva 1 de \d+\./)).toBeVisible();
+  await page.reload();
+  await expect(panel.getByRole("button", { name: "Revisado: Sentencia T-200 de 2022" })).toHaveAttribute("aria-pressed", "true");
+
+  const plantilla = page.getByRole("switch", { name: "Marcar texto de plantilla" });
+  await expect(plantilla).toBeChecked();
+  await expect(texto).toHaveClass(/bor-con-plantilla/);
+  await plantilla.uncheck();
+  await expect(texto).not.toHaveClass(/bor-con-plantilla/);
+  await plantilla.check();
+  await expect(texto).toHaveClass(/bor-con-plantilla/);
   await capturar(page, "07-borrador");
   await page.getByRole("link", { name: "Pasar a la decisión" }).click();
   await expect(page).toHaveURL(/\/decision$/);

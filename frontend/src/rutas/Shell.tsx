@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef } from "preact/hooks";
 import { cargarEstadoServidor, estadoServidor, nombreModelo, tituloVista } from "../estado";
+import { cx } from "../ui/clases";
 import { Toasts } from "../ui/Toasts";
 import { Topbar } from "../ui/Topbar";
 import type { SeccionTopbar } from "../ui/Topbar";
@@ -64,7 +65,7 @@ export function Shell({ children }: { children?: ComponentChildren }) {
         clave={servidor ? servidor.api_key : null}
         modelo={servidor ? nombreModelo(servidor.modelo) : null}
       />
-      <main id="contenido" class="lienzo" ref={principal} tabIndex={-1} aria-busy={visible !== destino ? "true" : undefined}>
+      <main id="contenido" class={cx("lienzo", (visible ?? destino).vista === "borrador" && "lienzo-ancho")} ref={principal} tabIndex={-1} aria-busy={visible !== destino ? "true" : undefined}>
         {children}
       </main>
       <Toasts />
