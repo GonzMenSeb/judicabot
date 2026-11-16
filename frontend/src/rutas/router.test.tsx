@@ -18,6 +18,7 @@ describe("coincidir", () => {
   it("resuelve las secciones de configuración sobre Inicio, también desde las rutas antiguas", () => {
     expect(coincidir("#/configuracion/formato")).toEqual({ vista: "inicio", params: {}, configuracion: "formato" });
     expect(coincidir("#/configuracion/ia")).toEqual({ vista: "inicio", params: {}, configuracion: "ia" });
+    expect(coincidir("#/configuracion/extension")).toEqual({ vista: "inicio", params: {}, configuracion: "extension" });
     expect(coincidir("#/configuracion")).toEqual({ vista: "inicio", params: {}, configuracion: "formato" });
     expect(coincidir("#/configuracion/")).toEqual({ vista: "inicio", params: {}, configuracion: "formato" });
     expect(coincidir("#/formato")).toEqual({ vista: "inicio", params: {}, configuracion: "formato" });
@@ -39,7 +40,7 @@ describe("coincidir", () => {
     expect(coincidir("#/segunda/%E0%A4%A/fallo").params.caso).toBe("%E0%A4%A");
   });
 
-  it.each(["#/nada", "#/segunda/caso-1", "#/segunda/caso-1/otra", "#/segunda/caso-1/fallo/extra", "#/formato/x", "#//", "#/configuracion/otra", "#/configuracion/ia/x", "#/constructor"])(
+  it.each(["#/nada", "#/segunda/caso-1", "#/segunda/caso-1/otra", "#/segunda/caso-1/fallo/extra", "#/formato/x", "#//", "#/configuracion/otra", "#/configuracion/ia/x", "#/constructor", "#/extension"])(
     "vuelve al inicio con %s",
     (hash) => {
       expect(coincidir(hash)).toEqual({ vista: "inicio", params: {} });

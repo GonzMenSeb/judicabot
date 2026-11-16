@@ -14,7 +14,7 @@ El servidor de judicabot verifica cada cita de la Corte Constitucional contra el
 
 Chrome o Edge, versión 120 o más.
 
-1. Descargar el `.zip` desde **Inteligencia artificial** en judicabot, descomprimirlo y mover la carpeta `judicabot-relatoria` a un lugar fijo, por ejemplo Documentos. No borrarla: el navegador la usa mientras la extensión esté instalada. (También se puede cargar esta carpeta, `extension/`.)
+1. Descargar el `.zip` desde **Configuración → Extensión de la relatoría** (engranaje de la barra) en judicabot, descomprimirlo y mover la carpeta `judicabot-relatoria` a un lugar fijo, por ejemplo Documentos. No borrarla: el navegador la usa mientras la extensión esté instalada. (También se puede cargar esta carpeta, `extension/`.)
 2. Abrir `chrome://extensions` en Chrome o `edge://extensions` en Edge.
 3. Activar "Modo de desarrollador".
 4. Pulsar "Cargar extensión sin empaquetar" (según el idioma y el navegador puede decir "Cargar descomprimida" o "Cargar desempaquetado") y elegir esa carpeta `judicabot-relatoria`.
@@ -25,11 +25,11 @@ El ícono muestra `!` mientras la extensión no esté conectada.
 
 ## Actualización
 
-Descargar el .zip de nuevo desde **Inteligencia artificial**, descomprimirlo y copiar el contenido de su carpeta `judicabot-relatoria` sobre la carpeta ya instalada, reemplazando los archivos. Después pulsar el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`. Si se carga otra carpeta, el navegador la instala como una extensión distinta, sin la conexión guardada.
+Descargar el .zip de nuevo desde **Configuración → Extensión de la relatoría**, descomprimirlo y copiar el contenido de su carpeta `judicabot-relatoria` sobre la carpeta ya instalada, reemplazando los archivos. Después pulsar el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`. Si se carga otra carpeta, el navegador la instala como una extensión distinta, sin la conexión guardada.
 
 ## Descargarla desde judicabot
 
-judicabot la ofrece ya empaquetada: botón "Descargar extensión (.zip)" en **Inteligencia artificial** (`GET /api/extension/zip`). Quien la reciba descomprime el `.zip` y carga la carpeta `judicabot-relatoria` como se explica arriba.
+judicabot la ofrece ya empaquetada: botón "Descargar extensión (.zip)" en **Configuración → Extensión de la relatoría** (`GET /api/extension/zip`). Quien la reciba descomprime el `.zip` y carga la carpeta `judicabot-relatoria` como se explica arriba.
 
 ## Condiciones
 
