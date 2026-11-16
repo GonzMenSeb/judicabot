@@ -534,6 +534,8 @@ export interface components {
             id: string;
             /** Texto */
             texto: string;
+            /** Url */
+            url?: string | null;
         };
         /** DecisionVistaRespuesta */
         DecisionVistaRespuesta: {

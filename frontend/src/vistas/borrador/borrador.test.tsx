@@ -310,6 +310,24 @@ describe("Borrador interacción", () => {
     expect(document.activeElement).toBe(cita);
   });
 
+  it("enlaza a la relatoría solo cuando la cita verificada trae URL", async () => {
+    simularRed();
+    await abrir();
+    fireEvent.click(screen.getByRole("button", { name: /sentencia T-760 de 2008/ }));
+    const panel = await screen.findByRole("region", { name: /sentencia T-760 de 2008/ });
+    const enlace = within(panel).getByRole("link", { name: /Abrir en la relatoría.*pestaña nueva/ });
+    expect(enlace.getAttribute("href")).toBe("https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm");
+    expect(enlace.getAttribute("target")).toBe("_blank");
+    expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(within(panel).getByText("Relatoría")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Cerrar" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /SU-508/ }));
+    const otro = await screen.findByRole("region", { name: "sentencia SU-508 de 2020" });
+    expect(within(otro).queryByRole("link")).toBeNull();
+    expect(within(otro).queryByText("Relatoría")).toBeNull();
+  });
+
   it("selecciona la cita desde la lista de revisión", async () => {
     simularRed();
     await abrir();

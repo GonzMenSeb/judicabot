@@ -140,6 +140,8 @@ Cuando el servidor no obtiene la página de la relatoría, la cita no se rechaza
 
 Los motivos de rechazo enuncian la regla («Regla de las citas: …»), no solo porcentajes: de lo contrario el modelo acorta la cita hasta que pasa. Con `verificar_relatoria`, los mínimos de citas y de palabras también van al modelo en el mensaje de las consideraciones, y el nodo que verifica las consideraciones **bloquea** si hay menos de `min_citas_ok` citas `ok` (el mensaje trae la regla y el conteo de propuestas, rechazadas y para revisar) y el nodo vuelve a pedirlas hasta `max_intentos`; sin `verificar_relatoria` no se exige ese mínimo y las citas quedan en `alerta`. Una oración de las consideraciones que atribuye una regla a «la jurisprudencia» sin un marcador `[[CITA:id]]` en la misma oración da una alerta.
 
+En la aplicación, la cita verificada (`ok`) enlaza a su página de la relatoría: en el borrador, desde el detalle de la cita («Abrir en la relatoría»), y en la vista previa del fallo, desde la propia cita; ambos abren una pestaña nueva. Las citas con alerta o rechazadas no llevan enlace y los `.docx` generados no cambian.
+
 La tabla de citas del borrador previo y del informe muestra sentencia, estado, cobertura, palabras, sección, M.P. del dataset, URL, el texto citado (recortado) y los motivos; las citas no rechazadas que estén por debajo del mínimo de palabras o provengan de un salvamento se resaltan en la tabla y se listan en «A revisar a mano».
 
 ## Caso concreto e informe

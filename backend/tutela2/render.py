@@ -645,7 +645,7 @@ class _Docx:
         citadas = {s["cita_id"] for b in bloques for s in b["segmentos"] if "cita_id" in s}
         citas = [vista.cita_vista(cv, _referencia(cv)) for cv in self.citas.values()]
         citas += [
-            {"id": i, "texto": "", "fuente": i, "cobertura": None, "estado": "rechazada", "detalle": None}
+            {"id": i, "texto": "", "fuente": i, "cobertura": None, "estado": "rechazada", "detalle": None, "url": None}
             for i in sorted(citadas - self.citas.keys())
         ]
         sha = hashlib.sha256(ruta.read_bytes()).hexdigest()

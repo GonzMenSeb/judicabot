@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from test_render import HOY, construir_decision, construir_estado
 from tutela2 import formulas, render, salidas, vista
 from tutela2.config import Config
+from tutela2.models import CitaVerificada
 
 PRINCIPAL = "/".join(salidas.PRINCIPAL)
 
@@ -204,6 +205,7 @@ def test_citas_con_estado_y_segmentos(tmp_path, gen):
         "cobertura": 1.0,
         "estado": "verificada",
         "detalle": None,
+        "url": "https://example.test/T-200-22.htm",
     }
     assert (citas["c2"]["estado"], citas["c2"]["cobertura"], citas["c2"]["detalle"]) == ("revisar", 0.6, "Cobertura parcial")
     assert (citas["c3"]["estado"], citas["c3"]["fuente"]) == ("rechazada", "T-999 de 2020")
@@ -221,6 +223,18 @@ def test_citas_con_estado_y_segmentos(tmp_path, gen):
     citas_bloque = [b for b in bloques(v) if b["tipo"] == "cita_bloque"]
     assert [b["segmentos"][0]["cita_id"] for b in citas_bloque] == ["c1", "c2"]
     assert all(s.get("cursiva") for b in citas_bloque for s in b["segmentos"])
+
+
+@pytest.mark.parametrize(
+    ("estado", "esperada"),
+    [("ok", "https://example.test/T-1-20.htm"), ("alerta", None), ("rechazada", None)],
+)
+def test_cita_vista_solo_entrega_la_url_de_las_verificadas(estado, esperada):
+    cv = CitaVerificada(
+        id="c", sentencia_original="T-1 de 2020", texto_citado="q", estado=estado, url="https://example.test/T-1-20.htm"
+    )
+    assert vista.cita_vista(cv, "T-1 de 2020")["url"] == esperada
+    assert vista.cita_vista(cv.model_copy(update={"url": None}), "T-1 de 2020")["url"] is None
 
 
 @pytest.mark.parametrize("gen", ["A", "B"])

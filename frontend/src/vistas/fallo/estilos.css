@@ -36,6 +36,8 @@
 .fallo-cuerpo th { width: 26%; font-weight: 700; }
 .pie-f { margin-top: 0.8rem; text-align: center; font-size: 0.66rem; line-height: 1.4; font-style: italic; }
 .pie-f p { margin: 0; text-align: center; }
+a.cita { color: inherit; text-decoration: underline; text-decoration-color: var(--acento); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a.cita:hover { text-decoration-thickness: 2px; }
 .cita.revisar { background: rgba(143, 90, 0, 0.14); text-decoration: underline dotted var(--alerta); text-underline-offset: 2px; }
 .cita.rechazada { background: rgba(168, 40, 31, 0.12); text-decoration: underline wavy var(--mal); text-underline-offset: 2px; }
 .nota-visor { max-width: 40rem; margin: 1rem auto 0; font-size: 0.85rem; }
