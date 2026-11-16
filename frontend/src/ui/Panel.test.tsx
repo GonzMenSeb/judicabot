@@ -60,6 +60,18 @@ describe("Panel", () => {
     expect(within(dialogo).getByLabelText("Campo")).toBeTruthy();
   });
 
+  it("lleva la sección actual a la vista en la navegación desplazable", () => {
+    const llevar = vi.fn();
+    Element.prototype.scrollIntoView = llevar;
+    try {
+      render(<Montaje abierto />);
+      expect(llevar).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+      expect(llevar.mock.contexts[0]).toBe(within(panel()).getByRole("link", { current: "page" }));
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
   it("la X, Escape y el fondo piden cerrar; un clic que empieza en el contenido no", () => {
     const alCerrar = vi.fn();
     render(<Montaje abierto onCerrar={alCerrar} />);

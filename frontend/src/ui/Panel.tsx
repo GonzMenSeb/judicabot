@@ -35,6 +35,10 @@ export function Panel({ abierto, titulo, items, encabezado, onCerrar, retorno, c
     if (contenido.current) contenido.current.scrollTop = 0;
   }, [encabezado]);
 
+  useEffect(() => {
+    if (abierto) ref.current?.querySelector<HTMLElement>(".panel-nav [aria-current=page]")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [abierto, encabezado]);
+
   return (
     <dialog
       ref={ref}
