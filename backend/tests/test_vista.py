@@ -204,6 +204,7 @@ def test_citas_con_estado_y_segmentos(tmp_path, gen):
         "cobertura": 1.0,
         "estado": "verificada",
         "detalle": None,
+        "url": "https://example.test/T-200-22.htm",
     }
     assert (citas["c2"]["estado"], citas["c2"]["cobertura"], citas["c2"]["detalle"]) == ("revisar", 0.6, "Cobertura parcial")
     assert (citas["c3"]["estado"], citas["c3"]["fuente"]) == ("rechazada", "T-999 de 2020")
