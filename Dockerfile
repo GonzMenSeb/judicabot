@@ -26,6 +26,7 @@ RUN uv sync --frozen --no-dev --extra ocr --no-install-project
 COPY backend/tutela2 ./tutela2
 RUN uv sync --frozen --no-dev --extra ocr
 COPY --from=frontend /app/backend/tutela2/static/dist ./tutela2/static/dist
+COPY extension /app/extension
 
 ENV PATH="/app/backend/.venv/bin:$PATH" \
     HOST=0.0.0.0 \

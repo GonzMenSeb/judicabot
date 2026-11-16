@@ -4,7 +4,7 @@ import asyncio
 import hmac
 import json
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 
 from tutela2 import acceso, citas, extension
 from tutela2.config import Config
@@ -66,3 +66,16 @@ def consulta_relatoria(sentencia: str) -> dict:
         "caracteres": len(relatoria.texto) if relatoria.texto is not None else None,
         "extension_conectada": extension.conectada(),
     }
+
+
+@router.get("/api/extension/zip")
+def descargar_extension() -> Response:
+    try:
+        nombre, contenido = extension.paquete()
+    except FileNotFoundError:
+        raise HTTPException(404, "La extensión no está disponible en este servidor.") from None
+    return Response(
+        contenido,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )

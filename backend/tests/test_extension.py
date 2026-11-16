@@ -6,8 +6,10 @@ import re
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -321,3 +323,66 @@ def test_consulta_relatoria_sin_extension_es_inaccesible(cliente, relatoria_bloq
         "extension_conectada": False,
     }
     assert not relatoria_bloqueada.exists()
+
+
+RAIZ_EXTENSION = Path(__file__).resolve().parents[2] / "extension"
+
+
+def _zip_extension(cliente: TestClient) -> zipfile.ZipFile:
+    _iniciar_sesion(cliente)
+    r = cliente.get("/api/extension/zip")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    version = json.loads((RAIZ_EXTENSION / "manifest.json").read_text())["version"]
+    assert r.headers["content-disposition"] == f'attachment; filename="judicabot-relatoria-{version}.zip"'
+    return zipfile.ZipFile(BytesIO(r.content))
+
+
+def _empaquetables() -> set[str]:
+    return {
+        ruta.relative_to(RAIZ_EXTENSION).as_posix()
+        for ruta in RAIZ_EXTENSION.rglob("*")
+        if ruta.is_file()
+        and not any(p.startswith(".") or p in ("__pycache__", "node_modules") for p in ruta.relative_to(RAIZ_EXTENSION).parts)
+        and ruta.relative_to(RAIZ_EXTENSION).parts[0] not in ("pruebas", "package.json")
+    }
+
+
+def test_zip_de_la_extension_trae_sus_archivos(cliente):
+    zip_ = _zip_extension(cliente)
+    nombres = zip_.namelist()
+    assert all(nombre.startswith("judicabot-relatoria/") for nombre in nombres)
+    relativos = {nombre.removeprefix("judicabot-relatoria/") for nombre in nombres}
+    assert relativos == _empaquetables()
+    assert {
+        "manifest.json", "trabajador.js", "puente.js", "ventana.html", "ventana.js", "LEEME.md",
+        "iconos/16.png", "iconos/32.png", "iconos/48.png", "iconos/128.png",
+    } <= relativos
+    assert "package.json" not in relativos
+    assert not any(relativo.startswith("pruebas/") for relativo in relativos)
+    for relativo in relativos:
+        assert zip_.read(f"judicabot-relatoria/{relativo}") == (RAIZ_EXTENSION / relativo).read_bytes()
+
+
+def test_zip_de_la_extension_trae_lo_que_pide_el_manifiesto(cliente):
+    zip_ = _zip_extension(cliente)
+    manifiesto = json.loads(zip_.read("judicabot-relatoria/manifest.json"))
+    referidos = {
+        manifiesto["background"]["service_worker"],
+        manifiesto["action"]["default_popup"],
+        *manifiesto["icons"].values(),
+        *manifiesto["action"]["default_icon"].values(),
+    }
+    assert {f"judicabot-relatoria/{ruta}" for ruta in referidos} <= set(zip_.namelist())
+
+
+def test_zip_de_la_extension_exige_sesion(cliente):
+    assert cliente.get("/api/extension/zip").status_code == 401
+
+
+def test_zip_de_la_extension_ausente_da_404(cliente, monkeypatch, tmp_path):
+    monkeypatch.setattr(extension, "CARPETA", tmp_path / "no-existe")
+    _iniciar_sesion(cliente)
+    r = cliente.get("/api/extension/zip")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "La extensión no está disponible en este servidor."

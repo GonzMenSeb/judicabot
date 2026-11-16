@@ -2166,6 +2166,22 @@
         "summary": "Estado Servidor"
       }
     },
+    "/api/extension/zip": {
+      "get": {
+        "operationId": "descargar_extension_api_extension_zip_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Descargar Extension"
+      }
+    },
     "/api/formato": {
       "get": {
         "operationId": "obtener_formato_api_formato_get",
