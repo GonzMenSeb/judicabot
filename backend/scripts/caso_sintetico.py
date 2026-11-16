@@ -533,6 +533,11 @@ def generar(carpeta: Path) -> Path:
     return destino
 
 
+def aislar_proveedor() -> None:
+    for variable in [v for v in os.environ if v == "TUTELA2_PROVEEDOR_LLM" or v.startswith("TUTELA2_GEMINI_")]:
+        os.environ.pop(variable)
+
+
 def preparar(carpeta: Path, proveedor: str) -> None:
     from tutela2.config import Config, LLMConfig, guardar
 
@@ -619,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Caso sintético generado en {destino}")
         return 0
 
+    aislar_proveedor()
     decision = json.loads(args.decision.read_text(encoding="utf-8")) if args.decision else DECISION_POR_DEFECTO
     if args.proveedor == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         print("Falta la variable de entorno ANTHROPIC_API_KEY.", file=sys.stderr)
