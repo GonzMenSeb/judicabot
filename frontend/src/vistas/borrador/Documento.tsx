@@ -2,13 +2,14 @@ import type { ComponentChildren } from "preact";
 import type { Bloque, CitaVista, Segmento, Vista } from "../../api/contrato";
 import { cx, Hoja } from "../../ui";
 import { agruparBloques, ETIQUETA_ESTADO_CITA } from "./datos";
+import "./documento.css";
 
 const COLUMNAS_ANCHA = 3;
 
 export interface ContextoDocumento {
   citas: Map<string, CitaVista>;
   seleccionada: string | null;
-  alCita: (id: string, disparador: HTMLElement) => void;
+  alCita: (id: string, ancla: HTMLElement) => void;
 }
 
 interface PropsSegmentos extends ContextoDocumento {
@@ -23,17 +24,24 @@ function Fragmento({ segmento, citas, seleccionada, alCita }: ContextoDocumento 
   if (!cita) return <>{nodo}</>;
   const activa = seleccionada === cita.id;
   return (
-    <button
-      type="button"
+    <span
+      role="button"
+      tabIndex={0}
       class={cx("bor-cita", cita.estado, activa && "sel")}
       data-cita={cita.id}
       aria-pressed={activa}
+      aria-haspopup="dialog"
       aria-controls={activa ? "bor-detalle" : undefined}
       onClick={(e) => alCita(cita.id, e.currentTarget)}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        alCita(cita.id, e.currentTarget);
+      }}
     >
       {nodo}
       <span class="solo-lectura"> ({ETIQUETA_ESTADO_CITA[cita.estado]})</span>
-    </button>
+    </span>
   );
 }
 
@@ -128,19 +136,19 @@ function Bloques({ bloques, ...contexto }: ContextoDocumento & { bloques: Bloque
 
 export interface PropsDocumento extends ContextoDocumento {
   vista: Vista;
-  origen: boolean;
+  plantilla: boolean;
 }
 
-export function Documento({ vista, origen, ...contexto }: PropsDocumento) {
-  const ultima = vista.paginas.length - 1;
+export function Documento({ vista, plantilla, ...contexto }: PropsDocumento) {
+  const total = vista.paginas.length;
   return (
-    <Hoja etiqueta="Borrador del fallo, secciones I a V" class={cx("bor-hoja", origen && "bor-origen")}>
+    <Hoja etiqueta="Borrador del fallo, secciones I a V" class={cx("bor-hoja", plantilla && "bor-con-plantilla")}>
       <span class="bor-sello">Borrador, aún no es el fallo</span>
       {vista.paginas.map((pagina, i) => {
         const cuerpo = pagina.bloques.filter((b) => b.tipo !== "pie");
-        const pie = i === ultima ? pagina.bloques.filter((b) => b.tipo === "pie") : [];
+        const pie = i === total - 1 ? pagina.bloques.filter((b) => b.tipo === "pie") : [];
         return (
-          <div key={i} class="bor-pagina">
+          <div key={i} class="bor-pagina" data-pagina={`Página ${i + 1} de ${total}`}>
             <Bloques bloques={cuerpo} {...contexto} />
             {pie.length > 0 && (
               <footer class="bor-pie">
