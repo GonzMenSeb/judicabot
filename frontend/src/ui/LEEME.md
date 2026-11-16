@@ -46,6 +46,7 @@ Importar siempre desde `../../ui` (barrel `src/ui/index.ts`), `../../estado` y `
 | Export | Uso |
 |---|---|
 | `estadoServidor` (signal `EstadoServidor\|null`), `cargarEstadoServidor(forzar?)`, `errorEstadoServidor` | `GET /api/estado-servidor`; el shell lo carga una vez. Tras guardar una clave: `await cargarEstadoServidor(true)` |
+| `claveActiva(servidor)`, `claveDe(claves, proveedor)`, `DATOS_PROVEEDOR` | Clave del proveedor activo (`anthropic` o `gemini`) o de uno dado; nombre ("Gemini (Google)"), nombre corto ("Gemini") y ruta de la clave de cada proveedor. Para avisar que falta la clave use siempre la del proveedor activo |
 | `mostrarToast(texto, {tipo?, ms?}) => id` | `tipo` como `Aviso` (def. info); desaparece a los 3500 ms; `ms: 0` o `tipo: "error"` persiste hasta `cerrarToast(id)` |
 | `toasts`, `cerrarToast(id)` | lista reactiva |
 | `useTitulo(texto)` | título del documento de la vista |
@@ -53,7 +54,7 @@ Importar siempre desde `../../ui` (barrel `src/ui/index.ts`), `../../estado` y `
 | `fechaRelativa(iso, ahora?)` | "ahora mismo", "hace 5 min", "hace 3 h", "ayer", "hace 4 días", luego "15 de sept" (con año si es otro año); `""` si inválida |
 | `plural(n, singular, plural?)` → "3 casos"; `pluralizar(n, singular, plural?)` → solo la palabra | auto: vocal +s, consonante +es, "-ión" → "-iones", "z" → "ces" |
 | `porcentaje(fraccion, decimales = 0)` | fracción 0-1 → "97 %" (con espacio duro); `null`/NaN → "—" |
-| `nombreModelo(id)` | "claude-sonnet-5-5" → "Sonnet 5.5" |
+| `nombreModelo(id)` | "claude-sonnet-5-5" → "Sonnet 5.5", "gemini-4-argon" → "Gemini 4 Argon" |
 
 ## Mocks (`VITE_MOCK=1`)
 

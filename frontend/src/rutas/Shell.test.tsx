@@ -26,10 +26,12 @@ function Montaje() {
   );
 }
 
+const SERVIDOR = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(JSON.stringify({ api_key: true, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [] }))),
+    vi.fn(async () => new Response(JSON.stringify(SERVIDOR))),
   );
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   estadoServidor.value = null;
@@ -64,6 +66,15 @@ describe("Shell", () => {
     const ia = await screen.findByRole("link", { name: /Inteligencia artificial.*clave lista/ });
     expect(ia.textContent).toContain("Sonnet 5.5");
     expect(document.title).toBe("Judicabot");
+  });
+
+  it("la barra refleja la clave y el modelo del proveedor activo", async () => {
+    render(<Montaje />);
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", modelo: "gemini-4-carbon" } as const;
+    });
+    const ia = await screen.findByRole("link", { name: /Inteligencia artificial.*falta la clave/ });
+    expect(ia.textContent).toContain("Gemini 4 Carbon");
   });
 
   it("no roba el foco en la primera carga y lo mueve al main al navegar", async () => {

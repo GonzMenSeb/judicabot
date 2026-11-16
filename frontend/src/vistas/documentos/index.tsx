@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, cancelable, ErrorApi, esAbortado } from "../../api";
 import type { CasoResumen, JobInicio } from "../../api/contrato";
-import { cargarEstadoServidor, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, useTitulo } from "../../estado";
+import { cargarEstadoServidor, claveActiva, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Migas, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
@@ -147,7 +147,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const faltaClave = async (): Promise<boolean> => {
     await cargarEstadoServidor(true);
     const servidor = estadoServidor.value;
-    return Boolean(servidor) && !servidor?.api_key && proveedor !== "fake";
+    return Boolean(servidor) && !(servidor && claveActiva(servidor)) && proveedor !== "fake";
   };
 
   const iniciar = async () => {
@@ -391,6 +391,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
       />
       <DialogoClave
         abierto={pidiendoClave}
+        proveedor={estadoServidor.value?.proveedor ?? "anthropic"}
         onCerrar={() => setPidiendoClave(false)}
         onGuardada={() => {
           setPidiendoClave(false);

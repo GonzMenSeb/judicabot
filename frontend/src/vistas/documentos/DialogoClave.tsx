@@ -1,30 +1,33 @@
 import { useState } from "preact/hooks";
 import { api, ErrorApi } from "../../api";
-import { cargarEstadoServidor } from "../../estado";
+import type { Proveedor } from "../../api/contrato";
+import { cargarEstadoServidor, DATOS_PROVEEDOR } from "../../estado";
 import { Aviso, Boton, Dialogo } from "../../ui";
 
 export interface PropsDialogoClave {
   abierto: boolean;
+  proveedor: Proveedor;
   onCerrar: () => void;
   onGuardada: () => void;
 }
 
-export function DialogoClave({ abierto, onCerrar, onGuardada }: PropsDialogoClave) {
+export function DialogoClave({ abierto, proveedor, onCerrar, onGuardada }: PropsDialogoClave) {
   const [clave, setClave] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const { corto, rutaClave } = DATOS_PROVEEDOR[proveedor];
 
   const guardar = async (e?: Event) => {
     e?.preventDefault();
     const valor = clave.trim();
     if (!valor) {
-      setError("Escriba la clave de la API de Anthropic.");
+      setError(`Escriba la clave de la API de ${corto}.`);
       return;
     }
     setGuardando(true);
     setError(null);
     try {
-      await api.post("/api/api-key", { key: valor });
+      await api.post(rutaClave, { key: valor });
       await cargarEstadoServidor(true);
       setClave("");
       onGuardada();
@@ -50,7 +53,7 @@ export function DialogoClave({ abierto, onCerrar, onGuardada }: PropsDialogoClav
       }
     >
       <form id="docs-form-clave" class="docs-form-clave" onSubmit={(e) => void guardar(e)} autocomplete="off">
-        <p class="sub">Para redactar, el modelo necesita la clave de la API de Anthropic. Se guarda solo en la memoria del servidor mientras esté encendido.</p>
+        <p class="sub">Para redactar, el modelo necesita la clave de la API de {corto}. Se guarda solo en la memoria del servidor mientras esté encendido.</p>
         <div class="campo">
           <label for="docs-clave">Clave de la API</label>
           <input

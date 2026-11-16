@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Evento } from "../../api/contrato";
+import type { EstadoServidor, Evento } from "../../api/contrato";
 import { estadoServidor } from "../../estado";
 import Documentos from "./index";
 import { Progreso } from "./Progreso";
@@ -108,7 +108,15 @@ const resumenCaso = (n_insumos = 4) => ({
   actualizado: "2026-11-03T10:00:00Z",
 });
 
-const servidor = { api_key: true, jev_key: false, modelo: "claude-sonnet-5-5", modelos: ["claude-sonnet-5-5"] };
+const servidor: EstadoServidor = {
+  proveedor: "anthropic",
+  api_key: true,
+  gemini_key: false,
+  jev_key: false,
+  modelo: "claude-sonnet-5-5",
+  modelos: ["claude-sonnet-5-5"],
+  modelos_gemini: ["gemini-4-argon"],
+};
 
 function base(estado: EstadoCaso, extra: Record<string, Manejador> = {}) {
   return instalar({
@@ -277,6 +285,46 @@ describe("Documentos", () => {
 
     await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
     expect(llamadas.find((l) => l.ruta === "/api/api-key")?.cuerpo).toEqual({ key: "sk-ant-prueba" });
+  });
+
+  it("con Gemini activo pide la clave de Gemini aunque haya clave de Anthropic", async () => {
+    let clave = false;
+    const gemini = (): EstadoServidor => ({ ...servidor, proveedor: "gemini", modelo: "gemini-4-argon", gemini_key: clave });
+    const llamadas = base(estadoRevision(), {
+      "GET /api/estado-servidor": () => ok(gemini()),
+      "POST /api/gemini-key": () => {
+        clave = true;
+        return ok({ gemini_key: true });
+      },
+      "POST /api/casos/c1/run": () => ok({ job_id: "j3" }),
+    });
+    estadoServidor.value = gemini();
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const campo = await screen.findByLabelText("Clave de la API");
+    const dialogo = campo.closest("dialog") as HTMLElement;
+    expect(dialogo.textContent).toContain("la clave de la API de Gemini");
+    fireEvent.click(await within(dialogo).findByRole("button", { name: "Guardar y continuar" }));
+    expect(await within(dialogo).findByText("Escriba la clave de la API de Gemini.")).toBeTruthy();
+
+    fireEvent.input(campo, { target: { value: "AIza-prueba" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar y continuar" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(llamadas.find((l) => l.ruta === "/api/gemini-key")?.cuerpo).toEqual({ key: "AIza-prueba" });
+    expect(llamadas.some((l) => l.ruta === "/api/api-key")).toBe(false);
+  });
+
+  it("con Gemini activo y su clave lista no pide la de Anthropic", async () => {
+    const gemini: EstadoServidor = { ...servidor, proveedor: "gemini", api_key: false, gemini_key: true };
+    base(estadoRevision(), { "GET /api/estado-servidor": () => ok(gemini), "POST /api/casos/c1/run": () => ok({ job_id: "j4" }) });
+    estadoServidor.value = gemini;
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
   });
 
   it("al cerrar con Escape el diálogo de la clave devuelve el foco a «Iniciar redacción»", async () => {

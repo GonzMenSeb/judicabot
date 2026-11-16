@@ -88,7 +88,7 @@ export interface JobEstado {
 }
 
 export interface ConfigCaso {
-  llm?: { proveedor?: "anthropic" | "fake" };
+  llm?: { proveedor?: "anthropic" | "gemini" | "fake" };
 }
 
 export interface SalidaPrevia {

@@ -297,6 +297,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/gemini-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Guardar Gemini Key */
+        post: operations["guardar_gemini_key_api_gemini_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ia": {
         parameters: {
             query?: never;
@@ -726,12 +743,21 @@ export interface components {
         EstadoServidor: {
             /** Api Key */
             api_key: boolean;
+            /** Gemini Key */
+            gemini_key: boolean;
             /** Jev Key */
             jev_key: boolean;
             /** Modelo */
             modelo: string;
             /** Modelos */
             modelos: string[];
+            /** Modelos Gemini */
+            modelos_gemini: string[];
+            /**
+             * Proveedor
+             * @enum {string}
+             */
+            proveedor: "anthropic" | "gemini";
         };
         /** Evento */
         Evento: {
@@ -813,6 +839,13 @@ export interface components {
             plantilla_gen: "A" | "B";
             valores: components["schemas"]["Despacho"];
         };
+        /** GeminiPreferencias */
+        GeminiPreferencias: {
+            /** Modelo */
+            modelo?: ("gemini-4-argon" | "gemini-4-carbon" | "gemini-4-hydrogen") | null;
+            /** Razonamiento */
+            razonamiento?: ("low" | "medium" | "high" | "xhigh") | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -843,6 +876,9 @@ export interface components {
              * @enum {string}
              */
             effort: "low" | "medium" | "high" | "xhigh" | "max";
+            gemini: components["schemas"]["IAGemini"];
+            /** Gemini Key */
+            gemini_key: boolean;
             jev: components["schemas"]["IAJev"];
             /** Jev Key */
             jev_key: boolean;
@@ -857,6 +893,30 @@ export interface components {
             modelo: "claude-sonnet-5-5" | "claude-haiku-5-5" | "claude-opus-5-5";
             /** Modelos */
             modelos: string[];
+            /** Modelos Gemini */
+            modelos_gemini: string[];
+            /**
+             * Proveedor
+             * @enum {string}
+             */
+            proveedor: "anthropic" | "gemini";
+            /** Razonamientos Gemini */
+            razonamientos_gemini: {
+                [key: string]: ("low" | "medium" | "high" | "xhigh")[];
+            };
+        };
+        /** IAGemini */
+        IAGemini: {
+            /**
+             * Modelo
+             * @enum {string}
+             */
+            modelo: "gemini-4-argon" | "gemini-4-carbon" | "gemini-4-hydrogen";
+            /**
+             * Razonamiento
+             * @enum {string}
+             */
+            razonamiento: "low" | "medium" | "high" | "xhigh";
         };
         /** IAJev */
         IAJev: {
@@ -903,6 +963,7 @@ export interface components {
         Preferencias: {
             /** Effort */
             effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            gemini?: components["schemas"]["GeminiPreferencias"];
             jev?: components["schemas"]["JevPreferencias"];
             /** Max Retries */
             max_retries?: number | null;
@@ -910,6 +971,8 @@ export interface components {
             max_tokens?: number | null;
             /** Modelo */
             modelo?: ("claude-sonnet-5-5" | "claude-haiku-5-5" | "claude-opus-5-5") | null;
+            /** Proveedor */
+            proveedor?: ("anthropic" | "gemini") | null;
         };
         /** RevisionBody */
         RevisionBody: {
@@ -1628,6 +1691,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FormatoErrores"];
+                };
+            };
+        };
+    };
+    guardar_gemini_key_api_gemini_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ErrorApi } from "../../api";
 import type { CasoResumen, JobInicio } from "../../api/contrato";
-import { estadoServidor, jobActual, useTitulo } from "../../estado";
+import { claveActiva, DATOS_PROVEEDOR, estadoServidor, jobActual, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Dialogo, Migas, Pasos, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
@@ -223,8 +223,9 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
       requestAnimationFrame(() => enfocar(primero ? idDeCampo(f, primero.campo) : "dec-resumen-errores"));
       return;
     }
-    if (config?.llm?.proveedor === "anthropic" && estadoServidor.value?.api_key === false) {
-      setErrorEnvio("Falta la API key de Anthropic: configúrela en Inteligencia artificial antes de enviar la decisión.");
+    const servidor = estadoServidor.value;
+    if (config?.llm?.proveedor && config.llm.proveedor !== "fake" && servidor && !claveActiva(servidor)) {
+      setErrorEnvio(`Falta la clave de la API de ${DATOS_PROVEEDOR[servidor.proveedor].corto}: configúrela en Inteligencia artificial antes de enviar la decisión.`);
       return;
     }
     setErrorEnvio(null);
@@ -280,7 +281,7 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
         <Aviso
           tipo="error"
           titulo="No se pudo enviar la decisión"
-          acciones={errorEnvio.startsWith("Falta la API key") ? <Boton href="#/ia">Ir a Inteligencia artificial</Boton> : <Boton href={`${base}/proceso`}>Ver el proceso</Boton>}
+          acciones={errorEnvio.startsWith("Falta la clave de la API") ? <Boton href="#/ia">Ir a Inteligencia artificial</Boton> : <Boton href={`${base}/proceso`}>Ver el proceso</Boton>}
         >
           {errorEnvio}
         </Aviso>
