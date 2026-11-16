@@ -86,10 +86,13 @@ class ModeloBody(BaseModel):
 
 
 class EstadoServidor(BaseModel):
+    proveedor: Literal["anthropic", "gemini"]
     api_key: bool
+    gemini_key: bool
     jev_key: bool
     modelo: str
     modelos: list[str]
+    modelos_gemini: list[str]
 
 
 class JobInicio(BaseModel):
@@ -315,16 +318,22 @@ def _preferencias() -> Path:
 def modelo_actual() -> str:
     from tutela2 import preferencias
 
-    return preferencias.leer(_preferencias()).modelo or cfgmod.LLMConfig().modelo
+    return preferencias.modelo_activo(preferencias.leer(_preferencias()))
 
 
 @app.get("/api/estado-servidor", response_model=EstadoServidor)
 def estado_servidor() -> dict[str, Any]:
+    from tutela2 import preferencias
+
+    guardadas = preferencias.leer(_preferencias())
     return {
+        "proveedor": preferencias.proveedor_activo(guardadas),
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "gemini_key": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
         "jev_key": bool(os.environ.get("JEV_API_KEY", "").strip()),
-        "modelo": modelo_actual(),
+        "modelo": preferencias.modelo_activo(guardadas),
         "modelos": list(cfgmod.modelos_permitidos()),
+        "modelos_gemini": list(cfgmod.modelos_permitidos("gemini")),
     }
 
 
@@ -346,6 +355,15 @@ def guardar_api_key(body: ApiKeyBody) -> dict[str, bool]:
         raise HTTPException(422, "La API key no puede estar vacía.")
     os.environ["ANTHROPIC_API_KEY"] = key
     return {"api_key": True}
+
+
+@app.post("/api/gemini-key")
+def guardar_gemini_key(body: ApiKeyBody) -> dict[str, bool]:
+    key = body.key.strip()
+    if not key:
+        raise HTTPException(422, "La clave de Gemini no puede estar vacía.")
+    os.environ["GEMINI_API_KEY"] = key
+    return {"gemini_key": True}
 
 
 @app.post("/api/jev-key")

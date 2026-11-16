@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import re
-from typing import Any, Protocol
+from typing import Any, Iterable, Iterator, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from tutela2.config import NODOS_LLM, RESPALDO_CLIENTE, VARIABLE_MODELOS_PERMITIDOS, Config, modelo_permitido, modelos_permitidos
+from tutela2.config import (
+    NODOS_LLM,
+    RESPALDO_CLIENTE,
+    VARIABLE_MODELOS_PERMITIDOS,
+    Config,
+    modelo_permitido,
+    modelos_permitidos,
+    niveles_admitidos,
+)
 from tutela2.models import (
     AperturaLLM,
     BloqueLLM,
@@ -75,24 +85,28 @@ def detectar_degeneracion(texto: str) -> bool:
     return False
 
 
-def _consumir(flujo: Any):
+def _vigilar(trozos: Iterable[str]) -> None:
     cola = ""
-    for trozo in flujo.text_stream:
+    for trozo in trozos:
         cola = (cola + trozo)[-VENTANA_DEGENERACION:]
         if detectar_degeneracion(cola):
             raise ErrorLLMDegenerado("El modelo entró en un lazo de repetición y la respuesta se abortó.")
+
+
+def _consumir(flujo: Any):
+    _vigilar(flujo.text_stream)
     return flujo.get_final_message()
 
 
-def _transmitir(abrir: Any):
+def _transmitir(abrir: Any, consumir: Any = _consumir):
     try:
         with abrir() as flujo:
-            return _consumir(flujo)
+            return consumir(flujo)
     except ErrorLLMDegenerado:
         log.warning("El modelo entró en un lazo de repetición; se repite la llamada una vez.")
     try:
         with abrir() as flujo:
-            return _consumir(flujo)
+            return consumir(flujo)
     except ErrorLLMDegenerado as e:
         raise ErrorLLM(
             "El modelo entró en un lazo de repetición en dos intentos consecutivos; use 'continuar' para reintentar."
@@ -195,6 +209,156 @@ class AnthropicClient:
     @staticmethod
     def _una(cliente: Any, args: dict):
         return _transmitir(lambda: cliente.messages.stream(**args))
+
+
+_CLAVES_GEMINI = {
+    "type", "format", "title", "description", "enum", "items", "prefixItems", "minItems", "maxItems",
+    "minimum", "maximum", "anyOf", "properties", "additionalProperties", "required", "propertyOrdering",
+}
+
+
+def esquema_gemini(schema: type[BaseModel]) -> dict:
+    raiz = schema.model_json_schema()
+    defs = raiz.pop("$defs", {})
+
+    def convertir(nodo: dict, pila: tuple[str, ...]) -> dict:
+        if "$ref" in nodo:
+            nombre = nodo["$ref"].removeprefix("#/$defs/")
+            if nombre in pila:
+                raise ValueError(f"Esquema recursivo: {nombre}.")
+            hermanos = {k: v for k, v in nodo.items() if k != "$ref"}
+            return convertir({**defs[nombre], **hermanos}, (*pila, nombre))
+        salida: dict[str, Any] = {}
+        for clave, valor in nodo.items():
+            if clave == "oneOf":
+                clave = "anyOf"
+            elif clave == "const":
+                clave, valor = "enum", [valor]
+            if clave not in _CLAVES_GEMINI:
+                continue
+            if clave == "properties":
+                valor = {k: convertir(v, pila) for k, v in valor.items()}
+            elif clave in ("anyOf", "prefixItems"):
+                valor = [convertir(v, pila) for v in valor]
+            elif clave in ("items", "additionalProperties") and isinstance(valor, dict):
+                valor = convertir(valor, pila)
+            salida[clave] = valor
+        return _anulable(salida)
+
+    return convertir(raiz, ())
+
+
+def _anulable(nodo: dict) -> dict:
+    opciones = nodo.get("anyOf") or []
+    nulo = {"type": "null"}
+    if len(opciones) != 2 or nulo not in opciones:
+        return nodo
+    otro = opciones[1 - opciones.index(nulo)]
+    if not isinstance(otro.get("type"), str) or otro["type"] == "null" or "enum" in otro or "anyOf" in otro:
+        return nodo
+    return {**otro, **{k: v for k, v in nodo.items() if k != "anyOf"}, "type": [otro["type"], "null"]}
+
+
+class _RespuestaGemini:
+    def __init__(self) -> None:
+        self.texto: list[str] = []
+        self.uso: Any = None
+        self.modelo: str | None = None
+        self.fin: Any = None
+        self.bloqueo: Any = None
+
+    def leer(self, flujo: Iterable[Any]) -> Iterator[str]:
+        for trozo in flujo:
+            if trozo.prompt_feedback is not None and trozo.prompt_feedback.block_reason:
+                self.bloqueo = trozo.prompt_feedback.block_reason
+            if trozo.usage_metadata is not None:
+                self.uso = trozo.usage_metadata
+            self.modelo = trozo.model_version or self.modelo
+            if trozo.candidates and trozo.candidates[0].finish_reason:
+                self.fin = trozo.candidates[0].finish_reason
+            texto = trozo.text
+            if texto:
+                self.texto.append(texto)
+                yield texto
+
+
+def _consumir_gemini(flujo: Iterable[Any]) -> _RespuestaGemini:
+    respuesta = _RespuestaGemini()
+    _vigilar(respuesta.leer(flujo))
+    return respuesta
+
+
+def _nombre(valor: Any) -> str:
+    return getattr(valor, "value", None) or str(valor)
+
+
+class GeminiClient:
+    def __init__(self, client: Any = None):
+        self._client = client
+
+    def _cliente(self) -> Any:
+        if self._client is None:
+            from google import genai
+
+            clave = os.environ.get("GEMINI_API_KEY", "").strip()
+            if not clave:
+                raise ErrorLLM("No hay credenciales para el proveedor (GEMINI_API_KEY): agregue la clave de Gemini en Inteligencia artificial.")
+            self._client = genai.Client(api_key=clave, vertexai=False)
+        return self._client
+
+    def estructurado(
+        self, nodo: str, system: str, user: str, schema: type[BaseModel], cfg: Config
+    ) -> tuple[BaseModel, dict]:
+        from google.genai import errors, types
+
+        modelo = cfg.modelo_para(nodo)
+        nivel = cfg.effort_para(nodo)
+        admitidos = niveles_admitidos("gemini", modelo) or ()
+        if nivel not in admitidos:
+            raise ErrorLLM(f"El nivel de razonamiento {nivel} no es válido para {modelo} (admite: {', '.join(admitidos)}).")
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_json_schema=esquema_gemini(schema),
+            max_output_tokens=cfg.llm.max_tokens,
+            thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel[nivel.upper()]),
+            store=False,
+            http_options=types.HttpOptions(
+                timeout=round(cfg.llm.timeout_s * 1000),
+                retry_options=types.HttpRetryOptions(attempts=cfg.llm.max_retries + 1),
+            ),
+        )
+        cliente = self._cliente()
+        try:
+            resp = _transmitir(
+                lambda: contextlib.closing(cliente.models.generate_content_stream(model=modelo, contents=user, config=config)),
+                _consumir_gemini,
+            )
+        except (errors.APIError, errors.UnknownApiResponseError, httpx.HTTPError) as e:
+            raise ErrorLLM(f"Error del proveedor ({type(e).__name__}): {e}") from e
+        if resp.bloqueo:
+            raise ErrorLLM(f"Gemini bloqueó la solicitud (block_reason={_nombre(resp.bloqueo)}).")
+        if resp.fin == types.FinishReason.MAX_TOKENS:
+            raise ErrorLLM(
+                f"La respuesta se cortó por el límite de tokens ({cfg.llm.max_tokens}); aumente llm.max_tokens."
+            )
+        if resp.fin != types.FinishReason.STOP:
+            raise ErrorLLM(f"Gemini detuvo la respuesta (finish_reason={_nombre(resp.fin) if resp.fin else 'ausente'}).")
+        texto = "".join(resp.texto)
+        if not texto.strip():
+            raise ErrorLLM(f"El modelo no devolvió una salida estructurada (stop_reason={_nombre(resp.fin)}).")
+        try:
+            salida = schema.model_validate_json(texto)
+        except ValidationError as e:
+            raise ErrorLLM(f"La respuesta del modelo no cumple el esquema: {_resumen_errores(e)}.") from e
+        uso = resp.uso
+        meta = {
+            "modelo_efectivo": resp.modelo or modelo,
+            "tokens_entrada": (uso and uso.prompt_token_count) or 0,
+            "tokens_salida": ((uso and uso.candidates_token_count) or 0) + ((uso and uso.thoughts_token_count) or 0),
+            "stop_reason": _nombre(resp.fin),
+        }
+        return salida, meta
 
 
 def _tokens(resp: Any) -> tuple[int, int]:
@@ -512,8 +676,8 @@ def _repartidas(items: list[str], k: int) -> list[str]:
 def _exigir_modelos_permitidos(cfg: Config) -> None:
     for nodo in NODOS_LLM:
         modelo = cfg.modelo_para(nodo)
-        if not modelo_permitido(modelo):
-            permitidos = ", ".join(modelos_permitidos()) or "ninguno"
+        if not modelo_permitido(modelo, cfg.llm.proveedor):
+            permitidos = ", ".join(modelos_permitidos(cfg.llm.proveedor)) or "ninguno"
             raise ErrorLLM(
                 f"El modelo {modelo} (nodo {nodo}) no está permitido en este servidor "
                 f"({VARIABLE_MODELOS_PERMITIDOS}); permitidos: {permitidos}."
@@ -524,4 +688,6 @@ def cliente_para(cfg: Config) -> LLMClient:
     if cfg.llm.proveedor == "fake":
         return FakeClient()
     _exigir_modelos_permitidos(cfg)
+    if cfg.llm.proveedor == "gemini":
+        return GeminiClient()
     return AnthropicClient()
