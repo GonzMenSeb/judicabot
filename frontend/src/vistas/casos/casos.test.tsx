@@ -325,6 +325,40 @@ describe("useSoltarGlobal", () => {
     }
   });
 
+  it("ignora los archivos soltados mientras hay un diálogo modal abierto, sin dejar que el navegador los abra", () => {
+    const alSoltar = vi.fn();
+    function Receptor() {
+      const activo = useSoltarGlobal(alSoltar, true);
+      return <output>{activo ? "activo" : "quieto"}</output>;
+    }
+    render(<Receptor />);
+    const dialogo = document.createElement("dialog");
+    dialogo.setAttribute("open", "");
+    document.body.append(dialogo);
+    try {
+      const entrada = new Event("dragenter", { cancelable: true, bubbles: true });
+      const soltado = new Event("drop", { cancelable: true, bubbles: true });
+      for (const evento of [entrada, soltado]) Object.defineProperty(evento, "dataTransfer", { value: { types: ["Files"], items: [], files: [] } });
+      act(() => {
+        dialogo.dispatchEvent(entrada);
+      });
+      expect(screen.getByText("quieto")).toBeTruthy();
+      act(() => {
+        dialogo.dispatchEvent(soltado);
+      });
+      expect(soltado.defaultPrevented).toBe(true);
+      expect(alSoltar).not.toHaveBeenCalled();
+    } finally {
+      dialogo.remove();
+    }
+    const libre = new Event("drop", { cancelable: true, bubbles: true });
+    Object.defineProperty(libre, "dataTransfer", { value: { types: ["Files"], items: [], files: [] } });
+    act(() => {
+      document.dispatchEvent(libre);
+    });
+    expect(alSoltar).toHaveBeenCalledTimes(1);
+  });
+
   it("no muestra la capa si está deshabilitado", () => {
     render(<Sonda habilitado={false} />);
     act(() => {
