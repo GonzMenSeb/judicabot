@@ -18,6 +18,7 @@ from tutela2.config import (
     modelos_permitidos,
     niveles_admitidos,
 )
+from tutela2.jev import clave_valida
 from tutela2.models import (
     AperturaLLM,
     BloqueLLM,
@@ -303,6 +304,11 @@ class GeminiClient:
             clave = os.environ.get("GEMINI_API_KEY", "").strip()
             if not clave:
                 raise ErrorLLM("No hay credenciales para el proveedor (GEMINI_API_KEY): agregue la clave de Gemini en Inteligencia artificial.")
+            if not clave_valida(clave):
+                raise ErrorLLM(
+                    "La clave de Gemini (GEMINI_API_KEY) tiene caracteres no válidos (solo ASCII visible, sin espacios ni saltos de línea): "
+                    "vuelva a agregarla en Inteligencia artificial."
+                )
             self._client = genai.Client(api_key=clave, vertexai=False)
         return self._client
 

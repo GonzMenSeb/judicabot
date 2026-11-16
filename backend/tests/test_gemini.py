@@ -310,6 +310,16 @@ def test_sin_clave_de_gemini_el_error_lo_dice_y_no_se_crea_el_sdk(monkeypatch, f
     assert creados == [] and peticiones == []
 
 
+@pytest.mark.parametrize("clave", ["AIzaSECRETO\r\nX", "AIzaSECRETO\tX", "AIza SECRETO", "AIzaSECRETOñ"])
+def test_una_clave_con_caracteres_no_validos_no_llega_al_sdk_ni_a_los_mensajes(monkeypatch, fabrica, clave):
+    creados, peticiones = fabrica
+    monkeypatch.setenv("GEMINI_API_KEY", clave)
+    with pytest.raises(ErrorLLM, match="GEMINI_API_KEY") as e:
+        GeminiClient().estructurado("caso_concreto", "s", "u", CasoConcretoLLM, gemini())
+    assert "SECRETO" not in str(e.value)
+    assert creados == [] and peticiones == []
+
+
 def test_la_clave_sale_de_gemini_api_key_aunque_exista_google_api_key(monkeypatch, fabrica):
     creados, peticiones = fabrica
     monkeypatch.setenv("GEMINI_API_KEY", " clave-de-gemini ")
@@ -472,3 +482,18 @@ def test_el_evento_de_llamada_nombra_el_modelo_y_marca_solo_el_proveedor_falso(t
     lee = next(e for e in buffer.leer(0)[0] if e["tipo"] == "lee")
     assert lee["texto"].startswith(f"Llamada al modelo {modelo}{sufijo}, intento 1")
     assert lee["datos"]["proveedor"] == proveedor and llamada["proveedor"] == proveedor
+
+
+def test_una_clave_con_salto_de_linea_no_queda_en_los_eventos_ni_en_los_fallos(tmp_path, monkeypatch, fabrica):
+    from tutela2 import eventos, fallos, graph
+
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSECRETO\r\nX")
+    buffer = eventos.Buffer()
+    token = eventos.activar(buffer)
+    try:
+        with pytest.raises(ErrorLLM):
+            graph._llamar(GeminiClient(), gemini(), {"caso_dir": str(tmp_path)}, "caso_concreto", "usuario", CasoConcretoLLM)
+    finally:
+        eventos.desactivar(token)
+    assert "SECRETO" not in json.dumps(buffer.leer(0)[0], ensure_ascii=False)
+    assert "SECRETO" not in (tmp_path / fallos.ARCHIVO).read_text(encoding="utf-8")

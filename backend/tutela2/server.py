@@ -362,6 +362,8 @@ def guardar_gemini_key(body: ApiKeyBody) -> dict[str, bool]:
     key = body.key.strip()
     if not key:
         raise HTTPException(422, "La clave de Gemini no puede estar vacía.")
+    if not clave_valida(key):
+        raise HTTPException(422, "La clave de Gemini solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.")
     os.environ["GEMINI_API_KEY"] = key
     return {"gemini_key": True}
 

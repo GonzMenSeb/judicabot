@@ -486,6 +486,14 @@ def test_clave_de_gemini_vacia_se_rechaza(cliente, monkeypatch):
     assert "GEMINI_API_KEY" not in os.environ
 
 
+@pytest.mark.parametrize("clave", ["AIzaSECRETO\r\nX", "AIzaSECRETO\nx", "AIza SECRETO", "clave​SECRETO", "AIzañandú"])
+def test_clave_de_gemini_con_caracteres_no_validos_se_rechaza_sin_repetirla(cliente, monkeypatch, clave):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = cliente.post("/api/gemini-key", json={"key": clave})
+    assert r.status_code == 422 and "GEMINI_API_KEY" not in os.environ
+    assert "SECRETO" not in r.text and "ñandú" not in r.text
+
+
 def test_api_key_vacia_se_rechaza(cliente, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert cliente.post("/api/api-key", json={"key": "   "}).status_code == 422
