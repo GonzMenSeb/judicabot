@@ -272,7 +272,10 @@ def test_lazo_y_error_del_proveedor_en_el_reintento_se_reportan_como_error_llm()
         llamar(manejador, gemini(max_retries=0))
 
 
-def test_nivel_no_admitido_por_el_modelo_falla_antes_de_llamar():
+def test_nivel_no_admitido_por_el_modelo_falla_antes_de_llamar(monkeypatch):
+    niveles = iter(["xhigh", "max"])
+    monkeypatch.setattr(Config, "effort_para", lambda self, nodo: next(niveles))
+
     def manejador(peticion: httpx.Request) -> httpx.Response:
         raise AssertionError("no debía llamar")
 

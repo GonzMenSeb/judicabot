@@ -151,9 +151,11 @@ class Config(BaseModel):
         return modelo if modelo and (catalogo is None or modelo in catalogo) else self.llm.modelo
 
     def effort_para(self, nodo: str) -> str:
-        effort = self.llm.effort_por_nodo.get(nodo)
         admitidos = niveles_admitidos(self.llm.proveedor, self.modelo_para(nodo))
-        return effort if effort and (admitidos is None or effort in admitidos) else self.llm.effort
+        for effort in (self.llm.effort_por_nodo.get(nodo), self.llm.effort):
+            if effort and (admitidos is None or effort in admitidos):
+                return effort
+        return RAZONAMIENTO_GEMINI if RAZONAMIENTO_GEMINI in admitidos else admitidos[-1]
 
     def cache_path(self) -> Path:
         """TUTELA2_CACHE_DIR, si está definida y no vacía, manda sobre cache_dir (los config.json de caso ya guardan el valor por defecto)."""

@@ -114,6 +114,13 @@ def test_con_gemini_el_nivel_por_nodo_debe_admitirlo_el_modelo_del_nodo():
     assert cfg.effort_para("apertura") == "high" and cfg.effort_para("consideraciones") == "low"
 
 
+def test_con_gemini_el_nivel_global_debe_admitirlo_el_modelo_del_nodo():
+    cfg = Config(llm=LLMConfig(proveedor="gemini", modelo=HYDROGEN, effort="xhigh", modelo_por_nodo={"apertura": ARGON}))
+    assert cfg.effort_para("apertura") == "high" and cfg.effort_para("caso_concreto") == "xhigh"
+    cfg.llm.effort_por_nodo = {"apertura": "medium"}
+    assert cfg.effort_para("apertura") == "medium"
+
+
 def test_con_anthropic_los_ajustes_por_nodo_de_gemini_se_ignoran():
     cfg = Config(llm=LLMConfig(modelo=SONNET, modelo_por_nodo={"apertura": ARGON, "caso_concreto": OPUS}, effort_por_nodo={"apertura": "max", "caso_concreto": "ultra"}))
     assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [SONNET, SONNET, OPUS]
