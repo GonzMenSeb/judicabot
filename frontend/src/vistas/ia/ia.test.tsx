@@ -60,7 +60,8 @@ afterEach(() => {
 describe("Inteligencia artificial", () => {
   it("muestra el modelo, las claves y Jev apagado con los datos del servidor", async () => {
     await montar();
-    expect(screen.getByRole("heading", { level: 1, name: "Inteligencia artificial" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Migas de pan" })).toBeNull();
     const modelos = screen.getAllByRole("radio", { name: /5\.5/ });
     expect(modelos.map((m) => m.closest("label")?.querySelector("b")?.textContent)).toEqual(["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
     expect((screen.getByRole("radio", { name: /Sonnet 5\.5/ }) as HTMLInputElement).checked).toBe(true);

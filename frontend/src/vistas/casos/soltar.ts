@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "preact/hooks";
 
 const ESPERA_SIN_MOVIMIENTO_MS = 1500;
 
+const hayModalAbierto = () => document.querySelector("dialog[open]") !== null;
+
 const traeArchivos = (dt: DataTransfer | null): dt is DataTransfer => dt !== null && Array.from(dt.types ?? []).includes("Files");
 
 export function useSoltarGlobal(alSoltar: (dt: DataTransfer) => void, habilitado: boolean): boolean {
@@ -12,6 +14,7 @@ export function useSoltarGlobal(alSoltar: (dt: DataTransfer) => void, habilitado
   habilitadoRef.current = habilitado;
 
   useEffect(() => {
+    const permitido = () => habilitadoRef.current && !hayModalAbierto();
     let profundidad = 0;
     let vigilante: ReturnType<typeof setTimeout> | undefined;
 
@@ -23,7 +26,7 @@ export function useSoltarGlobal(alSoltar: (dt: DataTransfer) => void, habilitado
     const mostrar = () => {
       clearTimeout(vigilante);
       vigilante = setTimeout(ocultar, ESPERA_SIN_MOVIMIENTO_MS);
-      if (habilitadoRef.current) setArrastrando(true);
+      if (permitido()) setArrastrando(true);
     };
 
     const alEntrar = (ev: DragEvent) => {
@@ -35,7 +38,7 @@ export function useSoltarGlobal(alSoltar: (dt: DataTransfer) => void, habilitado
     const alPasar = (ev: DragEvent) => {
       if (!traeArchivos(ev.dataTransfer)) return;
       ev.preventDefault();
-      ev.dataTransfer.dropEffect = habilitadoRef.current ? "copy" : "none";
+      ev.dataTransfer.dropEffect = permitido() ? "copy" : "none";
       if (profundidad === 0) profundidad = 1;
       mostrar();
     };
@@ -49,7 +52,7 @@ export function useSoltarGlobal(alSoltar: (dt: DataTransfer) => void, habilitado
       ev.preventDefault();
       const dt = ev.dataTransfer;
       ocultar();
-      if (habilitadoRef.current) alSoltarRef.current(dt);
+      if (permitido()) alSoltarRef.current(dt);
     };
 
     document.addEventListener("dragenter", alEntrar);

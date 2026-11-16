@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { ModoJev, PreferenciasIa } from "../../api/contrato";
-import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje, useTitulo } from "../../estado";
-import { Aviso, Boton, Cargando, Migas } from "../../ui";
+import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje } from "../../estado";
+import { Aviso, Boton, Cargando } from "../../ui";
 import { DATOS_CLAVE, DialogoClave } from "./DialogoClave";
 import type { TipoClave } from "./DialogoClave";
 import { aCuerpo, aFormulario, CAMPOS_AVANZADOS, ESFUERZOS, igual, leerErrorServidor, MAX_REINTENTOS, MAX_TOKENS, validar } from "./formulario";
@@ -10,8 +10,6 @@ import type { CampoForm, ErroresForm, Formulario } from "./formulario";
 import { opcionesModelo, OPCIONES_JEV } from "./modelos";
 import { Tarjetas } from "./Tarjetas";
 import "./estilos.css";
-
-const MIGAS = [{ texto: "Inicio", href: "#/" }, { texto: "Inteligencia artificial" }];
 
 function EstadoClave({ hay, textoSi, textoNo, accion, onAccion }: { hay: boolean; textoSi: string; textoNo: string; accion: [string, string]; onAccion: () => void }) {
   return (
@@ -36,7 +34,6 @@ function MensajeError({ id, texto }: { id: string; texto?: string }) {
 }
 
 export default function InteligenciaArtificial() {
-  useTitulo("Inteligencia artificial");
   const raiz = useRef<HTMLFormElement>(null);
   const [base, setBase] = useState<PreferenciasIa | null>(null);
   const [form, setForm] = useState<Formulario | null>(null);
@@ -131,13 +128,7 @@ export default function InteligenciaArtificial() {
     void cargarEstadoServidor(true);
   };
 
-  const cabecera = (
-    <>
-      <Migas items={MIGAS} />
-      <h1 class="titulo">Inteligencia artificial</h1>
-      <p class="sub ia-intro">Qué modelo redacta los borradores, con qué clave y cómo se verifican las citas.</p>
-    </>
-  );
+  const cabecera = <p class="sub">Qué modelo redacta los borradores, con qué clave y cómo se verifican las citas.</p>;
 
   if (errorCarga) {
     return (

@@ -4,14 +4,29 @@ import type { PropsVista } from "../vistas/tipos";
 
 export const ETAPAS = ["documentos", "proceso", "borrador", "decision", "fallo"] as const;
 export type Etapa = (typeof ETAPAS)[number];
-export type NombreVista = "inicio" | "casos" | "formato" | "ia" | Etapa;
+export type NombreVista = "inicio" | "casos" | Etapa;
 export interface Ruta {
   vista: NombreVista;
   params: PropsVista;
 }
 
+type Cargador = () => Promise<{ default: ComponentType<PropsVista> }>;
+
+export const SECCIONES_CONFIGURACION = [
+  { id: "formato", titulo: "Formato de documentos", cargar: () => import("../vistas/formato") },
+  { id: "ia", titulo: "Inteligencia artificial", cargar: () => import("../vistas/ia") },
+] as const satisfies readonly { id: string; titulo: string; cargar: Cargador }[];
+export type SeccionConfiguracion = (typeof SECCIONES_CONFIGURACION)[number]["id"];
+
+export interface RutaHash extends Ruta {
+  configuracion?: SeccionConfiguracion;
+}
+
 const INICIO: Ruta = { vista: "inicio", params: {} };
+const ANTIGUAS: readonly SeccionConfiguracion[] = ["formato", "ia"];
 const esEtapa = (s: string | undefined): s is Etapa => ETAPAS.includes(s as Etapa);
+const esAntigua = (s: string | undefined): s is SeccionConfiguracion => ANTIGUAS.includes(s as SeccionConfiguracion);
+const esSeccion = (s: string | undefined): s is SeccionConfiguracion => SECCIONES_CONFIGURACION.some((x) => x.id === s);
 
 function decodificar(parte: string): string {
   try {
@@ -21,20 +36,56 @@ function decodificar(parte: string): string {
   }
 }
 
-export function coincidir(hash: string): Ruta {
+export function coincidir(hash: string): RutaHash {
   const partes = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodificar);
   const [seccion, caso, etapa] = partes;
   if (partes.length === 0) return INICIO;
-  if (partes.length === 1 && (seccion === "formato" || seccion === "ia")) return { vista: seccion, params: {} };
+  if (partes.length === 1 && esAntigua(seccion)) return { ...INICIO, configuracion: seccion };
+  if (seccion === "configuracion" && partes.length <= 2) {
+    const elegida = caso ?? SECCIONES_CONFIGURACION[0].id;
+    return esSeccion(elegida) ? { ...INICIO, configuracion: elegida } : INICIO;
+  }
   if (seccion !== "segunda") return INICIO;
   if (partes.length === 1) return { vista: "casos", params: {} };
   if (partes.length === 3 && caso && esEtapa(etapa)) return { vista: etapa, params: { caso } };
   return INICIO;
 }
 
-type Cargador = () => Promise<{ default: ComponentType<PropsVista> }>;
+export const hashConfiguracion = (seccion: SeccionConfiguracion) => `#/configuracion/${seccion}`;
 
-const cargadores: Record<NombreVista, Cargador> = {
+export function hashDe({ vista, params }: Ruta): string {
+  if (vista === "inicio") return "#/";
+  if (vista === "casos") return "#/segunda";
+  return `#/segunda/${encodeURIComponent(params.caso ?? "")}/${vista}`;
+}
+
+export const claveDe = ({ vista, params }: Ruta) => `${vista}:${params.caso ?? ""}`;
+
+function perezosas<K extends string>(cargadores: Record<K, Cargador>) {
+  const cargadas = signal<Partial<Record<K, ComponentType<PropsVista>>>>({});
+  const fallida = signal<K | null>(null);
+  const pendientes = new Map<K, Promise<void>>();
+  const precargar = (clave: K): Promise<void> => {
+    let promesa = pendientes.get(clave);
+    if (!promesa) {
+      promesa = cargadores[clave]().then(
+        (modulo) => {
+          fallida.value = null;
+          cargadas.value = { ...cargadas.value, [clave]: modulo.default };
+        },
+        () => {
+          pendientes.delete(clave);
+          fallida.value = clave;
+        },
+      );
+      pendientes.set(clave, promesa);
+    }
+    return promesa;
+  };
+  return { cargadas, fallida, precargar };
+}
+
+const vistas = perezosas<NombreVista>({
   inicio: () => import("../vistas/inicio"),
   casos: () => import("../vistas/casos"),
   documentos: () => import("../vistas/documentos"),
@@ -42,38 +93,104 @@ const cargadores: Record<NombreVista, Cargador> = {
   borrador: () => import("../vistas/borrador"),
   decision: () => import("../vistas/decision"),
   fallo: () => import("../vistas/fallo"),
-  formato: () => import("../vistas/formato"),
-  ia: () => import("../vistas/ia"),
-};
+});
 
-export const ruta = signal<Ruta>(coincidir(location.hash));
-export const cargadas = signal<Partial<Record<NombreVista, ComponentType<PropsVista>>>>({});
-export const fallida = signal<NombreVista | null>(null);
+const secciones = perezosas(
+  Object.fromEntries(SECCIONES_CONFIGURACION.map((s): [string, Cargador] => [s.id, s.cargar])) as Record<SeccionConfiguracion, Cargador>,
+);
 
-const pendientes = new Map<NombreVista, Promise<void>>();
+export const ruta = signal<Ruta>(INICIO);
+export const configuracion = signal<SeccionConfiguracion | null>(null);
+export const { cargadas, fallida } = vistas;
+export const { cargadas: seccionesCargadas, fallida: seccionFallida, precargar: precargarSeccion } = secciones;
 
 export function precargar(vista: NombreVista = ruta.value.vista): Promise<void> {
-  let promesa = pendientes.get(vista);
-  if (!promesa) {
-    promesa = cargadores[vista]().then(
-      (modulo) => {
-        fallida.value = null;
-        cargadas.value = { ...cargadas.value, [vista]: modulo.default };
-      },
-      () => {
-        pendientes.delete(vista);
-        fallida.value = vista;
-      },
-    );
-    pendientes.set(vista, promesa);
+  return vistas.precargar(vista);
+}
+
+type Guardia = (destino: string) => boolean;
+const guardias = new Set<Guardia>();
+
+export function protegerSalida(guardia: Guardia): () => void {
+  guardias.add(guardia);
+  return () => {
+    guardias.delete(guardia);
+  };
+}
+
+interface MarcaPanel {
+  profundidad: number;
+  desdePagina: boolean;
+}
+
+interface Salida {
+  destino: string;
+  reemplazar: boolean;
+}
+
+let marca: MarcaPanel | null = null;
+let primera = true;
+let salida: Salida | null = null;
+
+export const saliendoDelPanel = () => salida !== null;
+
+function salirDelPanel(destino: string): void {
+  const { profundidad, desdePagina } = marca ?? { profundidad: 0, desdePagina: false };
+  const pasos = desdePagina ? profundidad + 1 : profundidad;
+  if (pasos === 0) {
+    history.replaceState(null, "", destino);
+    sincronizar();
+    return;
   }
-  return promesa;
+  salida = { destino, reemplazar: !desdePagina };
+  history.go(-pasos);
+}
+
+export function navegarDirecto(destino: string): void {
+  for (const guardia of guardias) if (guardia(destino)) return;
+  if (configuracion.value !== null && !coincidir(destino).configuracion) salirDelPanel(destino);
+  else location.hash = destino;
 }
 
 export function navegar(destino: string): void {
-  location.hash = destino;
+  const { configuracion: seccion, ...pagina } = coincidir(destino);
+  if (configuracion.value === null || seccion) navegarDirecto(destino);
+  else if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
 }
 
-addEventListener("hashchange", () => {
-  ruta.value = coincidir(location.hash);
-});
+function marcarEntrada(abierta: boolean): void {
+  const previa = configuracion.value !== null ? marca : null;
+  if (!abierta) {
+    marca = null;
+    return;
+  }
+  const guardada = (history.state as { panel?: MarcaPanel } | null)?.panel;
+  if (guardada) {
+    marca = guardada;
+    return;
+  }
+  marca = previa ? { profundidad: previa.profundidad + 1, desdePagina: previa.desdePagina } : { profundidad: 0, desdePagina: !primera };
+  history.replaceState({ ...history.state, panel: marca }, "");
+}
+
+export function sincronizar(): void {
+  if (salida) {
+    const { destino, reemplazar } = salida;
+    if (!reemplazar && destino !== location.hash) {
+      location.hash = destino;
+      return;
+    }
+    salida = null;
+    if (reemplazar) history.replaceState(null, "", destino);
+  }
+  const { configuracion: pedida } = coincidir(location.hash);
+  if (pedida && location.hash !== hashConfiguracion(pedida)) history.replaceState(history.state, "", hashConfiguracion(pedida));
+  const { configuracion: seccion, ...pagina } = coincidir(location.hash);
+  marcarEntrada(seccion !== undefined);
+  primera = false;
+  configuracion.value = seccion ?? null;
+  if (!seccion && claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
+}
+
+sincronizar();
+addEventListener("hashchange", sincronizar);

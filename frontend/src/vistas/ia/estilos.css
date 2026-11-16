@@ -1,5 +1,4 @@
 .ia { max-width: 760px; }
-.ia-intro { margin-top: 0.3rem; }
 .ia-sec { padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--linea); }
 .ia-sec:first-of-type { border-top: 0; margin-top: 1.5rem; padding-top: 0; }
 .ia-sec h2 { font-size: 1.15rem; font-weight: 600; }

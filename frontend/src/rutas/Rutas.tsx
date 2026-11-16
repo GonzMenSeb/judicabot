@@ -1,12 +1,10 @@
 import { signal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import { Cargando } from "../ui/Estados";
-import { cargadas, fallida, precargar, ruta } from "./router";
+import { cargadas, claveDe, fallida, precargar, ruta } from "./router";
 import type { Ruta } from "./router";
 
 export const mostrada = signal<Ruta | null>(null);
-
-const claveDe = ({ vista, params }: Ruta) => `${vista}:${params.caso ?? ""}`;
 
 export function Rutas() {
   const actual = ruta.value;
