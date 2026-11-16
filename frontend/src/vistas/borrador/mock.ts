@@ -28,6 +28,7 @@ const citas: CitaVista[] = [
     cobertura: 0.98,
     estado: "verificada",
     detalle: null,
+    url: "https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm",
   },
   {
     id: "c2",

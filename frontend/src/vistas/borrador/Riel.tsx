@@ -42,6 +42,16 @@ export function DetalleCita({ cita, titulo, onCerrar }: PropsDetalleCita) {
         <dd>{porcentaje(cita.cobertura)}</dd>
         <dt>Estado</dt>
         <dd>{ETIQUETA_ESTADO_CITA[cita.estado]}</dd>
+        {cita.url && (
+          <>
+            <dt>Relatoría</dt>
+            <dd>
+              <a href={cita.url} target="_blank" rel="noopener noreferrer">
+                Abrir en la relatoría <span class="solo-lectura">(se abre en una pestaña nueva)</span>
+              </a>
+            </dd>
+          </>
+        )}
       </dl>
       {cita.detalle && <p class={cx("bor-detalle-motivo", cita.estado)}>{cita.detalle}</p>}
       <div>
