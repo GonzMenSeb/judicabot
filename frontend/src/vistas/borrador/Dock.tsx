@@ -5,6 +5,7 @@ export interface PropsDock {
   pendientes: number;
   revisados: number;
   total: number;
+  alertas?: "cargando" | "fallo" | "listo";
   enCurso: boolean;
   hrefDecision: string;
   puedeCorregir: boolean;
@@ -24,8 +25,12 @@ function Icono({ tono }: { tono: Tono }) {
   );
 }
 
-function mensaje({ pendientes, revisados, total, enCurso }: PropsDock): { tono: Tono; titulo: string; linea: string } {
+function mensaje({ pendientes, revisados, total, enCurso, alertas = "listo" }: PropsDock): { tono: Tono; titulo: string; linea: string } {
   if (enCurso) return { tono: "info", titulo: "Hay una redacción en curso", linea: "Podrá decidir cuando termine." };
+  if (total === 0 && alertas === "cargando") return { tono: "info", titulo: "Comprobando el borrador", linea: "Leyendo las alertas del caso." };
+  if (total === 0 && alertas === "fallo") {
+    return { tono: "alerta", titulo: "No se pudieron leer las alertas", linea: "Las citas no tienen objeciones; las demás comprobaciones no están disponibles." };
+  }
   if (total === 0) return { tono: "ok", titulo: "El borrador está listo para su decisión", linea: "Todas las comprobaciones salieron bien." };
   if (pendientes === 0) {
     return { tono: "ok", titulo: total === 1 ? "Revisó el único punto" : `Revisó los ${total} puntos`, linea: "Puede pasar a la decisión." };

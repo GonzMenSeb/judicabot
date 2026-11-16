@@ -667,6 +667,27 @@ describe("Borrador interacción", () => {
     await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
   });
 
+  it("«Ver en el texto» desde el cajón deja el foco en la cita, no en el cuerpo", async () => {
+    simularRed();
+    await abrir();
+    fireEvent.click(screen.getByRole("button", { name: /^Revisión/ }));
+    fireEvent.click(filaDe(/Sentencia SU-508 de 2020/));
+    fireEvent.click(within(panel()).getByRole("button", { name: /Ver en el texto/ }));
+    expect(document.activeElement).toBe(citaEnTexto(/SU-508/));
+  });
+
+  it("al ensanchar la ventana con el cajón abierto el foco queda en el panel", async () => {
+    simularRed();
+    await abrir();
+    fireEvent.click(screen.getByRole("button", { name: /^Revisión/ }));
+    await waitFor(() => expect(document.activeElement).toBe(within(panel()).getByRole("button", { name: "Cerrar la revisión" })));
+    vi.stubGlobal("innerWidth", 1200);
+    fireEvent(window, new Event("resize"));
+    expect(panel().classList.contains("abierto")).toBe(false);
+    expect(document.activeElement?.id).toBe("bor-panel-titulo");
+    vi.unstubAllGlobals();
+  });
+
   it("enlaza a la decisión desde la barra inferior", async () => {
     simularRed();
     await abrir();
@@ -683,9 +704,41 @@ describe("Borrador interacción", () => {
     }
     simularRed({ vista, estado });
     await abrir();
+    expect(await screen.findByText("El borrador está listo para su decisión")).toBeTruthy();
     expect(within(panel()).getByText("Nada pendiente en lo que el sistema pudo comprobar.")).toBeTruthy();
-    expect(screen.getByText("El borrador está listo para su decisión")).toBeTruthy();
+    expect(within(panel()).getByText("Todo salió bien")).toBeTruthy();
     expect(screen.getByText("Todas las comprobaciones salieron bien.")).toBeTruthy();
+  });
+
+  it("si /estado falla no afirma que todo salió bien ni que está listo", async () => {
+    const vista = structuredClone(VISTA_BORRADOR);
+    vista.citas = vista.citas.filter((c) => c.estado === "verificada");
+    simularRed({ vista, estado: 500 });
+    await abrir();
+    await screen.findByText(/No se pudieron leer las alertas del caso/);
+    expect(within(panel()).queryByText("Todo salió bien")).toBeNull();
+    expect(screen.queryByText(/Jev coincide con el borrador/)).toBeNull();
+    expect(screen.queryByText("El borrador está listo para su decisión")).toBeNull();
+    expect(screen.getByText("No se pudieron leer las alertas")).toBeTruthy();
+  });
+
+  it("mientras /estado carga no afirma que todo salió bien", async () => {
+    const vista = structuredClone(VISTA_BORRADOR);
+    vista.citas = vista.citas.filter((c) => c.estado === "verificada");
+    let liberar: (r: Response) => void = () => {};
+    const lento = new Promise<Response>((resolver) => {
+      liberar = resolver;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url.endsWith("/vista/borrador") ? responder(vista) : url.endsWith("/estado") ? lento : responder(404))),
+    );
+    await abrir();
+    expect(within(panel()).queryByText("Todo salió bien")).toBeNull();
+    expect(screen.queryByText("El borrador está listo para su decisión")).toBeNull();
+    expect(screen.getByText("Comprobando el borrador")).toBeTruthy();
+    liberar(responder(conEstado("esperando_decision", { resumen: { alertas: {}, jev_metadatos: null } })));
+    expect(await screen.findByText("El borrador está listo para su decisión")).toBeTruthy();
   });
 });
 
@@ -696,6 +749,14 @@ describe("Pedir correcciones", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pedir correcciones" }));
     return await screen.findByRole("heading", { name: "Pedir correcciones al borrador" });
   }
+
+  it("cada opción describe su alcance con el detalle", async () => {
+    simularRed();
+    await abrirDialogo();
+    const radio = screen.getByRole("radio", { name: /Rehacer las consideraciones/ });
+    expect(radio.getAttribute("aria-describedby")).toBe("bor-op-det-rehacer_consideraciones");
+    expect(document.getElementById("bor-op-det-rehacer_consideraciones")?.textContent).toBe("Solo la sección V. La apertura se conserva.");
+  });
 
   it("exige instrucción y parte a rehacer antes de enviar", async () => {
     const llamadas = simularRed();

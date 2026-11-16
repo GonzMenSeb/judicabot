@@ -89,6 +89,9 @@ function motivoConfianza(lecturas: (LecturaJev | undefined)[], umbral: number | 
     : null;
 }
 
+const AYUDA_SENTIDO = "Revise la frase del borrador que describe la decisión de primera instancia (I y III) antes de decidir.";
+const AYUDA_ROL = "Revise quién impugna en la sección IV.";
+
 export function filasJev(jev: JevMetadatos | null | undefined, md: MetadatosCaso | null | undefined): FilaJev[] {
   const preguntas = jev?.preguntas;
   if (!jev || !preguntas) return [];
@@ -97,7 +100,7 @@ export function filasJev(jev: JevMetadatos | null | undefined, md: MetadatosCaso
 
   if (fallo || clausula) {
     const estado = estadoDe(jev.coincide?.sentido);
-    let motivo: string | null = null;
+    let motivo: string | null = estado === "difiere" ? AYUDA_SENTIDO : null;
     if (estado === "sin_comparar") {
       motivo =
         (!fallo && "Jev no pudo leer el sentido del fallo.") ||
@@ -126,7 +129,7 @@ export function filasJev(jev: JevMetadatos | null | undefined, md: MetadatosCaso
 
   if (rol) {
     const estado = estadoDe(jev.coincide?.rol_impugnante);
-    let motivo: string | null = null;
+    let motivo: string | null = estado === "difiere" ? AYUDA_ROL : null;
     if (estado === "sin_comparar") {
       motivo =
         (!md?.impugnante_rol && "El borrador no registra la calidad de quien impugna.") ||
@@ -148,14 +151,18 @@ export function filasJev(jev: JevMetadatos | null | undefined, md: MetadatosCaso
   return filas;
 }
 
+function textoAlerta(mensaje: unknown): string | null {
+  if (mensaje === null || mensaje === undefined) return null;
+  const texto = typeof mensaje === "object" ? JSON.stringify(mensaje) : String(mensaje);
+  return texto.trim() === "" ? null : texto;
+}
+
 function normalizarAlertas(alertas: AlertasApi | null | undefined): [string, string][] {
   if (!alertas) return [];
-  if (Array.isArray(alertas)) return alertas.filter((m) => m !== null && m !== undefined).map((m): [string, string] => ["ingesta", String(m)]);
-  return Object.entries(alertas).flatMap(([nodo, mensajes]) =>
-    (Array.isArray(mensajes) ? mensajes : [mensajes])
-      .filter((m): m is string => m !== null && m !== undefined && m !== "")
-      .map((m): [string, string] => [nodo, String(m)]),
-  );
+  const aTextos = (valor: unknown): string[] =>
+    (Array.isArray(valor) ? valor : [valor]).map(textoAlerta).filter((m): m is string => m !== null);
+  if (typeof alertas !== "object" || Array.isArray(alertas)) return aTextos(alertas).map((m): [string, string] => ["ingesta", m]);
+  return Object.entries(alertas).flatMap(([nodo, mensajes]) => aTextos(mensajes).map((m): [string, string] => [nodo, m]));
 }
 
 function etiquetaNodo(nodo: string): string {
@@ -187,7 +194,7 @@ export const dividirMotivos = (detalle: string | null): string[] =>
   (detalle ?? "").split(/(?<=\.);\s+/).filter((m) => m.trim() !== "");
 
 function valoresPython(texto: string): string[] {
-  const valores = [...texto.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)].map((m) => (m[1] ?? m[2] ?? "").replace(/\\(.)/g, "$1"));
+  const valores = [...texto.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)].map((m) => (m[1] ?? m[2] ?? "").replace(/\\(.)/g, (_, c: string) => ("nrt".includes(c) ? " " : c)));
   return valores.length > 0 ? valores : [texto];
 }
 
@@ -370,6 +377,11 @@ export function leerRevisados(clave: string): Set<string> {
 
 export function guardarRevisados(clave: string, revisados: ReadonlySet<string>): void {
   try {
+    const prefijo = clave.slice(0, clave.lastIndexOf(":") + 1);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const otra = localStorage.key(i);
+      if (otra && otra !== clave && otra.startsWith(prefijo)) localStorage.removeItem(otra);
+    }
     localStorage.setItem(clave, JSON.stringify([...revisados]));
   } catch {
     return;

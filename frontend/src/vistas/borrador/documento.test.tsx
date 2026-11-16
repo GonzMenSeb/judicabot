@@ -100,7 +100,7 @@ describe("Documento", () => {
     expect(paginas.map((p) => p.dataset.pagina)).toEqual(["Página 1 de 2", "Página 2 de 2"]);
     expect(container.querySelector("#b-t1")!.classList.contains("bor-tpl")).toBe(true);
     expect(container.querySelectorAll(".bor-tpl").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Borrador, aún no es el fallo")).toBeTruthy();
+    expect(screen.getByText("Borrador · aún no es el fallo")).toBeTruthy();
   });
 
   it("conserva ids de encabezados, listas y el pie solo en la última página", () => {

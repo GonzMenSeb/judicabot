@@ -133,7 +133,7 @@ test("borrador: bloques, citas clicables, índice, revisión y sin Jev", async (
   await expect(page).toHaveURL(/\/borrador$/);
   const texto = page.getByRole("article", { name: /Borrador del fallo/ });
   await expect(texto).toBeVisible();
-  await expect(texto.getByText("Borrador, aún no es el fallo")).toBeVisible();
+  await expect(texto.getByText("Borrador · aún no es el fallo")).toBeVisible();
   for (const titulo of ["I. ASUNTO", "II. ANTECEDENTES DEL CASO", "III. LA SENTENCIA IMPUGNADA", "IV. LA IMPUGNACIÓN", "V. CONSIDERACIONES"]) {
     await expect(texto.getByRole("heading", { name: titulo })).toBeVisible();
   }

@@ -111,7 +111,7 @@ const ITEMS: ItemRevision[] = [
         borrador: { principal: null, secundario: null },
         jev: { principal: null, confianza: null, nota: null },
         estado: "sin_comparar",
-        motivo: null,
+        motivo: "Jev no pudo leer el escrito.",
       },
     },
   },
@@ -328,6 +328,11 @@ describe("PanelRevision: detalle por tipo", () => {
     expect(screen.getByText(patron(`Solo compara con al menos ${porcentaje(0.8)} de confianza`))).toBeTruthy();
   });
 
+  it("Jev sin comparar: muestra la explicación sin el tono de alerta", () => {
+    render(<PanelRevision {...props({ abierta: "jev-rol" })} />);
+    expect(screen.getByText("Jev no pudo leer el escrito.").className).not.toContain("alerta");
+  });
+
   it("Jev sin dato ni umbral: usa Sin dato y Sin lectura y omite la frase del umbral", () => {
     render(<PanelRevision {...props({ abierta: "jev-rol", umbralJev: undefined })} />);
     expect(screen.getByText("Sin dato", { selector: "strong" })).toBeTruthy();
@@ -380,6 +385,13 @@ describe("PanelRevision: vacío y aviso", () => {
     const { container } = render(<PanelRevision {...props({ items: ITEMS.filter((i) => i.nivel === "ok") })} />);
     expect(container.querySelector(".bor-panel-resumen")?.textContent).toBe("Nada pendiente en lo que el sistema pudo comprobar.");
     expect(screen.getByText("Todo salió bien")).toBeTruthy();
+  });
+
+  it("sin alertas leídas no afirma que Jev coincida", () => {
+    render(<PanelRevision {...props({ items: ITEMS.filter((i) => i.nivel === "ok"), alertasLeidas: false })} />);
+    expect(screen.queryByText("Todo salió bien")).toBeNull();
+    expect(screen.queryByText(/Jev coincide/)).toBeNull();
+    expect(screen.getByText("Citas sin objeciones")).toBeTruthy();
   });
 
   it("sin ningún ítem sigue mostrándose completo", () => {

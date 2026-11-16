@@ -30,6 +30,7 @@
 .bor-nivel-cabeza .cuenta { color: var(--tenue); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .bor-nivel-cabeza.plegable { position: static; padding-bottom: 0.85rem; }
 .bor-nivel-cabeza.plegable:hover .nombre { color: var(--acento); }
+.bor-nivel-cabeza.plegable:focus-visible, .bor-fila-boton:focus-visible { outline-offset: -3px; }
 .bor-nivel-cabeza .chevron { flex: none; transition: transform 0.15s; }
 .bor-nivel-cabeza[aria-expanded=true] .chevron { transform: rotate(180deg); }
 

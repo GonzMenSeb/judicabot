@@ -90,6 +90,7 @@ export default function Borrador({ caso }: PropsVista) {
     const control = new AbortController();
     const base = `/api/casos/${encodeURIComponent(caso)}`;
     setFase("cargando");
+    setEstado(null);
     setEstadoFallo(false);
     setSinCaso(false);
     setSeleccionada(null);
@@ -183,9 +184,13 @@ export default function Borrador({ caso }: PropsVista) {
     disparador.current = desde;
     const marcasTexto = columna.current?.querySelectorAll<HTMLElement>("[data-cita]") ?? [];
     const marca = Array.from(marcasTexto).find((m) => m.dataset["cita"] === id) ?? null;
-    setPanelAbierto(false);
-    setSeleccionada(id);
+    const enCajon = desde.closest("#bor-panel.abierto") !== null;
+    setSeleccionada(marca ? id : null);
     setAncla(null);
+    if (enCajon) {
+      setPanelAbierto(false);
+      (marca ?? botonPanel.current)?.focus({ preventScroll: true });
+    }
     if (!marca) return;
     irA(marca, "center");
     const retraso = comportamientoScroll() === "smooth" ? ESPERA_DESPLAZAMIENTO : 0;
@@ -247,7 +252,10 @@ export default function Borrador({ caso }: PropsVista) {
   useEffect(() => {
     if (!panelAbierto && !indiceAbierto) return;
     const alRedimensionar = () => {
-      if (window.innerWidth >= 1024) setPanelAbierto(false);
+      if (window.innerWidth >= 1024) {
+        if (document.activeElement?.closest("#bor-panel")) document.getElementById("bor-panel-titulo")?.focus({ preventScroll: true });
+        setPanelAbierto(false);
+      }
       if (window.innerWidth >= 1280) setIndiceAbierto(false);
     };
     window.addEventListener("resize", alRedimensionar);
@@ -434,6 +442,7 @@ export default function Borrador({ caso }: PropsVista) {
           seleccionada={seleccionada}
           alVerEnTexto={verEnTexto}
           umbralJev={resumen?.jev_metadatos?.umbral}
+          alertasLeidas={estado !== null}
           avisoEstado={estadoFallo ? "No se pudieron leer las alertas del caso; se muestran solo las citas." : null}
           abiertoMovil={panelAbierto}
           onCerrarMovil={() => cerrarPanel(true)}
@@ -444,6 +453,7 @@ export default function Borrador({ caso }: PropsVista) {
         pendientes={quedan}
         revisados={hechos}
         total={pendientes.length}
+        alertas={estado ? "listo" : estadoFallo ? "fallo" : "cargando"}
         enCurso={enCurso}
         hrefDecision={enlaceEtapa(caso, "decision")}
         puedeCorregir={corrigible}

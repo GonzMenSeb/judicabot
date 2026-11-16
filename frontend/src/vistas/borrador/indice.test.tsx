@@ -159,6 +159,16 @@ describe("Dock", () => {
     expect(screen.getByText("Todas las comprobaciones salieron bien.")).toBeTruthy();
   });
 
+  it("sin alertas leídas no dice que está listo", () => {
+    dock({ pendientes: 0, revisados: 0, total: 0, alertas: "cargando" });
+    expect(screen.getByText("Comprobando el borrador")).toBeTruthy();
+    expect(screen.queryByText("El borrador está listo para su decisión")).toBeNull();
+    cleanup();
+    dock({ pendientes: 0, revisados: 0, total: 0, alertas: "fallo" });
+    expect(screen.getByText("No se pudieron leer las alertas")).toBeTruthy();
+    expect(screen.queryByText("Todas las comprobaciones salieron bien.")).toBeNull();
+  });
+
   it("con una redacción en curso avisa y deshabilita la decisión", () => {
     dock({ enCurso: true });
     expect(screen.getByText("Hay una redacción en curso")).toBeTruthy();

@@ -98,12 +98,13 @@ export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: Prop
               type="radio"
               name="bor-accion"
               aria-labelledby={`bor-op-${o.valor}`}
+              aria-describedby={`bor-op-det-${o.valor}`}
               checked={accion === o.valor}
               onChange={() => setAccion(o.valor)}
             />
             <span class="bor-dlg-seccion">{o.secciones}</span>
             <b id={`bor-op-${o.valor}`}>{o.titulo}</b>
-            <small>{o.detalle}</small>
+            <small id={`bor-op-det-${o.valor}`}>{o.detalle}</small>
           </label>
         ))}
         {intentado && faltaAccion && (

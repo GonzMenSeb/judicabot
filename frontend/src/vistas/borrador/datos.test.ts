@@ -23,6 +23,18 @@ import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const md = { impugnante_rol: "accionante", impugnante: "Marta", decision_a_quo: "negó el amparo" };
 
+describe("valores de la ingesta", () => {
+  it("conserva comillas escapadas y vuelve espacio los saltos", () => {
+    const a = humanizarAlerta(
+      "apertura",
+      "En metadatos, campo accionadas, la ingesta extrajo ['O\\'Brien', 'a\\nb'] y el modelo leyó ['X']; se conserva el de la ingesta, verifique cuál es correcto.",
+      false,
+    );
+    if (a.detalle?.tipo !== "comparar") throw new Error("falta el detalle");
+    expect(a.detalle.lecturas[0]?.valores).toEqual(["O'Brien", "a b"]);
+  });
+});
+
 describe("filasJev", () => {
   it("distingue coincide, difiere y sin comparar", () => {
     const filas = filasJev(
@@ -41,6 +53,28 @@ describe("filasJev", () => {
     expect(filas[0]?.motivo).toMatch(/62\s*%.*80\s*%/);
     expect(filas[0]?.borrador.principal).toBe("Negó el amparo");
     expect(filas[1]?.jev.principal).toBe("Accionada");
+  });
+
+  it("las filas que difieren llevan la ayuda y las no comparadas su explicación", () => {
+    const filas = filasJev(
+      {
+        umbral: 0.8,
+        preguntas: {
+          sentido_fallo: { choice: "niega", confidence: 0.97 },
+          sentido_clausula: { choice: "ampara", confidence: 0.9 },
+          rol_impugnante: { choice: "accionada", confidence: 0.9 },
+        },
+        coincide: { sentido: false, rol_impugnante: false },
+      },
+      md,
+    );
+    expect(filas[0]?.motivo).toBe("Revise la frase del borrador que describe la decisión de primera instancia (I y III) antes de decidir.");
+    expect(filas[1]?.motivo).toBe("Revise quién impugna en la sección IV.");
+    const coinciden = filasJev(
+      { umbral: 0.8, preguntas: { rol_impugnante: { choice: "accionante", confidence: 0.9 } }, coincide: { rol_impugnante: true } },
+      md,
+    );
+    expect(coinciden[0]?.motivo).toBeNull();
   });
 
   it("nunca marca difiere cuando coincide es null y explica la lectura ausente", () => {
@@ -379,6 +413,19 @@ describe("construirRevision, alertas", () => {
   });
 });
 
+describe("alertas de formato desconocido", () => {
+  const titulos = (alertas: unknown) =>
+    construirRevision([], alertas as never, [], {}).map((i) => i.titulo);
+
+  it("no produce [object Object], títulos vacíos ni una fila por carácter", () => {
+    expect(titulos([{ a: 1 }])).toEqual(['{"a":1}']);
+    expect(titulos({ apertura: [{ x: 1 }] })).toEqual(['{"x":1}']);
+    expect(titulos(["", "ALERTA: x"])).toEqual(["x"]);
+    expect(titulos("hola")).toEqual(["hola"]);
+    expect(titulos({ apertura: "una sola" })).toEqual(["una sola"]);
+  });
+});
+
 describe("revisados", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -408,6 +455,17 @@ describe("revisados", () => {
       throw new Error("bloqueado");
     });
     expect(leerRevisados(clave).size).toBe(0);
+  });
+
+  it("guardar borra los revisados de otros borradores del mismo caso y respeta los demás", () => {
+    localStorage.setItem(claveRevisados("c1", "viejo"), '["a"]');
+    localStorage.setItem(claveRevisados("c2", "viejo"), '["a"]');
+    localStorage.setItem("otra", "x");
+    guardarRevisados(claveRevisados("c1", "nuevo"), new Set(["b"]));
+    expect(localStorage.getItem(claveRevisados("c1", "viejo"))).toBeNull();
+    expect(localStorage.getItem(claveRevisados("c2", "viejo"))).not.toBeNull();
+    expect(localStorage.getItem("otra")).toBe("x");
+    expect([...leerRevisados(claveRevisados("c1", "nuevo"))]).toEqual(["b"]);
   });
 
   it("guardar no lanza si el almacenamiento falla", () => {

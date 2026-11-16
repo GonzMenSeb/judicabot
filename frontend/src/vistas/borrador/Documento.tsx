@@ -143,7 +143,7 @@ export function Documento({ vista, plantilla, ...contexto }: PropsDocumento) {
   const total = vista.paginas.length;
   return (
     <Hoja etiqueta="Borrador del fallo, secciones I a V" class={cx("bor-hoja", plantilla && "bor-con-plantilla")}>
-      <span class="bor-sello">Borrador, aún no es el fallo</span>
+      <span class="bor-sello">Borrador · aún no es el fallo</span>
       {vista.paginas.map((pagina, i) => {
         const cuerpo = pagina.bloques.filter((b) => b.tipo !== "pie");
         const pie = i === total - 1 ? pagina.bloques.filter((b) => b.tipo === "pie") : [];

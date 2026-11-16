@@ -14,6 +14,7 @@ export interface PropsPanelRevision {
   alVerEnTexto: (citaId: string, desde: HTMLElement) => void;
   umbralJev?: number;
   avisoEstado: string | null;
+  alertasLeidas?: boolean;
   abiertoMovil: boolean;
   onCerrarMovil: () => void;
 }
@@ -87,7 +88,7 @@ function DetalleJev({ fila, umbral }: { fila: FilaJev; umbral: number | undefine
         <Lectura etiqueta="El borrador dice" principal={fila.borrador.principal ?? "Sin dato"} nota={fila.borrador.secundario} />
         <Lectura etiqueta="Jev lee en el expediente" principal={fila.jev.principal ?? "Sin lectura"} nota={notaJev} />
       </div>
-      {fila.estado === "difiere" && fila.motivo && <p class="bor-nota alerta">{fila.motivo}</p>}
+      {fila.motivo && <p class={cx("bor-nota", fila.estado === "difiere" && "alerta")}>{fila.motivo}</p>}
       <p class="bor-nota">
         Jev leyó por su cuenta el fallo de primera instancia y la impugnación.
         {umbral !== undefined && ` Solo compara con al menos ${porcentaje(umbral)} de confianza.`}
@@ -224,6 +225,7 @@ export function PanelRevision({
   alVerEnTexto,
   umbralJev,
   avisoEstado,
+  alertasLeidas = true,
   abiertoMovil,
   onCerrarMovil,
 }: PropsPanelRevision) {
@@ -282,7 +284,9 @@ export function PanelRevision({
       <div class="bor-panel-cabeza">
         <div class="bor-panel-cabeza-fila">
           <div>
-            <h2 id="bor-panel-titulo">Antes de decidir</h2>
+            <h2 id="bor-panel-titulo" tabIndex={-1}>
+              Antes de decidir
+            </h2>
             <p class="bor-panel-resumen">
               {pendientes.length > 0 ? (
                 <>
@@ -311,8 +315,17 @@ export function PanelRevision({
           <div class="bor-todo-bien">
             <IconoCheck />
             <div>
-              <b>Todo salió bien</b>
-              <span>Las citas se encontraron en la relatoría y Jev coincide con el borrador.</span>
+              {alertasLeidas ? (
+                <>
+                  <b>Todo salió bien</b>
+                  <span>Las citas se encontraron en la relatoría y Jev coincide con el borrador.</span>
+                </>
+              ) : (
+                <>
+                  <b>Citas sin objeciones</b>
+                  <span>Las alertas del caso y la lectura de Jev no se han podido comprobar.</span>
+                </>
+              )}
             </div>
           </div>
         )}
