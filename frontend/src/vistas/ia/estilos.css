@@ -29,9 +29,6 @@
 .ia-etiqueta { font-size: 0.88rem; font-weight: 500; }
 .ia-prox { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; }
 .ia-proximamente { color: var(--suave); font-size: 0.86rem; }
-.ia-pasos { display: grid; gap: 0.35rem; max-width: 36rem; margin: 1rem 0 0; padding-left: 1.3rem; font-size: 0.92rem; }
-.ia-pasos code { padding: 0 0.25rem; border-radius: 4px; background: var(--fondo-2); font-size: 0.88em; overflow-wrap: anywhere; }
-.ia-nota-ext { max-width: 36rem; margin-top: 0.9rem; font-size: 0.88rem; }
 
 .ia [aria-invalid="true"] { border-color: var(--mal); }
 .ia-error { margin-top: 0.3rem; color: var(--mal); font-size: 0.86rem; }

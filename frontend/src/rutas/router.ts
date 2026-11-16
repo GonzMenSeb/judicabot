@@ -15,6 +15,7 @@ type Cargador = () => Promise<{ default: ComponentType<PropsVista> }>;
 export const SECCIONES_CONFIGURACION = [
   { id: "formato", titulo: "Formato de documentos", cargar: () => import("../vistas/formato") },
   { id: "ia", titulo: "Inteligencia artificial", cargar: () => import("../vistas/ia") },
+  { id: "extension", titulo: "Extensión de la relatoría", cargar: () => import("../vistas/extension") },
 ] as const satisfies readonly { id: string; titulo: string; cargar: Cargador }[];
 export type SeccionConfiguracion = (typeof SECCIONES_CONFIGURACION)[number]["id"];
 
