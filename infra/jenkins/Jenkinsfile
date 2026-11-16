@@ -36,7 +36,7 @@ pipeline {
                         ? sh(returnStdout: true, script: "git diff --name-only ${base} ${env.GIT_COMMIT}").trim().split('\n') as List
                         : null
 
-                    def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|frontend\/|Dockerfile$)/
+                    def imagePaths = ~/^(backend\/tutela2\/|backend\/pyproject\.toml$|backend\/uv\.lock$|frontend\/|extension\/|Dockerfile$|\.dockerignore$)/
                     def testPaths  = ~/^(backend\/tests\/|backend\/scripts\/|infra\/jenkins\/|extension\/)/
 
                     if (changed == null) {

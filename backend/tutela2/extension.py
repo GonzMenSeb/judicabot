@@ -6,7 +6,10 @@ import json
 import logging
 import threading
 import uuid
+import zipfile
 from dataclasses import dataclass, field
+from io import BytesIO
+from pathlib import Path
 from typing import Literal, NamedTuple
 
 from fastapi import WebSocket
@@ -18,6 +21,11 @@ log = logging.getLogger("tutela2.extension")
 ESPERA_S = 120.0
 ESPERA_HOLA_S = 10.0
 CIERRE_SIN_RESPUESTA = 4408
+
+CARPETA = Path(__file__).resolve().parents[2] / "extension"
+RAIZ_ZIP = "judicabot-relatoria"
+_FUERA_DEL_ZIP = {"pruebas", "package.json"}
+_IGNORADOS = {"__pycache__", "node_modules"}
 
 
 class Entrega(NamedTuple):
@@ -140,3 +148,24 @@ def _pedir_a_la_ultima(url: str, espera_s: float) -> Entrega | None:
     log.warning("La extensión no respondió a tiempo el pedido de %s; se cierra su conexión", url)
     asyncio.run_coroutine_threadsafe(conexion.cerrar(CIERRE_SIN_RESPUESTA), conexion.bucle)
     return VENCIDA
+
+
+def _empaquetable(relativa: Path) -> bool:
+    if relativa.parts[0] in _FUERA_DEL_ZIP:
+        return False
+    return not any(parte.startswith(".") or parte in _IGNORADOS for parte in relativa.parts)
+
+
+def paquete() -> tuple[str, bytes]:
+    carpeta = CARPETA
+    version = json.loads((carpeta / "manifest.json").read_text(encoding="utf-8"))["version"]
+    archivos = sorted(
+        relativa
+        for ruta in carpeta.rglob("*")
+        if ruta.is_file() and _empaquetable(relativa := ruta.relative_to(carpeta))
+    )
+    destino = BytesIO()
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zip_:
+        for relativa in archivos:
+            zip_.write(carpeta / relativa, f"{RAIZ_ZIP}/{relativa.as_posix()}")
+    return f"{RAIZ_ZIP}-{version}.zip", destino.getvalue()

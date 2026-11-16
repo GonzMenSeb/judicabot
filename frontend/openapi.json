@@ -2166,6 +2166,23 @@
         "summary": "Estado Servidor"
       }
     },
+    "/api/extension/zip": {
+      "get": {
+        "operationId": "descargar_extension_api_extension_zip_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "La extensión empaquetada"
+          },
+          "404": {
+            "description": "La extensión no está disponible en este servidor."
+          }
+        },
+        "summary": "Descargar Extension"
+      }
+    },
     "/api/formato": {
       "get": {
         "operationId": "obtener_formato_api_formato_get",
