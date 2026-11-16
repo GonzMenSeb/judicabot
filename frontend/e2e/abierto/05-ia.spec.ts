@@ -88,6 +88,7 @@ test("ia: con la clave de Gemini aparecen sus modelos y sus niveles, y se puede 
   await page.locator("label", { hasText: "Gemini (Google)" }).click();
   await expect(page.getByText("Falta la clave de Gemini (Google)")).toBeVisible();
   await capturar(page, "19-ia-gemini-sin-clave");
+  await capturar(page, "19a-ia-seccion-gemini-sin-clave", gemini);
   await page.getByRole("button", { name: "Guardar cambios" }).click();
   await expect(enlaceIa).toContainText("Gemini 4 Argon");
   await expect(enlaceIa.locator(".punto")).toHaveClass("punto mal");
@@ -119,7 +120,7 @@ test("ia: con la clave de Gemini aparecen sus modelos y sus niveles, y se puede 
   await expect(enlaceIa).toContainText("Gemini 4 Hydrogen");
   await expect(enlaceIa.locator(".punto")).toHaveClass("punto");
   await expect(engranaje).toHaveAccessibleName("Configuración");
-  await capturar(page, "19b-ia-gemini");
+  await capturar(page, "19b-ia-gemini", gemini);
 
   await page.locator("label", { hasText: "Anthropic" }).first().click();
   await page.getByRole("button", { name: "Guardar cambios" }).click();

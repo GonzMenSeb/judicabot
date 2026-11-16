@@ -55,7 +55,7 @@ export const test = base.extend<{ vigilante: Vigilante }>({
   ],
 });
 
-export async function capturar(page: Page, nombre: string): Promise<void> {
+export async function capturar(page: Page, nombre: string, desde?: Locator): Promise<void> {
   mkdirSync(capturas, { recursive: true });
   for (const [ancho, alto] of [
     [1440, 900],
@@ -66,8 +66,14 @@ export async function capturar(page: Page, nombre: string): Promise<void> {
       window.scrollTo(0, 0);
       return new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     });
+    if (desde) await desde.evaluate((el) => el.scrollIntoView({ block: "start" }));
     const modal = await page.evaluate(() => document.querySelector("dialog:modal") !== null);
     await page.screenshot({ path: join(capturas, `${nombre}-${ancho}.png`), fullPage: !modal });
+    const sobrante = await page.evaluate(() => {
+      const panel = document.querySelector("dialog.panel");
+      return panel ? panel.scrollHeight - panel.clientHeight : 0;
+    });
+    expect.soft(sobrante, `${nombre}: el panel se desplaza fuera de su área de contenido a ${ancho} px`).toBeLessThanOrEqual(1);
     if (ancho === 390) {
       const desborde = await page.evaluate(() => {
         const panel = document.querySelector(".panel-contenido");
