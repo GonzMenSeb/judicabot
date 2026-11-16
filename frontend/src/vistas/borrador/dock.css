@@ -1,0 +1,16 @@
+.bor-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; width: 100%; border-top: 1px solid var(--linea); background: rgba(255, 255, 255, 0.96); box-shadow: 0 -10px 30px -22px rgba(29, 42, 51, 0.5); backdrop-filter: blur(8px); }
+.bor-dock-fila { display: flex; align-items: center; gap: 0.75rem 1.25rem; max-width: 1480px; min-height: var(--bor-dock, 4.75rem); margin: 0 auto; padding: 0.7rem 1.5rem; }
+.bor-dock-estado { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
+.bor-dock-icono { flex: none; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--alerta-fondo); color: var(--alerta); }
+.bor-dock-icono.ok { background: var(--ok-fondo); color: var(--ok); }
+.bor-dock-icono.info { background: var(--acento-fondo); color: var(--acento); }
+.bor-dock-estado b { display: block; font-weight: 600; }
+.bor-dock-estado > div > span { display: block; color: var(--suave); font-size: 0.86rem; }
+.bor-dock-acciones { display: flex; gap: 0.6rem; flex: none; }
+
+@media (max-width: 760px) {
+  .bor-dock-fila { flex-wrap: wrap; gap: 0.5rem; padding: 0.6rem 1rem; }
+  .bor-dock-icono, .bor-dock-estado > div > span { display: none; }
+  .bor-dock-acciones { flex: 1 1 100%; }
+  .bor-dock-acciones .btn { flex: 1; padding-right: 0.6rem; padding-left: 0.6rem; }
+}
