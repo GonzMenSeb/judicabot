@@ -279,7 +279,7 @@ export default function InteligenciaArtificial() {
             </li>
             <li>Active «Modo de desarrollador».</li>
             <li>
-              Pulse «Cargar descomprimida» y elija la carpeta <code>judicabot-relatoria</code> (la que contiene <code>manifest.json</code>).
+              Pulse «Cargar extensión sin empaquetar» (según el navegador puede decir «Cargar descomprimida» o «Cargar desempaquetado») y elija la carpeta <code>judicabot-relatoria</code> (la que contiene <code>manifest.json</code>).
             </li>
             <li>
               Abra la extensión desde el botón de extensiones del navegador. En «Servidor» debe quedar <code>{location.origin}</code>; escriba la contraseña de judicabot y pulse «Conectar». Debe aparecer «Conectada».
@@ -287,7 +287,7 @@ export default function InteligenciaArtificial() {
             <li>Deje ese navegador abierto. Si se cierra, las citas que el servidor no pueda verificar quedan para revisar.</li>
           </ol>
           <p class="sub ia-nota-ext">
-            Para actualizarla, descargue el archivo de nuevo, reemplace la carpeta y pulse «Volver a cargar» en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
+            Para actualizarla, descargue el archivo de nuevo, reemplace la carpeta y pulse el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
           </p>
         </section>
 

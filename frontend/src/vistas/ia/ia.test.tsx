@@ -314,7 +314,7 @@ describe("Claves", () => {
     await montar();
     const lista = screen.getByRole("list", { name: "Pasos para instalar la extensión" });
     expect(within(lista).getAllByRole("listitem")).toHaveLength(6);
-    for (const texto of ["chrome://extensions", "edge://extensions", "Cargar descomprimida", "judicabot-relatoria"]) {
+    for (const texto of ["chrome://extensions", "edge://extensions", "Cargar extensión sin empaquetar", "judicabot-relatoria"]) {
       expect(lista.textContent).toContain(texto);
     }
     expect(within(lista).getByText(location.origin).tagName).toBe("CODE");

@@ -16,7 +16,7 @@ Chrome o Edge, versión 120 o más.
 
 1. Abrir `chrome://extensions` en Chrome o `edge://extensions` en Edge.
 2. Activar "Modo de desarrollador".
-3. Pulsar "Cargar descomprimida" y elegir la carpeta `judicabot-relatoria` (descargada desde **Inteligencia artificial** en judicabot) o esta carpeta (`extension/`).
+3. Pulsar "Cargar extensión sin empaquetar" (según el idioma y el navegador puede decir "Cargar descomprimida" o "Cargar desempaquetado") y elegir la carpeta `judicabot-relatoria` (descargada desde **Inteligencia artificial** en judicabot) o esta carpeta (`extension/`).
 4. Abrir la ventana de la extensión desde su ícono en la barra del navegador.
 5. Revisar el servidor (por defecto `https://judicabot.web.vespiridion.org`), escribir la contraseña de judicabot y pulsar "Conectar". La ventana debe mostrar "Conectada".
 
@@ -24,7 +24,7 @@ El ícono muestra `!` mientras la extensión no esté conectada.
 
 ## Actualización
 
-Reemplazar la carpeta por la versión nueva y pulsar "Volver a cargar" en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`.
+Reemplazar la carpeta por la versión nueva y pulsar el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`.
 
 ## Descargarla desde judicabot
 
