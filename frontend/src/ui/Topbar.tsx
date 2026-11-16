@@ -1,19 +1,22 @@
 import { cx } from "./clases";
 
-export type SeccionTopbar = "inicio" | "formato" | "ia";
+export type SeccionTopbar = "inicio" | "configuracion";
 
 export interface PropsTopbar {
   seccion?: SeccionTopbar | null;
   clave: boolean | null;
-  modelo?: string | null;
 }
 
-function estadoClave(clave: boolean | null): string {
+export const ID_CONFIGURACION = "boton-configuracion";
+
+export function estadoClave(clave: boolean | null): string {
   if (clave === null) return "estado de la clave desconocido";
   return clave ? "clave lista" : "falta la clave";
 }
 
-export function Topbar({ seccion = null, clave, modelo }: PropsTopbar) {
+export const claseClave = (clave: boolean | null) => cx("punto", clave === null ? "nulo" : clave ? false : "mal");
+
+export function Topbar({ seccion = null, clave }: PropsTopbar) {
   const actual = (s: SeccionTopbar) => (seccion === s ? "page" : undefined);
   return (
     <header class="barra">
@@ -30,18 +33,13 @@ export function Topbar({ seccion = null, clave, modelo }: PropsTopbar) {
           </svg>
           <span class="txt">Inicio</span>
         </a>
-        <a class="enlace-barra" href="#/formato" aria-current={actual("formato")} aria-label="Formato de documentos">
+        <a id={ID_CONFIGURACION} class="enlace-barra engranaje" href="#/configuracion" aria-current={actual("configuracion")}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 2h9l5 5v15H6z" />
-            <path d="M15 2v5h5" />
-            <path d="M9 13h7M9 17h5" />
+            <path d="M10.46 4.76L10.78 2.07L13.22 2.07L13.54 4.76A7.4 7.4 0 0 1 16.03 5.79L18.16 4.12L19.88 5.84L18.21 7.97A7.4 7.4 0 0 1 19.24 10.46L21.93 10.78L21.93 13.22L19.24 13.54A7.4 7.4 0 0 1 18.21 16.03L19.88 18.16L18.16 19.88L16.03 18.21A7.4 7.4 0 0 1 13.54 19.24L13.22 21.93L10.78 21.93L10.46 19.24A7.4 7.4 0 0 1 7.97 18.21L5.84 19.88L4.12 18.16L5.79 16.03A7.4 7.4 0 0 1 4.76 13.54L2.07 13.22L2.07 10.78L4.76 10.46A7.4 7.4 0 0 1 5.79 7.97L4.12 5.84L5.84 4.12L7.97 5.79A7.4 7.4 0 0 1 10.46 4.76Z" />
+            <circle cx="12" cy="12" r="3" />
           </svg>
-          <span class="txt">Formato de documentos</span>
-        </a>
-        <a class="enlace-barra" href="#/ia" aria-current={actual("ia")}>
-          <span class={cx("punto", clave === null ? "nulo" : clave ? false : "mal")} aria-hidden="true" />
-          <span class="solo-lectura">Inteligencia artificial, {estadoClave(clave)}. </span>
-          <span class="txt">{modelo || "Inteligencia artificial"}</span>
+          {clave !== true && <span class={claseClave(clave)} aria-hidden="true" />}
+          <span class="solo-lectura">{clave === true ? "Configuración" : `Configuración, ${estadoClave(clave)}`}</span>
         </a>
       </nav>
     </header>

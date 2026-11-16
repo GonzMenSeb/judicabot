@@ -1,20 +1,19 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef } from "preact/hooks";
-import { cargarEstadoServidor, estadoServidor, nombreModelo, tituloVista } from "../estado";
+import { cargarEstadoServidor, estadoServidor, tituloVista } from "../estado";
 import { Toasts } from "../ui/Toasts";
 import { Topbar } from "../ui/Topbar";
 import type { SeccionTopbar } from "../ui/Topbar";
+import { Configuracion } from "./Configuracion";
 import { mostrada } from "./Rutas";
-import { ruta } from "./router";
-import type { NombreVista, Ruta } from "./router";
+import { configuracion, ruta, SECCIONES_CONFIGURACION } from "./router";
+import type { NombreVista, RutaHash } from "./router";
 
 const MARCA = "Judicabot";
 
 const TITULOS: Record<NombreVista, string> = {
   inicio: "",
   casos: "Casos de segunda instancia",
-  formato: "Formato de documentos",
-  ia: "Inteligencia artificial",
   documentos: "Documentos",
   proceso: "Proceso",
   borrador: "Borrador",
@@ -22,13 +21,14 @@ const TITULOS: Record<NombreVista, string> = {
   fallo: "Fallo",
 };
 
-export function tituloDeRuta({ vista, params }: Ruta): string {
-  const partes = [TITULOS[vista], params.caso, MARCA].filter(Boolean);
-  return partes.join(" · ");
+export function tituloDeRuta({ vista, params, configuracion: seccion }: RutaHash): string {
+  const titulo = SECCIONES_CONFIGURACION.find((s) => s.id === seccion)?.titulo;
+  const partes = titulo ? [titulo, "Configuración"] : [TITULOS[vista], params.caso];
+  return [...partes, MARCA].filter(Boolean).join(" · ");
 }
 
-export function seccionDe(vista: NombreVista): SeccionTopbar {
-  return vista === "formato" || vista === "ia" ? vista : "inicio";
+export function seccionDe({ configuracion: seccion }: RutaHash): SeccionTopbar {
+  return seccion ? "configuracion" : "inicio";
 }
 
 export function Shell({ children }: { children?: ComponentChildren }) {
@@ -36,8 +36,10 @@ export function Shell({ children }: { children?: ComponentChildren }) {
   const primera = useRef(true);
   const destino = ruta.value;
   const visible = mostrada.value;
+  const seccion = configuracion.value;
   const servidor = estadoServidor.value;
   const propio = tituloVista.value;
+  const actual: RutaHash = seccion ? { ...destino, configuracion: seccion } : (visible ?? destino);
 
   useEffect(() => {
     void cargarEstadoServidor();
@@ -54,20 +56,17 @@ export function Shell({ children }: { children?: ComponentChildren }) {
   }, [visible]);
 
   useEffect(() => {
-    document.title = propio ? `${propio} · ${MARCA}` : tituloDeRuta(visible ?? destino);
-  }, [visible, destino, propio]);
+    document.title = propio && !seccion ? `${propio} · ${MARCA}` : tituloDeRuta(actual);
+  }, [visible, destino, seccion, propio]);
 
   return (
     <>
-      <Topbar
-        seccion={seccionDe((visible ?? destino).vista)}
-        clave={servidor ? servidor.api_key : null}
-        modelo={servidor ? nombreModelo(servidor.modelo) : null}
-      />
+      <Topbar seccion={seccionDe(actual)} clave={servidor ? servidor.api_key : null} />
       <main id="contenido" class="lienzo" ref={principal} tabIndex={-1} aria-busy={visible !== destino ? "true" : undefined}>
         {children}
       </main>
-      <Toasts />
+      <Configuracion />
+      {seccion === null && <Toasts />}
     </>
   );
 }

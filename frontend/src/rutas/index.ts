@@ -1,4 +1,4 @@
 export { mostrada, Rutas } from "./Rutas";
 export { Shell, tituloDeRuta } from "./Shell";
-export { coincidir, navegar, precargar, ruta } from "./router";
-export type { Etapa, NombreVista, Ruta } from "./router";
+export { coincidir, configuracion, hashConfiguracion, navegar, precargar, protegerSalida, ruta, SECCIONES_CONFIGURACION } from "./router";
+export type { Etapa, NombreVista, Ruta, RutaHash, SeccionConfiguracion } from "./router";

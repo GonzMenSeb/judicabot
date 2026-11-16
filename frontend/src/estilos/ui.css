@@ -11,6 +11,10 @@
 .punto { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #6fcf9b; flex: none; }
 .punto.mal { background: #e8bb62; }
 .punto.nulo { background: #7a8a94; }
+.engranaje { position: relative; padding: 0.4rem 0.55rem; }
+.engranaje .punto { position: absolute; top: 0.25rem; right: 0.3rem; box-shadow: 0 0 0 2px var(--tinta); }
+.engranaje:hover .punto { box-shadow: 0 0 0 2px #26363f; }
+.engranaje[aria-current=page] .punto { box-shadow: 0 0 0 2px #2b3d47; }
 
 .migas { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.9rem; padding: 0; font-size: 0.9rem; color: var(--suave); list-style: none; }
 .migas li + li::before { content: "/"; margin-right: 0.4rem; color: var(--tenue-deco); }
