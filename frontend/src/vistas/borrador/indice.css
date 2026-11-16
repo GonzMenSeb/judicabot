@@ -1,0 +1,26 @@
+.bor-indice { position: sticky; top: 4.5rem; max-height: calc(100vh - 3.5rem - var(--bor-dock, 4.75rem) - 2rem); overflow-x: hidden; overflow-y: auto; padding: 0.2rem 0.2rem 1rem 0; scrollbar-width: thin; }
+.bor-rotulo { margin: 0 0 0.5rem; color: var(--tenue); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.bor-indice-lista { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.bor-indice-lista button { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; min-width: 0; padding: 0.32rem 0.55rem; border: 0; border-radius: 6px; background: none; color: var(--tinta); font-size: 0.9rem; line-height: 1.35; text-align: left; }
+.bor-indice-lista button > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bor-indice-lista button:hover { background: rgba(255, 255, 255, 0.65); }
+.bor-indice-lista button[aria-current="location"] { background: #fff; box-shadow: inset 3px 0 0 var(--acento); font-weight: 500; }
+.bor-indice-lista .sub button { padding-left: 1.35rem; color: var(--suave); font-size: 0.84rem; }
+.bor-indice-lista .anexo button { color: var(--tenue); font-size: 0.84rem; }
+.bor-corte { height: 1px; margin: 0.45rem 0.55rem; background: var(--linea); }
+.bor-marcador { flex: none; display: inline-grid; place-items: center; min-width: 1.15rem; height: 1.15rem; padding: 0 0.3rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; line-height: 1; }
+.bor-marcador.mal { background: var(--mal-fondo); color: var(--mal); }
+.bor-marcador.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.bor-autoria { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--linea); }
+.bor-autoria ul { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; font-size: 0.84rem; }
+.bor-autoria li { display: grid; gap: 0.05rem; }
+.bor-autoria b { font-weight: 500; }
+.bor-autoria span { color: var(--suave); }
+.bor-autoria small { color: var(--alerta); }
+
+@media (max-width: 1279px) {
+  .bor-indice { display: none; position: fixed; top: 7rem; left: max(1rem, calc(50vw - 740px + 1.5rem)); z-index: 36; width: 19rem; max-width: calc(100vw - 2rem); max-height: min(70vh, calc(100vh - 3.5rem - var(--bor-dock, 4.75rem) - 5rem)); padding: 0.9rem 0.6rem 0.9rem 0.8rem; border: 1px solid var(--linea); border-radius: 12px; background: #fff; box-shadow: 0 20px 44px -14px rgba(20, 30, 36, 0.4); }
+  .bor-indice.abierto { display: block; }
+  .bor-indice-lista button:hover { background: var(--fondo); }
+  .bor-indice-lista button[aria-current="location"] { background: var(--acento-fondo); }
+}

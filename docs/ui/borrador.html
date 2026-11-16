@@ -1,0 +1,1262 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Borrador · Judicabot</title>
+<link rel="icon" type="image/svg+xml" href="marca/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --fondo: #e6ebec;
+  --fondo-2: #dce3e5;
+  --papel: #fdfcf9;
+  --tinta: #1d2a33;
+  --suave: #4a5760;
+  --tenue: #55646e;
+  --tenue-deco: #748188;
+  --linea: #c8d1d5;
+  --linea-2: #dfe5e8;
+  --linea-papel: #e2ddd1;
+  --acento: #1e5a6e;
+  --acento-2: #174757;
+  --acento-fondo: #d6e6eb;
+  --sello: #7a2634;
+  --sello-2: #611c28;
+  --sello-fondo: #f1dde0;
+  --ok: #2c6a4b;
+  --ok-fondo: #d9ebe1;
+  --alerta: #8f5a00;
+  --alerta-fondo: #f6e8c8;
+  --mal: #a8281f;
+  --mal-fondo: #f5dcd9;
+  --foco: #2a7fa0;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Bookman Old Style", "URW Bookman", Bookman, "Palatino Linotype", Georgia, serif;
+  --barra: 3.5rem;
+  --dock: 4.75rem;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { font-size: 16px; scroll-padding-top: calc(var(--barra) + 4rem); }
+body { margin: 0; background: var(--fondo); color: var(--tinta); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4, p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+a { color: var(--acento); }
+.solo-lectura { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.barra { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 0.75rem; padding: 0 1.5rem; height: var(--barra); background: var(--tinta); color: #e8eef0; }
+.marca { display: flex; align-items: center; gap: 0.6rem; color: inherit; text-decoration: none; }
+.marca img { width: 1.9rem; height: 1.9rem; border-radius: 22%; box-shadow: 0 0 0 1px #3a4d58; }
+.marca b { font-weight: 600; font-size: 1.08rem; letter-spacing: 0.01em; }
+.relleno { flex: 1; }
+.barra-nav { display: flex; align-items: center; gap: 0.25rem; }
+.enlace-barra { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; border-radius: 6px; color: #c9d6db; font-size: 0.9rem; text-decoration: none; }
+.enlace-barra:hover { background: #26363f; color: #fff; }
+.enlace-barra[aria-current=page] { background: #2b3d47; color: #fff; }
+.punto { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #6fcf9b; flex: none; }
+
+.lienzo { max-width: 1480px; margin: 0 auto; padding: 1.5rem 1.5rem calc(var(--dock) + 2.5rem); }
+.migas { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.8rem; padding: 0; font-size: 0.9rem; color: var(--suave); list-style: none; }
+.migas li + li::before { content: "/"; margin-right: 0.4rem; color: var(--tenue-deco); }
+.cabeza { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.5rem 2rem; margin-bottom: 1.4rem; }
+.cabeza h1 { font-size: 1.6rem; font-weight: 600; line-height: 1.25; }
+.cabeza-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 1.25rem; margin-top: 0.35rem; color: var(--suave); font-size: 0.92rem; }
+.cabeza-meta span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.cabeza-meta svg { color: var(--tenue-deco); flex: none; }
+
+.pasos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0 0 1.75rem; padding: 0; list-style: none; }
+.paso { position: relative; padding-top: 1.7rem; }
+.paso::before { content: ""; position: absolute; top: 0.62rem; left: 0; right: 0; height: 2px; background: var(--linea); }
+.paso.hecho::before { background: var(--acento); }
+.paso.actual::before { background: linear-gradient(90deg, var(--acento) 0 18%, var(--linea) 18%); }
+.paso-enlace { display: block; color: inherit; text-decoration: none; border-radius: 4px; }
+a.paso-enlace:hover b { text-decoration: underline; }
+.paso .marca-paso { position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.3rem; height: 1.3rem; border: 2px solid var(--linea); border-radius: 50%; background: var(--fondo); font-size: 0.72rem; font-weight: 600; color: var(--suave); }
+.paso.hecho .marca-paso { background: var(--acento); border-color: var(--acento); color: #fff; }
+.paso.actual .marca-paso { border-color: var(--acento); background: #fff; color: var(--acento); }
+.paso b { display: block; padding-right: 1rem; font-weight: 600; }
+.paso small { display: block; padding-right: 1rem; color: var(--suave); font-size: 0.86rem; }
+.paso.disponible.decide .marca-paso { border-color: var(--sello); color: var(--sello); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.55rem 1.1rem; border: 1px solid var(--linea); border-radius: 8px; background: #fff; color: var(--tinta); font-weight: 500; text-decoration: none; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--acento); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+.btn.primario:hover:not(:disabled) { background: var(--acento-2); }
+.btn.sello { background: var(--sello); border-color: var(--sello); color: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 6px 16px -8px rgba(122, 38, 52, 0.7); }
+.btn.sello:hover:not(:disabled) { background: var(--sello-2); border-color: var(--sello-2); }
+.btn.fantasma { border-color: transparent; background: transparent; color: var(--acento); padding: 0.35rem 0.6rem; }
+.btn.fantasma:hover:not(:disabled) { background: var(--acento-fondo); }
+.btn.grande { padding: 0.72rem 1.4rem; font-size: 1rem; }
+.btn svg { flex: none; }
+
+.aviso { display: flex; align-items: center; gap: 0.8rem 1rem; margin-bottom: 1.25rem; padding: 0.75rem 1rem; border-left: 4px solid var(--acento); border-radius: 0 10px 10px 0; background: var(--acento-fondo); color: var(--acento-2); font-size: 0.93rem; }
+.aviso > div { flex: 1; min-width: 0; }
+
+.mesa { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr) 25rem; gap: 1.75rem; align-items: start; }
+
+.indice-col { position: sticky; top: calc(var(--barra) + 1rem); max-height: calc(100vh - var(--barra) - var(--dock) - 2rem); overflow-y: auto; overflow-x: hidden; padding: 0.2rem 0.2rem 1rem 0; scrollbar-width: thin; }
+.rotulo { margin: 0 0 0.5rem; color: var(--tenue); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.indice { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.indice button { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; min-width: 0; padding: 0.32rem 0.55rem; border: 0; border-radius: 6px; background: none; color: var(--tinta); font-size: 0.9rem; line-height: 1.35; text-align: left; }
+.indice button > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.indice button:hover { background: rgba(255,255,255,0.65); }
+.indice button[aria-current=location] { background: #fff; box-shadow: inset 3px 0 0 var(--acento); font-weight: 500; }
+.indice .sub-i button { padding-left: 1.35rem; color: var(--suave); font-size: 0.84rem; }
+.indice .anexo button { color: var(--tenue); font-size: 0.84rem; }
+.indice .corte { height: 1px; margin: 0.45rem 0.55rem; background: var(--linea); }
+.marcador { flex: none; display: inline-grid; place-items: center; min-width: 1.15rem; height: 1.15rem; padding: 0 0.3rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; line-height: 1; }
+.marcador.mal { background: var(--mal-fondo); color: var(--mal); }
+.marcador.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.autoria { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--linea); }
+.autoria ul { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; font-size: 0.84rem; }
+.autoria li { display: grid; gap: 0.05rem; }
+.autoria b { font-weight: 500; }
+.autoria span { color: var(--suave); }
+.autoria small { color: var(--alerta); }
+
+.doc-col { position: relative; min-width: 0; }
+.doc-barra { position: sticky; top: var(--barra); z-index: 12; display: flex; align-items: center; gap: 0.6rem; min-height: 3.1rem; padding: 0.45rem 0.25rem; background: var(--fondo); }
+.doc-actual { min-width: 0; overflow: hidden; color: var(--suave); font-size: 0.88rem; text-overflow: ellipsis; white-space: nowrap; }
+.doc-actual b { color: var(--tinta); font-weight: 600; }
+.boton-icono { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.38rem 0.7rem; border: 1px solid var(--linea); border-radius: 8px; background: #fff; font-size: 0.88rem; font-weight: 500; white-space: nowrap; }
+.boton-icono:hover { border-color: var(--acento); }
+.solo-medio, .solo-angosto { display: none !important; }
+.interruptor { display: inline-flex; align-items: center; gap: 0.55rem; flex: none; font-size: 0.88rem; color: var(--suave); cursor: pointer; user-select: none; }
+.interruptor input { position: absolute; opacity: 0; pointer-events: none; }
+.interruptor .pista { position: relative; width: 2.1rem; height: 1.2rem; border-radius: 999px; background: var(--linea); transition: background 0.15s; }
+.interruptor .pista::after { content: ""; position: absolute; top: 0.15rem; left: 0.15rem; width: 0.9rem; height: 0.9rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform 0.15s; }
+.interruptor input:checked + .pista { background: var(--acento); }
+.interruptor input:checked + .pista::after { transform: translateX(0.9rem); }
+.interruptor input:focus-visible + .pista { outline: 2px solid var(--foco); outline-offset: 2px; }
+.muestra { flex: none; width: 0.75rem; height: 0.75rem; border-radius: 2px; background: rgba(30, 90, 110, 0.16); box-shadow: inset 3px 0 0 #5d93a5; }
+
+.hoja { --sangria: 1.5rem; position: relative; background: var(--papel); border: 1px solid var(--linea-papel); border-radius: 4px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 14px 34px -20px rgba(29, 42, 51, 0.4); padding: 3.4rem 3.6rem 3rem; font-family: var(--serif); font-size: 1.02rem; line-height: 1.78; hyphens: auto; overflow-wrap: break-word; }
+.hoja p { margin-bottom: 0.9rem; text-align: justify; }
+.sello-hoja { position: absolute; top: 1.4rem; right: 1.6rem; padding: 0.15rem 0.7rem; border: 1.5px solid var(--sello); border-radius: 3px; color: var(--sello); font-family: var(--sans); font-size: 0.76rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.85; transform: rotate(-2deg); }
+.hoja .h-titulo { margin: 2.2rem 0 0.8rem; font-size: 1.02rem; font-weight: 700; letter-spacing: 0.01em; scroll-margin-top: calc(var(--barra) + 4rem); }
+.hoja .h-sub { margin: 1.5rem 0 0.55rem; font-size: 1.01rem; font-weight: 700; font-style: italic; scroll-margin-top: calc(var(--barra) + 4rem); }
+.hoja .h-enc { margin-bottom: 0.4rem; text-align: center; font-weight: 700; }
+.hoja blockquote { margin: 1rem 2.2rem 1.1rem; font-style: italic; text-align: justify; }
+.hoja .h-lista { margin: 0 0 0.9rem; padding-left: 1.4rem; }
+.hoja .h-lista li { margin-bottom: 0.3rem; overflow-wrap: anywhere; }
+.tabla-caja { max-width: 100%; margin-bottom: 1rem; overflow-x: auto; }
+.tabla-caja[tabindex] { background: linear-gradient(90deg, var(--papel) 30%, rgba(253,252,249,0)) left / 2rem 100% no-repeat local, linear-gradient(270deg, var(--papel) 30%, rgba(253,252,249,0)) right / 2rem 100% no-repeat local, linear-gradient(90deg, rgba(29,42,51,.12), rgba(29,42,51,0)) left / 0.7rem 100% no-repeat scroll, linear-gradient(270deg, rgba(29,42,51,.12), rgba(29,42,51,0)) right / 0.7rem 100% no-repeat scroll; }
+.h-tabla { width: 100%; border-collapse: collapse; font-size: 0.88rem; line-height: 1.45; }
+.h-tabla td { padding: 0.3rem 0.5rem; border: 1px solid var(--linea-papel); vertical-align: top; overflow-wrap: anywhere; }
+.h-tabla td:first-child { font-weight: 600; }
+.h-tabla.dos td:first-child { width: 8.5rem; }
+.h-tabla.ancha { min-width: calc(var(--columnas, 4) * 7rem); hyphens: none; }
+.h-pagina { margin: 0 calc(-1 * var(--sangria)); padding: 0 var(--sangria); content-visibility: auto; contain-intrinsic-size: auto 60rem; }
+.h-pagina + .h-pagina { position: relative; margin-top: 1.4rem; padding-top: 2.6rem; }
+.h-pagina + .h-pagina::after { content: ""; position: absolute; top: 0.6rem; left: var(--sangria); right: var(--sangria); border-top: 1px dashed var(--linea-papel); }
+.h-pagina + .h-pagina::before { content: attr(data-pagina); position: absolute; top: 0; left: 50%; z-index: 1; padding: 0 0.7rem; background: var(--papel); color: var(--tenue-deco); font-family: var(--sans); font-size: 0.72rem; line-height: 1.2rem; letter-spacing: 0.06em; text-transform: uppercase; transform: translateX(-50%); }
+.h-pie { margin-top: 2rem; padding-top: 0.8rem; border-top: 1px solid var(--linea-papel); color: var(--suave); font-size: 0.78rem; line-height: 1.5; }
+.h-pie p { margin: 0; text-align: center; }
+.nota-proto { margin-top: 1.6rem; padding: 0.6rem 0.8rem; border: 1px dashed var(--linea-papel); border-radius: 6px; color: var(--tenue); font-family: var(--sans); font-size: 0.82rem; }
+
+.con-plantilla .tpl { position: relative; background: rgba(30, 90, 110, 0.07); box-shadow: -0.6rem 0 0 rgba(30, 90, 110, 0.07), 0.6rem 0 0 rgba(30, 90, 110, 0.07); border-radius: 2px; }
+.con-plantilla .tpl::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(0.4rem - var(--sangria)); width: 3px; border-radius: 2px; background: #5d93a5; }
+.con-plantilla .h-titulo.tpl, .con-plantilla .h-sub.tpl { width: fit-content; max-width: 100%; }
+
+.cita { display: inline; padding: 0 0.12rem; margin: 0; border: 0; border-radius: 3px; background: none; font: inherit; line-height: inherit; color: inherit; text-align: inherit; text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; cursor: pointer; transition: background 0.12s; }
+.cita::after { display: inline-block; margin-left: 0.15rem; font-family: var(--sans); font-size: 0.66em; font-weight: 700; font-style: normal; vertical-align: super; line-height: 0; }
+.cita.verificada { text-decoration-style: solid; text-decoration-color: #7cb698; }
+.cita.verificada::after { content: "✓"; color: var(--ok); }
+.cita.revisar { text-decoration-style: dashed; text-decoration-color: #c98f1f; background: rgba(214, 160, 40, 0.16); }
+.cita.revisar::after { content: "!"; color: var(--alerta); }
+.cita.rechazada { text-decoration-style: wavy; text-decoration-color: var(--mal); background: rgba(168, 40, 31, 0.1); }
+.cita.rechazada::after { content: "✕"; color: var(--mal); }
+.cita:hover { background: var(--acento-fondo); }
+.cita.sel { background: var(--acento-fondo); box-shadow: 0 0 0 2px var(--acento); }
+.cita.destello { animation: destello 1.2s ease-out; }
+@keyframes destello { 0%, 30% { box-shadow: 0 0 0 4px rgba(42, 127, 160, 0.55); } 100% { box-shadow: 0 0 0 2px var(--acento); } }
+
+.pop { position: absolute; z-index: 20; width: min(25rem, calc(100% - 1.5rem)); padding: 1rem 1.1rem 1.05rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 18px 44px -12px rgba(20, 30, 36, 0.38), 0 2px 6px rgba(20, 30, 36, 0.08); font-size: 0.9rem; }
+.pop::before { content: ""; position: absolute; top: -7px; left: var(--flecha, 2rem); width: 12px; height: 12px; background: #fff; border-top: 1px solid var(--linea); border-left: 1px solid var(--linea); transform: rotate(45deg); }
+.pop.arriba::before { top: auto; bottom: -7px; transform: rotate(225deg); }
+.pop-cabeza { display: flex; align-items: flex-start; gap: 0.6rem; margin-bottom: 0.5rem; }
+.pop-cuerpo { max-height: calc(100vh - var(--barra) - var(--dock) - 12rem); margin-right: -0.5rem; padding-right: 0.5rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.pop-cabeza > div { flex: 1; min-width: 0; }
+.pop h3 { font-size: 1rem; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.pop h3:focus { outline: none; }
+.pop-cerrar { flex: none; display: grid; place-items: center; width: 1.9rem; height: 1.9rem; margin: -0.3rem -0.4rem 0 0; border: 0; border-radius: 6px; background: none; color: var(--suave); }
+.pop-cerrar:hover { background: var(--fondo-2); color: var(--tinta); }
+.pop q { display: block; margin: 0.6rem 0; padding: 0.15rem 0 0.15rem 0.8rem; border-left: 3px solid var(--linea); color: var(--suave); font-family: var(--serif); font-size: 0.9rem; font-style: italic; line-height: 1.6; quotes: "«" "»"; overflow-wrap: anywhere; }
+.medidor { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; margin: 0.4rem 0 0.7rem; color: var(--suave); font-size: 0.84rem; }
+.medidor .riel { height: 6px; border-radius: 999px; background: var(--fondo-2); overflow: hidden; }
+.medidor .riel i { display: block; height: 100%; border-radius: inherit; }
+.medidor b { color: var(--tinta); font-weight: 600; font-variant-numeric: tabular-nums; }
+.motivos { display: grid; gap: 0.45rem; margin: 0; padding: 0.7rem 0.8rem; border-radius: 8px; list-style: none; overflow-wrap: anywhere; }
+.motivos.revisar { background: #fbf3df; color: #6e4600; }
+.motivos.rechazada { background: #fbe9e7; color: #8a2018; }
+.motivos li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem; line-height: 1.45; }
+.motivos li::before { content: ""; width: 0.35rem; height: 0.35rem; margin-top: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.6; }
+
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.08rem 0.55rem; border-radius: 999px; background: var(--fondo-2); color: var(--suave); font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+.chip.ok { background: var(--ok-fondo); color: var(--ok); }
+.chip.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.chip.mal { background: var(--mal-fondo); color: var(--mal); }
+
+.panel { position: sticky; top: calc(var(--barra) + 1rem); display: flex; flex-direction: column; max-height: calc(100vh - var(--barra) - var(--dock) - 2rem); min-width: 0; background: #fff; border: 1px solid var(--linea); border-radius: 14px; box-shadow: 0 1px 0 rgba(0,0,0,.03), 0 14px 34px -24px rgba(29, 42, 51, 0.45); }
+.panel-cabeza { flex: none; padding: 1.1rem 1.2rem 1rem; border-bottom: 1px solid var(--linea-2); }
+.panel-cabeza-fila { display: flex; align-items: flex-start; gap: 0.75rem; }
+.panel-cabeza-fila > div { flex: 1; min-width: 0; }
+.panel h2 { font-size: 1.08rem; font-weight: 600; }
+.panel-resumen { margin-top: 0.15rem; color: var(--suave); font-size: 0.88rem; }
+.panel-cerrar { display: none; margin-right: 0 !important; }
+.barra-citas { display: flex; gap: 2px; height: 8px; margin: 0.9rem 0 0.5rem; border-radius: 999px; overflow: hidden; background: var(--fondo-2); }
+.barra-citas i { display: block; height: 100%; }
+.barra-citas .v { background: #4f9a74; }
+.barra-citas .r { background: #d29a2a; }
+.barra-citas .x { background: #c2463c; }
+.leyenda-citas { display: flex; flex-wrap: wrap; gap: 0.15rem 0.9rem; color: var(--suave); font-size: 0.8rem; }
+.leyenda-citas span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.leyenda-citas i { width: 0.55rem; height: 0.55rem; border-radius: 2px; }
+.panel-cuerpo { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+.grupo { padding: 1rem 1.2rem 1.1rem; border-bottom: 1px solid var(--linea-2); }
+.grupo:last-child { border-bottom: 0; }
+.grupo-cabeza { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.7rem; }
+.grupo-cabeza h3 { flex: 1; min-width: 0; color: var(--tenue); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.cuenta { color: var(--tenue); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.lista { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 0.15rem 0.65rem; width: 100%; padding: 0.6rem 0.7rem 0.62rem 0.75rem; border: 1px solid transparent; border-radius: 10px; background: #f7f9f9; color: inherit; font-size: 0.88rem; line-height: 1.45; text-align: left; overflow-wrap: anywhere; }
+button.item:hover { border-color: var(--linea); background: #fff; }
+button.item:hover .ir { opacity: 1; transform: translateX(0); }
+.item.activo { border-color: var(--acento); background: #fff; box-shadow: 0 0 0 1px var(--acento); }
+.item .icono { display: grid; place-items: center; width: 1.35rem; height: 1.35rem; margin-top: 0.05rem; border-radius: 50%; }
+.item.mal .icono { background: var(--mal-fondo); color: var(--mal); }
+.item.alerta .icono { background: var(--alerta-fondo); color: var(--alerta); }
+.item.ok .icono { background: var(--ok-fondo); color: var(--ok); }
+.item .texto { min-width: 0; }
+.item .texto b { display: block; font-weight: 600; }
+.item .texto small { display: -webkit-box; margin-top: 0.1rem; color: var(--suave); font-size: 0.82rem; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.item .ir { align-self: center; color: var(--acento); opacity: 0; transform: translateX(-3px); transition: opacity 0.12s, transform 0.12s; }
+.item .origen { color: var(--tenue); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.mas { margin-top: 0.4rem; }
+.vacio-grupo { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 10px; background: var(--ok-fondo); color: var(--ok); font-size: 0.88rem; }
+
+.jev { border: 1px solid var(--linea-2); border-radius: 12px; overflow: hidden; }
+.jev + .jev { margin-top: 0.55rem; }
+.jev.difiere { border-color: #e2c48a; background: #fffbf2; }
+.jev-cabeza { display: flex; align-items: center; gap: 0.55rem; padding: 0.6rem 0.8rem; font-size: 0.88rem; }
+.jev-cabeza b { flex: 1; min-width: 0; font-weight: 600; }
+.jev-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-top: 1px solid var(--linea-2); }
+.jev.difiere .jev-cuerpo { border-top-color: #eedcb4; }
+.jev-cuerpo > div { min-width: 0; padding: 0.55rem 0.8rem 0.65rem; font-size: 0.86rem; overflow-wrap: anywhere; }
+.jev-cuerpo > div + div { border-left: 1px solid var(--linea-2); }
+.jev.difiere .jev-cuerpo > div + div { border-left-color: #eedcb4; }
+.jev-cuerpo .que { display: block; margin-bottom: 0.15rem; color: var(--tenue); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.jev-cuerpo strong { display: block; font-weight: 600; line-height: 1.35; }
+.jev-cuerpo small { display: block; margin-top: 0.2rem; color: var(--suave); font-size: 0.8rem; line-height: 1.4; }
+.jev-pie { padding: 0.55rem 0.8rem 0.65rem; border-top: 1px solid #eedcb4; color: #6e4600; font-size: 0.84rem; }
+.jev-pie.neutro { border-top-color: var(--linea-2); color: var(--suave); }
+.jev-ayuda { margin-top: 0.6rem; color: var(--tenue); font-size: 0.8rem; }
+
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; background: rgba(255, 255, 255, 0.96); border-top: 1px solid var(--linea); box-shadow: 0 -10px 30px -22px rgba(29, 42, 51, 0.5); backdrop-filter: blur(8px); }
+.dock > div { display: flex; align-items: center; gap: 0.75rem 1.25rem; max-width: 1480px; min-height: var(--dock); margin: 0 auto; padding: 0.7rem 1.5rem; }
+.dock-estado { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
+.dock-estado .icono { flex: none; display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--alerta-fondo); color: var(--alerta); }
+.dock-estado .icono.ok { background: var(--ok-fondo); color: var(--ok); }
+.dock-estado .icono.info { background: var(--acento-fondo); color: var(--acento); }
+.dock-estado b { display: block; font-weight: 600; }
+.dock-estado span { display: block; color: var(--suave); font-size: 0.86rem; }
+.dock-acciones { display: flex; gap: 0.6rem; flex: none; }
+
+.velo { position: fixed; inset: 0; z-index: 35; background: rgba(20, 30, 36, 0.45); }
+
+dialog.dialogo { width: min(34rem, calc(100vw - 2rem)); max-width: none; padding: 0; border: 0; border-radius: 14px; color: var(--tinta); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3); }
+dialog.dialogo::backdrop { background: rgba(20, 30, 36, 0.5); }
+.dialogo form { padding: 1.5rem 1.6rem 1.4rem; }
+.dialogo h2 { font-size: 1.2rem; font-weight: 600; }
+.dialogo .intro { margin: 0.3rem 0 1.1rem; color: var(--suave); font-size: 0.92rem; }
+.opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0 0 1.1rem; padding: 0; border: 0; }
+.opciones legend { margin-bottom: 0.5rem; padding: 0; font-size: 0.88rem; font-weight: 500; }
+.opcion { display: grid; align-content: start; gap: 0.25rem; padding: 0.8rem 0.9rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; cursor: pointer; }
+.opcion:hover { border-color: var(--acento); }
+.opcion:has(input:checked) { border-color: var(--acento); background: #f2f8fa; box-shadow: 0 0 0 1px var(--acento); }
+.opcion:has(input:focus-visible) { outline: 2px solid var(--foco); outline-offset: 2px; }
+.opcion input { position: absolute; opacity: 0; pointer-events: none; }
+.opcion b { font-weight: 600; }
+.opcion small { color: var(--suave); font-size: 0.82rem; line-height: 1.4; }
+.opcion .secciones { color: var(--acento); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.campo { display: grid; gap: 0.35rem; }
+.campo label { font-size: 0.88rem; font-weight: 500; }
+textarea { width: 100%; min-height: 6.5rem; padding: 0.6rem 0.7rem; border: 1px solid var(--linea); border-radius: 8px; background: #fff; line-height: 1.5; resize: vertical; }
+textarea:focus { border-color: var(--acento); outline: 2px solid rgba(42,127,160,.25); outline-offset: 0; }
+.ayuda { color: var(--suave); font-size: 0.82rem; }
+.dialogo .acciones { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.3rem; }
+
+.escenario { position: relative; z-index: 26; align-self: flex-start; font-size: 0.82rem; }
+.escenario summary { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.7rem; border: 1px dashed var(--tenue-deco); border-radius: 999px; background: rgba(255,255,255,.9); color: var(--suave); cursor: pointer; list-style: none; }
+.escenario summary::-webkit-details-marker { display: none; }
+.escenario[open] summary { margin-bottom: 0.4rem; }
+.escenario div { position: absolute; right: 0; display: grid; width: max-content; gap: 0.15rem; padding: 0.5rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; box-shadow: 0 10px 30px -14px rgba(0,0,0,.35); }
+.escenario label { display: flex; align-items: center; gap: 0.45rem; padding: 0.25rem 0.4rem; border-radius: 6px; cursor: pointer; }
+.escenario label:hover { background: var(--fondo); }
+
+.revision-mal { outline: 2px solid #e0245e !important; outline-offset: -2px; }
+#informe-revision { position: fixed; top: calc(var(--barra) + 0.5rem); right: 0.5rem; z-index: 99; max-width: 30rem; padding: 0.5rem 0.75rem; border-radius: 8px; background: #111; color: #fff; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; }
+
+.panel-resumen b { color: var(--tinta); font-weight: 600; }
+.progreso { display: flex; gap: 3px; margin: 0.85rem 0 0.1rem; }
+.progreso i { flex: 1; height: 6px; border-radius: 3px; transition: background 0.2s; }
+.progreso i.n-mal { background: #f0cdc8; }
+.progreso i.n-mal.hecho { background: #c2463c; }
+.progreso i.n-alerta { background: #f1e1bb; }
+.progreso i.n-alerta.hecho { background: #d29a2a; }
+.progreso i.n-info { background: #d8e1e4; }
+.progreso i.n-info.hecho { background: #6b8794; }
+.nivel + .nivel { border-top: 1px solid var(--linea-2); }
+.nivel-cabeza { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 0.55rem; width: 100%; padding: 0.85rem 1.2rem 0.4rem; background: #fff; border: 0; color: var(--tinta); text-align: left; }
+.nivel-cabeza > i { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+.nivel-cabeza.n-mal > i { background: var(--mal); }
+.nivel-cabeza.n-alerta > i { background: #d29a2a; }
+.nivel-cabeza.n-info > i { background: #6b8794; }
+.nivel-cabeza.n-ok > i { background: #4f9a74; }
+.nivel-cabeza .nombre { flex: 1; min-width: 0; font-size: 0.84rem; font-weight: 600; }
+.nivel-cabeza.plegable { position: static; padding-bottom: 0.85rem; }
+.nivel-cabeza.plegable:hover .nombre { color: var(--acento); }
+.nivel-cabeza .chevron { transition: transform 0.15s; }
+.nivel-cabeza[aria-expanded=true] .chevron { transform: rotate(180deg); }
+.filas { margin: 0; padding: 0 0 0.45rem; list-style: none; }
+.fila { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.75rem; padding: 0.55rem 0.9rem 0.55rem 1.2rem; }
+.fila + .fila { border-top: 1px solid #edf0f1; }
+.fila.activa { background: #f2f8fa; box-shadow: inset 3px 0 0 var(--acento); }
+.marca-revisado { display: grid; place-items: center; width: 1.35rem; height: 1.35rem; margin-top: 1.1rem; padding: 0; border: 2px solid var(--linea); border-radius: 50%; background: #fff; color: transparent; transition: background 0.15s, border-color 0.15s; }
+.fila.n-mal .marca-revisado { border-color: #d98d85; }
+.fila.n-alerta .marca-revisado { border-color: #ddb466; }
+.fila.n-info .marca-revisado { border-color: #a9bac1; }
+.marca-revisado:hover { color: #9aa9b0; }
+.marca-revisado[aria-pressed=true] { background: var(--ok); border-color: var(--ok) !important; color: #fff; }
+.marca-revisado.fija { border-color: transparent; background: var(--ok-fondo); color: var(--ok); }
+.fila-boton { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 0.5rem; width: 100%; min-width: 0; padding: 0.1rem 0; border: 0; border-radius: 6px; background: none; color: inherit; text-align: left; }
+.fila-boton > span:not(.chevron) { grid-column: 1; min-width: 0; }
+.fila-boton .chevron { grid-column: 2; grid-row: 1 / span 3; align-self: center; color: var(--tenue-deco); transition: transform 0.15s; }
+button.fila-boton:hover .fila-titulo { color: var(--acento); }
+.fila.abierta .fila-boton .chevron { transform: rotate(180deg); }
+.fila-tipo { color: var(--tenue); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.fila-titulo { font-size: 0.9rem; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.fila-sub { margin-top: 0.1rem; overflow: hidden; color: var(--suave); font-size: 0.84rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.fila-sub.completa { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.fila.abierta .fila-sub { display: none; }
+.fila.hecha .fila-titulo, .fila.hecha .fila-sub, .fila.hecha .fila-tipo { color: var(--tenue-deco); }
+.fila-detalle { grid-column: 2; padding: 0.45rem 0 0.4rem; font-size: 0.86rem; }
+.fila-detalle q { display: block; margin: 0 0 0.6rem; padding: 0.1rem 0 0.1rem 0.75rem; border-left: 3px solid var(--linea); color: var(--suave); font-family: var(--serif); font-size: 0.88rem; font-style: italic; line-height: 1.6; quotes: "«" "»"; overflow-wrap: anywhere; }
+.fila-detalle .medidor { margin-top: 0; }
+.archivo { display: block; padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--fondo); font: 0.8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.nota { margin-top: 0.45rem; color: var(--suave); line-height: 1.45; }
+.nota.alerta { color: #6e4600; }
+.comparar { display: grid; gap: 0.45rem; }
+.comparar > div { min-width: 0; padding: 0.5rem 0.65rem; border-radius: 8px; background: var(--fondo); overflow-wrap: anywhere; }
+.comparar .que { display: block; margin-bottom: 0.1rem; color: var(--tenue); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.comparar strong { display: block; font-weight: 600; }
+.comparar small { display: block; margin-top: 0.15rem; color: var(--suave); font-size: 0.8rem; }
+.comparar ul { margin: 0; padding-left: 1.1rem; }
+.acciones-fila { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; margin-left: -0.6rem; }
+.pop-acciones { margin-top: 0.75rem; }
+.pop-acciones .btn { width: 100%; padding: 0.5rem 0.9rem; font-size: 0.9rem; }
+.todo-bien { display: flex; align-items: flex-start; gap: 0.7rem; margin: 1rem 1.2rem; padding: 0.8rem 0.9rem; border-radius: 10px; background: var(--ok-fondo); color: var(--ok); font-size: 0.88rem; }
+.todo-bien svg { flex: none; margin-top: 0.2rem; }
+.todo-bien b { display: block; font-weight: 600; }
+.todo-bien span { display: block; color: var(--suave); }
+.esc-titulo { margin: 0.35rem 0.4rem 0.1rem; color: var(--tenue); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+
+@media (max-width: 1279px) {
+  .mesa { grid-template-columns: minmax(0, 1fr) 22.5rem; gap: 1.5rem; }
+  .solo-medio { display: inline-flex !important; }
+  .indice-col { display: none; position: fixed; top: calc(var(--barra) + 3.4rem); left: max(1rem, calc(50vw - 740px + 1.5rem)); z-index: 36; width: 19rem; max-height: min(70vh, calc(100vh - var(--barra) - var(--dock) - 5rem)); padding: 0.9rem 0.6rem 0.9rem 0.8rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 20px 44px -14px rgba(20,30,36,.4); }
+  .indice-col.abierto { display: block; }
+  .indice button:hover { background: var(--fondo); }
+  .indice button[aria-current=location] { background: var(--acento-fondo); }
+}
+@media (max-width: 1023px) {
+  .mesa { grid-template-columns: minmax(0, 1fr); }
+  .solo-angosto { display: inline-flex !important; }
+  .panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; width: min(26rem, 100vw); max-height: none; border-radius: 0; border-width: 0 0 0 1px; transform: translateX(105%); transition: transform 0.22s ease; visibility: hidden; }
+  .panel.abierto { transform: none; visibility: visible; }
+  .panel-cerrar { display: grid; }
+  .hoja { padding: 2.6rem 2rem 2.2rem; }
+}
+@media (max-width: 760px) {
+  .lienzo { padding: 1.1rem 1rem calc(var(--dock) + 4rem); }
+  .barra { padding: 0 1rem; }
+  .enlace-barra .txt { display: none; }
+  .cabeza h1 { font-size: 1.3rem; }
+  .pasos .paso small { display: none; }
+  .pasos .paso b { padding-right: 0.15rem; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hoja { padding: 3.4rem 1.1rem 1.6rem; font-size: 0.98rem; }
+  .hoja p, .hoja blockquote { text-align: left; }
+  .hoja blockquote { margin: 0.8rem 0.6rem; }
+  .sello-hoja { top: 0.8rem; right: 0.8rem; }
+  .hoja { --sangria: 0.9rem; }
+  .doc-actual { display: none; }
+  .interruptor .txt-largo, .interruptor .muestra { display: none; }
+  .pop { position: fixed !important; left: 0.6rem !important; right: 0.6rem; top: auto !important; bottom: calc(var(--dock) + 0.6rem); width: auto; }
+  .pop-cuerpo { max-height: 50vh; }
+  .pop::before { display: none; }
+  .dock > div { flex-wrap: wrap; padding: 0.6rem 1rem; gap: 0.5rem; }
+  .dock-estado .icono { display: none; }
+  .dock-estado span { display: none; }
+  .dock-acciones { flex: 1 1 100%; }
+  .dock-acciones .btn { flex: 1; padding-left: 0.6rem; padding-right: 0.6rem; }
+  .opciones { grid-template-columns: 1fr; }
+  :root { --dock: 7.2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sello-hoja { transform: none; }
+  .panel, .cita, .item .ir, .interruptor .pista, .interruptor .pista::after { transition: none; }
+  .cita.destello { animation: none; }
+}
+</style>
+</head>
+<body>
+<header class="barra">
+  <a class="marca" href="#" aria-label="Judicabot, ir al inicio"><img src="marca/marca.svg" alt="" width="30" height="30"><b>Judicabot</b></a>
+  <span class="relleno"></span>
+  <nav class="barra-nav" aria-label="Principal">
+    <a class="enlace-barra" href="#" aria-current="page"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span class="txt">Inicio</span></a>
+    <a class="enlace-barra" href="#"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h7M9 17h5"/></svg><span class="txt">Formato de documentos</span></a>
+    <a class="enlace-barra" href="#"><span class="punto" aria-hidden="true"></span><span class="txt">Sonnet 5.5</span></a>
+  </nav>
+</header>
+
+<main class="lienzo" id="lienzo">
+  <ol class="migas"><li><a href="#">Inicio</a></li><li><a href="#">Segunda instancia</a></li><li id="miga-caso"></li></ol>
+  <div class="cabeza">
+    <div>
+      <h1 id="titulo-caso"></h1>
+      <div class="cabeza-meta" id="meta-caso"></div>
+    </div>
+    <details class="escenario" id="escenario">
+      <summary>Prototipo · escenario</summary>
+      <div>
+        <p class="esc-titulo">Panel derecho</p>
+        <label><input type="radio" name="panel" value="B" checked> B · lista de revisión</label>
+        <label><input type="radio" name="panel" value="A"> A · por tipo</label>
+        <p class="esc-titulo">Datos</p>
+        <label><input type="radio" name="esc" value="pendientes" checked> Con pendientes</label>
+        <label><input type="radio" name="esc" value="limpio"> Todo verificado</label>
+        <label><input type="radio" name="esc" value="curso"> Redacción en curso</label>
+      </div>
+    </details>
+  </div>
+  <nav aria-label="Pasos del caso">
+    <ol class="pasos">
+      <li class="paso hecho"><a class="paso-enlace" href="#"><span class="marca-paso" aria-hidden="true">✓</span><b>Documentos</b><small>Roles y faltantes</small></a></li>
+      <li class="paso hecho"><a class="paso-enlace" href="#"><span class="marca-paso" aria-hidden="true">✓</span><b>Proceso</b><small>Redacción en vivo</small></a></li>
+      <li class="paso actual"><a class="paso-enlace" href="#" aria-current="step"><span class="marca-paso" aria-hidden="true">3</span><b>Borrador</b><small>Revise antes de decidir</small></a></li>
+      <li class="paso disponible decide"><a class="paso-enlace" href="#"><span class="marca-paso" aria-hidden="true">4</span><b>Decisión</b><small>Su decisión como juez</small></a></li>
+      <li class="paso bloqueado"><span class="paso-enlace"><span class="marca-paso" aria-hidden="true">5</span><b>Fallo</b><small>Documentos para firmar</small></span></li>
+    </ol>
+  </nav>
+
+  <div class="aviso" id="aviso-curso" hidden>
+    <div>Hay una redacción en curso para este caso. El borrador puede cambiar cuando termine.</div>
+    <a class="btn primario" href="#">Ver el proceso</a>
+  </div>
+
+  <div class="mesa" id="mesa">
+    <nav class="indice-col" id="indice-col" aria-label="Contenido del borrador">
+      <p class="rotulo">Contenido</p>
+      <ul class="indice" id="indice"></ul>
+      <section class="autoria" id="autoria" aria-labelledby="autoria-t">
+        <p class="rotulo" id="autoria-t">Quién redactó</p>
+        <ul id="autoria-lista"></ul>
+      </section>
+    </nav>
+
+    <div class="doc-col con-plantilla" id="doc-col">
+      <div class="doc-barra">
+        <button type="button" class="boton-icono solo-medio" id="abrir-indice" aria-expanded="false" aria-controls="indice-col">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Contenido
+        </button>
+        <span class="doc-actual" id="doc-actual" aria-live="off"></span>
+        <span class="relleno"></span>
+        <label class="interruptor" title="Marca el texto fijo que sale de la plantilla. Lo que queda sin marca lo redactó el modelo a partir del expediente."><input type="checkbox" id="plantilla" checked><span class="pista" aria-hidden="true"></span><span class="muestra" aria-hidden="true"></span><span><span class="txt-largo">Marcar texto de </span>plantilla</span></label>
+        <button type="button" class="boton-icono solo-angosto" id="abrir-panel" aria-expanded="false" aria-controls="panel">Revisión <span class="chip alerta" id="abrir-panel-n"></span></button>
+      </div>
+      <article class="hoja" id="hoja" aria-label="Borrador del fallo, secciones I a V">
+        <span class="sello-hoja">Borrador · aún no es el fallo</span>
+        <div id="paginas"></div>
+        <p class="nota-proto">Prototipo con datos inventados: las partes, las citas y los fragmentos no son reales.</p>
+      </article>
+      <section class="pop" id="pop" hidden aria-labelledby="pop-t"></section>
+    </div>
+
+    <aside class="panel" id="panel" aria-labelledby="panel-t">
+      <div class="panel-cabeza">
+        <div class="panel-cabeza-fila">
+          <div>
+            <h2 id="panel-t">Antes de decidir</h2>
+            <p class="panel-resumen" id="panel-resumen"></p>
+          </div>
+          <button type="button" class="pop-cerrar panel-cerrar" id="cerrar-panel" aria-label="Cerrar la revisión"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+        <div id="resumen-citas"></div>
+      </div>
+      <div class="panel-cuerpo" id="panel-cuerpo"></div>
+    </aside>
+  </div>
+</main>
+
+<div class="velo" id="velo" hidden></div>
+
+<div class="dock">
+  <div>
+    <div class="dock-estado" id="dock-estado"></div>
+    <div class="dock-acciones">
+      <button type="button" class="btn" id="pedir">Pedir correcciones</button>
+      <a class="btn sello grande" id="decidir" href="#">Pasar a la decisión
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </div>
+  </div>
+</div>
+
+<dialog class="dialogo" id="dlg" aria-labelledby="dlg-t">
+  <form method="dialog" id="dlg-form" novalidate>
+    <h2 id="dlg-t">Pedir correcciones</h2>
+    <p class="intro">El modelo vuelve a redactar la parte que elija siguiendo su instrucción. El borrador actual se reemplaza.</p>
+    <fieldset class="opciones">
+      <legend>¿Qué parte quiere rehacer?</legend>
+      <label class="opcion"><input type="radio" name="accion" value="rehacer_apertura"><span class="secciones">Secciones II a IV</span><b>La apertura</b><small>Antecedentes, sentencia impugnada e impugnación. Después se rehacen también las consideraciones.</small></label>
+      <label class="opcion"><input type="radio" name="accion" value="rehacer_consideraciones"><span class="secciones">Sección V</span><b>Las consideraciones</b><small>Solo el marco jurídico. La apertura se conserva tal como está.</small></label>
+    </fieldset>
+    <div class="campo">
+      <label for="instr">Qué debe corregir</label>
+      <textarea id="instr" placeholder="Por ejemplo: el a quo declaró improcedente la tutela, no negó el amparo."></textarea>
+      <span class="ayuda">Sea concreto: el modelo solo sabe lo que usted escriba aquí.</span>
+    </div>
+    <div class="acciones">
+      <button type="button" class="btn" id="dlg-cancelar">Cancelar</button>
+      <button type="submit" class="btn primario" id="dlg-enviar">Rehacer</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const t = (texto, extra = {}) => ({ texto, ...extra });
+const c = (texto, cita_id) => ({ texto, cita_id });
+const b = (id, tipo, origen, seccion, ...segs) => ({ id, tipo, origen, seccion, segmentos: segs.map((s) => (typeof s === 'string' ? t(s) : s)) });
+
+const PIE = ['Juzgado Tercero Penal del Circuito con Funciones de Conocimiento', 'Palacio de Justicia, carrera 52 número 42 – 73, piso 19', 'Correo electrónico: juzgado03@ejemplo.gov.co'];
+const pie = (n) => PIE.map((x, k) => b(`pie-${n}-${k}`, 'pie', 'plantilla', null, x));
+
+const CITAS = [
+  { id: 'c1', texto: 'la salud tiene doble connotación: derecho fundamental y servicio público esencial', fuente: 'sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa', cobertura: 0.98, estado: 'verificada', detalle: null, url: 'https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm' },
+  { id: 'c5', texto: 'el juez constitucional debe valorar la orden del médico tratante como el criterio principal para establecer si se requiere un servicio', fuente: 'sentencia T-121 de 2015', cobertura: 0.94, estado: 'verificada', detalle: null, url: 'https://www.corteconstitucional.gov.co/relatoria/2015/T-121-15.htm' },
+  { id: 'c4', texto: 'el derecho fundamental a la salud es autónomo e irrenunciable en lo individual y en lo colectivo, y comprende el acceso oportuno, eficaz y con calidad a los servicios de salud para la preservación, el mejoramiento y la promoción de la salud de todas las personas sin distinción', fuente: 'sentencia C-313 de 2014', cobertura: 0.64, estado: 'revisar', detalle: 'La cobertura del fragmento citado es 64 %. Compárelo con la relatoría.; Las palabras «fundamental», «autónomo», «irrenunciable», «colectivo» y «oportuno» están en la fuente, pero no en ese orden.; El pasaje más cercano de C-313/14 dice textualmente: «El derecho fundamental a la salud es autónomo e irrenunciable en lo individual y en lo colectivo. Comprende el acceso a los servicios de salud de manera oportuna, eficaz y con calidad para la preservación, el mejoramiento y la promoción de la salud». Si lo usa, cópielo sin ningún cambio y sin agregar palabras.' },
+  { id: 'c2', texto: 'la garantía de continuidad de los tratamientos en curso hace parte del núcleo esencial', fuente: 'sentencia SU-508 de 2020', cobertura: 0.71, estado: 'revisar', detalle: 'La cobertura del fragmento citado es 71 %. Compare con la relatoría antes de firmar.' },
+  { id: 'c3', texto: 'la EPS no puede suspender el servicio por trámites internos', fuente: 'sentencia T-999 de 2019', cobertura: 0, estado: 'rechazada', detalle: 'No aparece en el dataset de la Corte Constitucional.; Quite la cita o reemplácela por una verificable.' },
+  { id: 'c6', texto: 'el perjuicio irremediable debe ser inminente, grave, urgente e impostergable', fuente: 'sentencia SU-124 de 2018', cobertura: 0.91, estado: 'verificada', detalle: null, url: 'https://www.corteconstitucional.gov.co/relatoria/2018/SU124-18.htm' },
+];
+
+const P1 = [
+  b('enc-1', 'encabezado', 'plantilla', null, t('JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO', { negrita: true })),
+  b('enc-2', 'tabla', 'plantilla', null, t('Radicado', { negrita: true }), '05001 40 88 009 2026 00412 01'),
+  b('enc-3', 'tabla', 'plantilla', null, t('Accionante', { negrita: true }), 'MARTA INÉS QUINTERO BEDOYA'),
+  b('enc-4', 'tabla', 'plantilla', null, t('Accionada', { negrita: true }), 'EPS HORIZONTE SALUD S.A.S.'),
+  b('enc-5', 'tabla', 'plantilla', null, t('Procedencia', { negrita: true }), 'JUZGADO 9 PENAL MUNICIPAL CON FUNCIÓN DE CONTROL DE GARANTÍAS'),
+  b('enc-6', 'tabla', 'plantilla', null, t('Derechos', { negrita: true }), 'SALUD, MÍNIMO VITAL'),
+  b('asunto', 'titulo', 'plantilla', 'asunto', t('I.\tASUNTO', { negrita: true })),
+  b('asunto-1', 'parrafo', 'plantilla', 'asunto', 'Procede el Despacho a resolver la impugnación presentada por la accionante contra el fallo de tutela emitido el veintiocho (28) de septiembre de dos mil veintiséis (2026) por el Juzgado Noveno Penal Municipal con Función de Control de Garantías, por medio del cual se declaró improcedente la acción de tutela.'),
+  b('antecedentes-del-caso', 'titulo', 'plantilla', 'antecedentes-del-caso', t('II.\tANTECEDENTES DEL CASO', { negrita: true })),
+  b('ant-1', 'parrafo', 'modelo', 'antecedentes-del-caso', 'La señora MARTA INÉS QUINTERO BEDOYA, identificada con cédula de ciudadanía 43.999.101, presentó acción de tutela el catorce (14) de septiembre de dos mil veintiséis (2026) contra la EPS HORIZONTE SALUD S.A.S., entidad a la que se encuentra afiliada en el régimen contributivo, por considerar vulnerados sus derechos fundamentales a la salud y al mínimo vital.'),
+  b('ant-2', 'parrafo', 'modelo', 'antecedentes-del-caso', 'Relató que padece una enfermedad crónica por la cual su médico tratante le prescribió un medicamento de uso continuo, que la entidad le suministró hasta agosto de dos mil veintiséis (2026), cuando dejó de entregárselo sin una razón que le fuera comunicada por escrito. Agregó que no cuenta con recursos para comprarlo por su cuenta y que de ella dependen económicamente sus hijos menores de edad.'),
+  b('ant-3', 'parrafo', 'modelo', 'antecedentes-del-caso', 'Con fundamento en lo anterior, solicitó que se ordenara a la entidad suministrar el medicamento prescrito, de manera continua y sin dilaciones, y que se le brindara el tratamiento integral que su patología requiera. Adjuntó la fórmula médica vigente y la copia de su historia clínica.'),
+  b('ant-4', 'parrafo', 'modelo', 'antecedentes-del-caso', 'El Juzgado Noveno Penal Municipal con Función de Control de Garantías admitió la acción el quince (15) de septiembre de dos mil veintiséis (2026) y ordenó notificar a la accionada. La EPS HORIZONTE SALUD S.A.S. contestó el diecisiete (17) de septiembre siguiente; manifestó que el medicamento no figuraba autorizado para la afiliada y que esta podía acudir a la Superintendencia Nacional de Salud, por lo que solicitó negar el amparo.'),
+];
+const P2 = [
+  b('la-sentencia-impugnada', 'titulo', 'plantilla', 'la-sentencia-impugnada', t('III.\tLA SENTENCIA IMPUGNADA', { negrita: true })),
+  b('sen-1', 'parrafo', 'modelo', 'la-sentencia-impugnada', 'Mediante sentencia del veintiocho (28) de septiembre de dos mil veintiséis (2026), el Juzgado Noveno Penal Municipal con Función de Control de Garantías declaró improcedente la acción de tutela.'),
+  b('sen-2', 'parrafo', 'modelo', 'la-sentencia-impugnada', 'Para sustentar su decisión, el juez de primera instancia consideró que no se cumplía el requisito de subsidiariedad, pues la accionante disponía de un mecanismo ante la Superintendencia Nacional de Salud, que ejerce funciones jurisdiccionales para resolver controversias entre los afiliados y las entidades promotoras de salud. Añadió que no encontró acreditado un perjuicio irremediable que habilitara el estudio de fondo.'),
+  b('la-impugnacion', 'titulo', 'plantilla', 'la-impugnacion', t('IV.\tLA IMPUGNACIÓN', { negrita: true })),
+  b('imp-1', 'parrafo', 'modelo', 'la-impugnacion', 'En relación con el reparo R1, la impugnante señala que «la orden médica vigente que prescribe el medicamento y que anexé al escrito de tutela no fue valorada por el juez».'),
+  b('imp-2', 'parrafo', 'modelo', 'la-impugnacion', 'En relación con el reparo R2, la impugnante señala que «la salud es un derecho fundamental y no puedo esperar el trámite ante la Superintendencia teniendo una enfermedad crónica».'),
+  b('consideraciones', 'titulo', 'plantilla', 'consideraciones', t('V.\tCONSIDERACIONES', { negrita: true })),
+  b('con-1', 'encabezado', 'plantilla', 'consideraciones', t('Competencia', { negrita: true })),
+  b('con-2', 'parrafo', 'plantilla', 'consideraciones', 'Este Despacho es competente para conocer y resolver el recurso de impugnación interpuesto contra la sentencia de tutela de primera instancia, de conformidad con lo dispuesto en el artículo 32 del Decreto 2591 de 1991 y las normas concordantes de reparto de la acción de amparo. En su condición de superior funcional, le corresponde adelantar un examen integral de la providencia recurrida a la luz de los postulados de la Carta Política y de la doctrina fijada por la Corte Constitucional.'),
+  b('con-3', 'encabezado', 'plantilla', 'consideraciones', t('Presupuestos generales de procedibilidad de la acción de tutela', { negrita: true })),
+  b('con-4', 'parrafo', 'plantilla', 'consideraciones', 'La acción de tutela, consagrada en el artículo 86 de la Constitución Política y reglamentada por el Decreto 2591 de 1991, se erige como un mecanismo preferente y sumario concebido para la protección inmediata y efectiva de los derechos constitucionales fundamentales cuando estos resulten vulnerados o amenazados por la acción u omisión de las autoridades públicas o de los particulares.'),
+  b('con-5', 'encabezado', 'modelo', 'consideraciones', t('La salud y la continuidad del tratamiento', { negrita: true })),
+  b('con-6', 'parrafo', 'modelo', 'consideraciones', 'La Corte Constitucional ha reiterado que la salud tiene una doble connotación, como derecho fundamental y como servicio público esencial (', c('sentencia T-760 de 2008', 'c1'), '). En esa medida, el Estado y las entidades que prestan el servicio están obligados a garantizarlo conforme a los principios de eficiencia, universalidad y solidaridad. En el mismo sentido, la Corte precisó al revisar la Ley Estatutaria de Salud que se trata de un derecho autónomo e irrenunciable que comprende el acceso oportuno y con calidad a los servicios (', c('sentencia C-313 de 2014', 'c4'), ').'),
+];
+const P3 = [
+  b('con-7', 'parrafo', 'modelo', 'consideraciones', 'De la mano de lo anterior, la jurisprudencia ha precisado que la continuidad de los tratamientos en curso hace parte del núcleo esencial del derecho (', c('sentencia SU-508 de 2020', 'c2'), '). Al respecto, el alto tribunal señaló:'),
+  b('con-8', 'cita_bloque', 'modelo', 'consideraciones', t('“una vez iniciado un tratamiento, su interrupción por razones administrativas desconoce el principio de continuidad, pues el paciente no puede asumir las consecuencias de las barreras internas de la entidad”', { cursiva: true })),
+  b('con-9', 'parrafo', 'modelo', 'consideraciones', 'Para establecer si un servicio es requerido, la orden del médico tratante constituye el criterio principal que debe valorar el juez constitucional (', c('sentencia T-121 de 2015', 'c5'), '), de modo que la entidad no puede desconocerla con fundamento en trámites internos que no son oponibles al usuario.'),
+  b('con-10', 'encabezado', 'modelo', 'consideraciones', t('La subsidiariedad y la vía ante la Superintendencia Nacional de Salud', { negrita: true })),
+  b('con-11', 'parrafo', 'modelo', 'consideraciones', 'El requisito de subsidiariedad exige verificar si el afectado dispone de otro mecanismo de defensa judicial idóneo y eficaz. La Corte ha sostenido que, en materia de salud, el mecanismo ante la Superintendencia Nacional de Salud no desplaza al juez de tutela cuando no resulta eficaz frente a las circunstancias particulares del caso (', c('⟦CITA NO VERIFICADA: sentencia T-999 de 2019⟧', 'c3'), ').'),
+  b('con-12', 'parrafo', 'modelo', 'consideraciones', 'Esa valoración debe atender la gravedad de la patología, la urgencia del tratamiento y la condición de especial protección del solicitante. Aun cuando exista otro medio, la tutela procede como mecanismo transitorio si se acredita un perjuicio irremediable, esto es, uno inminente, grave, urgente e impostergable (', c('sentencia SU-124 de 2018', 'c6'), ').'),
+  b('con-13', 'encabezado', 'modelo', 'consideraciones', t('El mínimo vital', { negrita: true })),
+  b('con-14', 'parrafo', 'modelo', 'consideraciones', 'El mínimo vital, por su parte, se afecta cuando la persona no puede satisfacer sus necesidades básicas y las de su núcleo familiar. Cuando la falta de un tratamiento obliga a asumir un gasto que no se puede costear, la vulneración de la salud puede proyectarse sobre este derecho.'),
+  b('con-15', 'parrafo', 'plantilla', 'consideraciones', 'Definido el marco jurídico aplicable y los criterios constitucionales relevantes, procede este Despacho a continuación a examinar la situación fáctica y jurídica específica puesta en conocimiento en este trámite constitucional.'),
+  b('informe-de-citas', 'titulo', 'plantilla', 'informe-de-citas', t('INFORME DE CITAS', { negrita: true })),
+  b('inf-1', 'parrafo', 'plantilla', 'informe-de-citas', '6 citas: 3 ok, 2 con alerta, 1 rechazada.'),
+  b('inf-2', 'tabla', 'plantilla', 'informe-de-citas', ...['Sentencia', 'Estado', 'Cobertura', 'Palabras', 'Sección', 'M.P. (dataset)', 'URL', 'Texto citado', 'Motivos'].map((x) => t(x, { negrita: true }))),
+  b('inf-3', 'tabla', 'plantilla', 'informe-de-citas', 'T-760 de 2008', 'OK', '98 %', '11', 'mayoría', 'Manuel José Cepeda Espinosa', 'https://www.corteconstitucional.gov.co/relatoria/2008/t-760-08.htm', '“la salud tiene doble connotación…”', '—'),
+  b('inf-4', 'tabla', 'plantilla', 'informe-de-citas', 'SU-508 de 2020', 'ALERTA', '71 %', '14', 'mayoría', '—', 'https://www.corteconstitucional.gov.co/relatoria/2020/su508-20.htm', '“la garantía de continuidad…”', 'La cobertura del fragmento citado es 71 %.'),
+  b('alertas-por-nodo', 'titulo', 'plantilla', 'alertas-por-nodo', t('ALERTAS POR NODO', { negrita: true })),
+  b('apn-1', 'parrafo', 'plantilla', 'alertas-por-nodo', t('apertura', { negrita: true })),
+  b('apn-2', 'lista', 'plantilla', 'alertas-por-nodo', "ALERTA: Jev lee el sentido del fallo como 'niega' (97 %) y la cláusula decision_a_quo ('declaró improcedente la acción de tutela') como 'improcedente' (91 %); verifique decision_a_quo."),
+  b('apn-3', 'lista', 'plantilla', 'alertas-por-nodo', 'ALERTA: antecedentes: tiene 1202 palabras, por encima del máximo esperado (510 a 1140).'),
+  ...pie(3),
+];
+
+const VISTA = {
+  paginas: [{ bloques: [...P1, ...pie(1)] }, { bloques: [...P2, ...pie(2)] }, { bloques: P3 }],
+  citas: CITAS,
+  indice: [
+    { id: 'asunto', titulo: 'I. ASUNTO' }, { id: 'antecedentes-del-caso', titulo: 'II. ANTECEDENTES DEL CASO' },
+    { id: 'la-sentencia-impugnada', titulo: 'III. LA SENTENCIA IMPUGNADA' }, { id: 'la-impugnacion', titulo: 'IV. LA IMPUGNACIÓN' },
+    { id: 'consideraciones', titulo: 'V. CONSIDERACIONES' }, { id: 'informe-de-citas', titulo: 'INFORME DE CITAS' }, { id: 'alertas-por-nodo', titulo: 'ALERTAS POR NODO' },
+  ],
+};
+
+const ESTADO = {
+  estado: 'esperando_decision',
+  job_activo: null,
+  resumen: {
+    metadatos: {
+      cui_2a: '05001 40 88 009 2026 00412 01',
+      juzgado_a_quo: 'Juzgado Noveno Penal Municipal con Función de Control de Garantías',
+      accionante: 'Marta Inés Quintero Bedoya',
+      accionadas: ['EPS Horizonte Salud S.A.S.'],
+      impugnante: 'Marta Inés Quintero Bedoya (accionante)',
+      impugnante_rol: 'accionante',
+      decision_a_quo: 'declaró improcedente la acción de tutela',
+    },
+    jev_metadatos: {
+      umbral: 0.8,
+      preguntas: { sentido_fallo: { choice: 'niega', confidence: 0.97 }, sentido_clausula: { choice: 'improcedente', confidence: 0.91 }, rol_impugnante: { choice: 'accionante', confidence: 0.99 } },
+      coincide: { sentido: false, rol_impugnante: true },
+    },
+    bitacora: [
+      { nodo: 'apertura', proveedor: 'anthropic', modelo_pedido: 'claude-sonnet-5-5', modelo_efectivo: 'claude-sonnet-5-5' },
+      { nodo: 'consideraciones', proveedor: 'anthropic', modelo_pedido: 'claude-opus-5-5', modelo_efectivo: 'claude-sonnet-5-5' },
+    ],
+    alertas: {
+      ingesta: [
+        '1a-007 007_007RespuestaEPSHorizonteSaludSAS_ContestacionTutela_Radicado2026-00412_Anexos.pdf: texto truncado a 120000 caracteres para el LLM.',
+        '1a-002 002_002EscritoTutelaQuinteroBedoya.pdf (escrito_tutela): páginas sin texto legible: 3, 4.',
+      ],
+      apertura: [
+        "ALERTA: Jev lee el sentido del fallo como 'niega' (97 %) y la cláusula decision_a_quo ('declaró improcedente la acción de tutela') como 'improcedente' (91 %); verifique decision_a_quo.",
+        'ALERTA: antecedentes: tiene 1202 palabras, por encima del máximo esperado (510 a 1140).',
+        "ALERTA: En metadatos, campo accionadas, la ingesta extrajo ['EPS HORIZONTE SALUD S.A.S.', 'SUPERINTENDENCIA NACIONAL DE SALUD'] y el modelo leyó ['EPS Horizonte Salud S.A.S.', 'Superintendencia Nacional de Salud – Supersalud']; se conserva el de la ingesta, verifique cuál es correcto.",
+      ],
+      consideraciones: [
+        'BLOQUEA: La cita c3 (sentencia T-999 de 2019) fue rechazada: no aparece en el dataset de la Corte Constitucional.',
+      ],
+    },
+  },
+};
+
+const ETQ_CITA = { verificada: 'Verificada', revisar: 'Con alerta', rechazada: 'No verificada' };
+const ETQ_NODO = { ingesta: 'Archivo', apertura: 'Apertura', consideraciones: 'Consideraciones' };
+const SECC_NODO = { apertura: 'II a IV', consideraciones: 'V' };
+const ETQ_SENTIDO = { ampara: 'Ampara', niega: 'Niega el amparo', improcedente: 'Declara improcedente', carencia_actual_de_objeto: 'Carencia actual de objeto', otro: 'Otro o indeterminado' };
+const ETQ_ROL = { accionante: 'Accionante', accionada: 'Accionada', vinculada: 'Vinculada', otro: 'Otro' };
+
+const S = { vista: VISTA, estado: ESTADO, sel: null, plantilla: true, escenario: 'pendientes', verVerificadas: false, panel: 'B', revisados: new Set(), abierta: null, verComprobado: false };
+
+const $ = (s) => document.querySelector(s);
+const esc = (x) => String(x).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+const pct = (n) => `${Math.round(n * 100)} %`;
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+const mayus = (x) => (x ? x[0].toUpperCase() + x.slice(1) : x);
+const limpiar = (x) => x.replace(/\s+/g, ' ').trim();
+const modelo = (id) => { const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id.replace(/-\d{8}$/, '')); return m ? `${mayus(m[1])} ${m[2]}.${m[3]}` : id; };
+const oracion = (x) => { if (x !== x.toUpperCase()) return x; const m = /^([IVXL]+\.\s*)?(.*)$/.exec(x); return `${m[1] || ''}${mayus((m[2] || '').toLowerCase())}`; };
+const textoBloque = (bl) => bl.segmentos.map((s) => s.texto).join('');
+
+const ICONO = {
+  mal: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+  alerta: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 6v7M12 17.5v.5"/></svg>',
+  ok: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  externo: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  ir: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  cerrar: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  balanza: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M7 21h10M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/></svg>',
+  edificio: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V10M19 21V10M9 21v-7M15 21v-7M2 10l10-6 10 6z"/></svg>',
+  hash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/></svg>',
+};
+
+function escenario() {
+  const base = structuredClone({ VISTA, ESTADO });
+  if (S.escenario === 'limpio') {
+    base.VISTA.citas.forEach((x) => { x.estado = 'verificada'; x.cobertura = Math.max(x.cobertura, 0.9); x.detalle = null; x.url ||= urlRelatoria(x.fuente); });
+    base.ESTADO.resumen.alertas = {};
+    base.ESTADO.resumen.jev_metadatos.preguntas.sentido_fallo.choice = 'improcedente';
+    base.ESTADO.resumen.jev_metadatos.coincide.sentido = true;
+  }
+  if (S.escenario === 'curso') { base.ESTADO.estado = 'corriendo'; base.ESTADO.job_activo = 'job-1'; }
+  S.vista = base.VISTA;
+  S.estado = base.ESTADO;
+}
+
+function seccionesConCitas() {
+  const porId = new Map(S.vista.citas.map((x) => [x.id, x]));
+  const peor = {};
+  let sub = null;
+  const marcar = (clave, estado) => {
+    if (!clave || estado === 'verificada') return;
+    const p = (peor[clave] ||= { n: 0, mal: false });
+    p.n += 1;
+    p.mal ||= estado === 'rechazada';
+  };
+  for (const pg of S.vista.paginas) for (const bl of pg.bloques) {
+    if (bl.tipo === 'titulo') sub = null;
+    if (bl.tipo === 'encabezado' && bl.seccion) sub = bl.id;
+    for (const sg of bl.segmentos) if (sg.cita_id && porId.has(sg.cita_id)) {
+      const e = porId.get(sg.cita_id).estado;
+      marcar(bl.seccion, e);
+      marcar(sub, e);
+    }
+  }
+  return peor;
+}
+
+function construirIndice() {
+  const titulos = new Map(S.vista.indice.map((e) => [e.id, e.titulo]));
+  const out = [];
+  for (const pg of S.vista.paginas) for (const bl of pg.bloques) {
+    if (bl.tipo === 'titulo') out.push({ id: bl.id, titulo: oracion(titulos.get(bl.id) || limpiar(textoBloque(bl))), sub: false, anexo: !/^[IVXL]+\./.test(titulos.get(bl.id) || '') });
+    else if (bl.tipo === 'encabezado' && bl.seccion) { const x = limpiar(textoBloque(bl)); if (x && x.length <= 120) out.push({ id: bl.id, titulo: oracion(x), sub: true }); }
+  }
+  return out;
+}
+
+function pintarIndice() {
+  const marcas = seccionesConCitas();
+  let corte = false;
+  $('#indice').innerHTML = construirIndice().map((e) => {
+    const m = marcas[e.id];
+    const marcador = m ? `<span class="marcador ${m.mal ? 'mal' : 'alerta'}" title="${plural(m.n, 'cita por revisar', 'citas por revisar')}">${m.n}<span class="solo-lectura"> ${m.n === 1 ? 'cita por revisar' : 'citas por revisar'}</span></span>` : '';
+    const sep = e.anexo && !corte ? ((corte = true), '<li class="corte" role="presentation"></li>') : '';
+    return `${sep}<li class="${e.sub ? 'sub-i' : ''} ${e.anexo ? 'anexo' : ''}"><button type="button" data-ir="${e.id}"><span>${esc(e.titulo)}</span>${marcador}</button></li>`;
+  }).join('');
+  const SECC = [{ nodo: 'apertura', secciones: 'Secciones II a IV' }, { nodo: 'consideraciones', secciones: 'Sección V' }];
+  const bit = S.estado.resumen.bitacora || [];
+  const filas = SECC.map(({ nodo, secciones }) => {
+    const u = bit.filter((l) => l.nodo === nodo && l.proveedor !== 'jev').pop();
+    if (!u) return '';
+    const ef = modelo(u.modelo_efectivo || u.modelo_pedido);
+    const pe = u.modelo_pedido ? modelo(u.modelo_pedido) : null;
+    return `<li><b>${secciones}</b><span>${esc(ef)}</span>${pe && pe !== ef ? `<small>Se pidió ${esc(pe)}; respondió ${esc(ef)}.</small>` : ''}</li>`;
+  }).join('');
+  $('#autoria').hidden = !filas;
+  $('#autoria-lista').innerHTML = filas;
+}
+
+function segmento(sg) {
+  let h = esc(sg.texto.replace(/\t/g, ' '));
+  if (sg.negrita) h = `<strong>${h}</strong>`;
+  if (sg.cursiva) h = `<em>${h}</em>`;
+  const ci = sg.cita_id && S.vista.citas.find((x) => x.id === sg.cita_id);
+  if (!ci) return h;
+  return `<span role="button" tabindex="0" class="cita ${ci.estado}" data-cita="${ci.id}" aria-haspopup="dialog">${h}<span class="solo-lectura"> (${ETQ_CITA[ci.estado]})</span></span>`;
+}
+const segmentos = (bl) => bl.segmentos.map(segmento).join('');
+
+function bloqueHtml(bl) {
+  const tpl = bl.origen === 'plantilla' ? ' tpl' : '';
+  switch (bl.tipo) {
+    case 'titulo': return `<h3 id="b-${bl.id}" class="h-titulo${tpl}">${segmentos(bl)}</h3>`;
+    case 'encabezado': return bl.seccion ? `<h4 id="b-${bl.id}" class="h-sub${tpl}">${segmentos(bl)}</h4>` : `<p class="h-enc${tpl}">${segmentos(bl)}</p>`;
+    case 'cita_bloque': return `<blockquote class="${tpl}">${segmentos(bl)}</blockquote>`;
+    default: return `<p class="${tpl.trim()}">${segmentos(bl)}</p>`;
+  }
+}
+
+function bloquesHtml(bloques) {
+  const grupos = [];
+  for (const bl of bloques) {
+    const u = grupos[grupos.length - 1];
+    if (bl.tipo === 'tabla' || bl.tipo === 'lista') { if (u && u.tipo === bl.tipo) u.bloques.push(bl); else grupos.push({ tipo: bl.tipo, bloques: [bl] }); }
+    else grupos.push({ tipo: 'bloque', bloque: bl });
+  }
+  return grupos.map((g) => {
+    if (g.tipo === 'bloque') return bloqueHtml(g.bloque);
+    const tpl = g.bloques.every((x) => x.origen === 'plantilla') ? 'tpl' : '';
+    if (g.tipo === 'lista') return `<ul class="h-lista ${tpl}">${g.bloques.map((x) => `<li>${segmentos(x)}</li>`).join('')}</ul>`;
+    const cols = Math.max(...g.bloques.map((f) => f.segmentos.length));
+    const ancha = cols > 3;
+    const dos = g.bloques.every((f) => f.segmentos.length === 2);
+    return `<div class="tabla-caja ${tpl}" ${ancha ? 'role="region" tabindex="0" aria-label="Tabla, desplazable horizontalmente"' : ''}><table class="h-tabla ${dos ? 'dos' : ''} ${ancha ? 'ancha' : ''}" ${ancha ? `style="--columnas:${cols}"` : ''}><tbody>${g.bloques.map((f) => `<tr>${f.segmentos.map((sg) => `<td>${segmento(sg)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  }).join('');
+}
+
+function pintarHoja() {
+  const pgs = S.vista.paginas;
+  $('#paginas').innerHTML = pgs.map((pg, i) => {
+    const cuerpo = pg.bloques.filter((x) => x.tipo !== 'pie');
+    const pieB = i === pgs.length - 1 ? pg.bloques.filter((x) => x.tipo === 'pie') : [];
+    return `<div class="h-pagina" data-pagina="Página ${i + 1} de ${pgs.length}">${bloquesHtml(cuerpo)}${pieB.length ? `<footer class="h-pie">${pieB.map((x) => `<p>${segmentos(x)}</p>`).join('')}</footer>` : ''}</div>`;
+  }).join('');
+}
+
+function filasJev() {
+  const jev = S.estado.resumen.jev_metadatos;
+  const md = S.estado.resumen.metadatos || {};
+  if (!jev || !jev.preguntas) return [];
+  const { sentido_fallo: f, sentido_clausula: cl, rol_impugnante: rol } = jev.preguntas;
+  const est = (v) => (v === true ? 'coincide' : v === false ? 'difiere' : 'sin_comparar');
+  const filas = [];
+  if (f || cl) filas.push({
+    etiqueta: 'Sentido del fallo de primera instancia', estado: est(jev.coincide?.sentido),
+    borrador: md.decision_a_quo ? mayus(limpiar(md.decision_a_quo)) : 'Sin dato',
+    borradorNota: cl ? `Jev entiende esa frase como «${ETQ_SENTIDO[cl.choice] || cl.choice}» (${pct(cl.confidence)}).` : null,
+    jev: f ? ETQ_SENTIDO[f.choice] || f.choice : 'Sin lectura', jevNota: f ? `${pct(f.confidence)} de confianza` : null,
+    ayuda: 'Revise la frase del borrador que describe la decisión de primera instancia (I y III) antes de decidir.',
+  });
+  if (rol) filas.push({
+    etiqueta: 'Quién impugna', estado: est(jev.coincide?.rol_impugnante),
+    borrador: md.impugnante_rol ? ETQ_ROL[md.impugnante_rol] || md.impugnante_rol : 'Sin dato', borradorNota: md.impugnante ? limpiar(md.impugnante) : null,
+    jev: ETQ_ROL[rol.choice] || rol.choice, jevNota: `${pct(rol.confidence)} de confianza, en el escrito de impugnación`,
+    ayuda: 'Revise quién impugna en la sección IV.',
+  });
+  return filas;
+}
+
+function alertas() {
+  const a = S.estado.resumen.alertas || {};
+  const lista = Array.isArray(a) ? a.map((m) => ['ingesta', m]) : Object.entries(a).flatMap(([n, ms]) => ms.map((m) => [n, m]));
+  const items = lista.map(([nodo, m], i) => ({
+    clave: `${nodo}-${i}`, nodo, tono: /^BLOQUEA:\s*/.test(m) ? 'mal' : 'alerta', texto: m.replace(/^(ALERTA|BLOQUEA):\s*/, ''),
+  }));
+  return [...items.filter((x) => x.tono === 'mal'), ...items.filter((x) => x.tono === 'alerta')];
+}
+
+function pintarPanelA() {
+  const citas = S.vista.citas;
+  const n = { verificada: 0, revisar: 0, rechazada: 0 };
+  citas.forEach((x) => (n[x.estado] += 1));
+  const problemas = citas.filter((x) => x.estado !== 'verificada').sort((a, z) => (a.estado === 'rechazada' ? -1 : 0) - (z.estado === 'rechazada' ? -1 : 0));
+  const verificadas = citas.filter((x) => x.estado === 'verificada');
+  const jev = filasJev();
+  const difieren = jev.filter((f) => f.estado === 'difiere');
+  const al = alertas();
+  const total = problemas.length + difieren.length + al.length;
+
+  $('#panel-resumen').textContent = total === 0 ? 'Nada pendiente en lo que el sistema pudo comprobar.' : `${plural(total, 'punto', 'puntos')} por revisar. No bloquean la decisión.`;
+
+  const w = (k) => (citas.length ? (n[k] / citas.length) * 100 : 0);
+  $('#resumen-citas').innerHTML = citas.length ? `
+    <div class="barra-citas" role="img" aria-label="${citas.length} citas: ${n.verificada} verificadas, ${n.revisar} con alerta, ${n.rechazada} no verificadas">
+      ${n.verificada ? `<i class="v" style="width:${w('verificada')}%"></i>` : ''}${n.revisar ? `<i class="r" style="width:${w('revisar')}%"></i>` : ''}${n.rechazada ? `<i class="x" style="width:${w('rechazada')}%"></i>` : ''}
+    </div>
+    <div class="leyenda-citas" aria-hidden="true">
+      ${n.verificada ? `<span><i style="background:#4f9a74"></i>${plural(n.verificada, 'verificada', 'verificadas')}</span>` : ''}
+      ${n.revisar ? `<span><i style="background:#d29a2a"></i>${n.revisar} con alerta</span>` : ''}
+      ${n.rechazada ? `<span><i style="background:#c2463c"></i>${plural(n.rechazada, 'no verificada', 'no verificadas')}</span>` : ''}
+    </div>` : '';
+
+  const itemCita = (x) => `<li><button type="button" class="item ${x.estado === 'rechazada' ? 'mal' : x.estado === 'revisar' ? 'alerta' : 'ok'} ${S.sel === x.id ? 'activo' : ''}" data-ver="${x.id}">
+      <span class="icono">${ICONO[x.estado === 'rechazada' ? 'mal' : x.estado === 'revisar' ? 'alerta' : 'ok']}</span>
+      <span class="texto"><b>${esc(mayus(x.fuente || x.id))}</b><small>${esc(x.estado === 'verificada' ? `Cobertura ${pct(x.cobertura)}` : (x.detalle || '').split(/(?<=\.);\s+/)[0])}</small></span>
+      <span class="ir">${ICONO.ir}<span class="solo-lectura">Ver en el texto</span></span>
+    </button></li>`;
+
+  const gJev = jev.length ? `<section class="grupo" aria-labelledby="g-jev">
+      <div class="grupo-cabeza"><h3 id="g-jev">Segunda lectura de Jev</h3>${difieren.length ? `<span class="chip alerta">${plural(difieren.length, 'diferencia', 'diferencias')}</span>` : '<span class="chip ok">Coincide</span>'}</div>
+      ${jev.map((f) => f.estado === 'difiere' ? `<div class="jev difiere">
+          <div class="jev-cabeza"><b>${esc(f.etiqueta)}</b><span class="chip alerta">≠ Difiere</span></div>
+          <div class="jev-cuerpo">
+            <div><span class="que">El borrador dice</span><strong>${esc(f.borrador)}</strong>${f.borradorNota ? `<small>${esc(f.borradorNota)}</small>` : ''}</div>
+            <div><span class="que">Jev lee en el fallo</span><strong>${esc(f.jev)}</strong>${f.jevNota ? `<small>${esc(f.jevNota)}</small>` : ''}</div>
+          </div>
+          <div class="jev-pie">${esc(f.ayuda)}</div>
+        </div>` : `<div class="jev">
+          <div class="jev-cabeza"><b>${esc(f.etiqueta)}</b><span class="chip ${f.estado === 'coincide' ? 'ok' : ''}">${f.estado === 'coincide' ? '✓ Coincide' : '? Sin comparar'}</span></div>
+          <div class="jev-cuerpo">
+            <div><span class="que">El borrador dice</span><strong>${esc(f.borrador)}</strong>${f.borradorNota ? `<small>${esc(f.borradorNota)}</small>` : ''}</div>
+            <div><span class="que">Jev lee</span><strong>${esc(f.jev)}</strong>${f.jevNota ? `<small>${esc(f.jevNota)}</small>` : ''}</div>
+          </div>
+        </div>`).join('')}
+      <p class="jev-ayuda">Jev leyó por su cuenta el fallo de primera instancia y la impugnación. Solo compara cuando tiene al menos ${pct(S.estado.resumen.jev_metadatos.umbral)} de confianza.</p>
+    </section>` : '';
+
+  const gCitas = citas.length ? `<section class="grupo" aria-labelledby="g-citas">
+      <div class="grupo-cabeza"><h3 id="g-citas">Citas de jurisprudencia</h3><span class="cuenta">${citas.length}</span></div>
+      ${problemas.length ? `<ul class="lista">${problemas.map(itemCita).join('')}</ul>` : `<div class="vacio-grupo">${ICONO.ok} Todas las citas se encontraron en la relatoría.</div>`}
+      ${verificadas.length && problemas.length ? `<button type="button" class="btn fantasma mas" id="ver-verificadas" aria-expanded="${S.verVerificadas}">${S.verVerificadas ? 'Ocultar las verificadas' : n.verificada === 1 ? 'Ver la cita verificada' : `Ver las ${n.verificada} verificadas`}</button>` : ''}
+      ${verificadas.length && (S.verVerificadas || !problemas.length) ? `<ul class="lista" style="margin-top:.4rem">${verificadas.map(itemCita).join('')}</ul>` : ''}
+    </section>` : '';
+
+  const gAlertas = `<section class="grupo" aria-labelledby="g-al">
+      <div class="grupo-cabeza"><h3 id="g-al">Alertas del proceso</h3><span class="cuenta">${al.length}</span></div>
+      ${al.length ? `<ul class="lista">${al.map((x) => `<li><div class="item ${x.tono}">
+          <span class="icono">${ICONO[x.tono]}</span>
+          <span class="texto"><span class="origen">${esc(ETQ_NODO[x.nodo] || mayus(x.nodo.replace(/_/g, ' ')))}${SECC_NODO[x.nodo] ? ` · ${SECC_NODO[x.nodo]}` : ''}</span><span style="display:block">${esc(x.texto)}</span></span>
+          <span></span>
+        </div></li>`).join('')}</ul>` : `<div class="vacio-grupo">${ICONO.ok} Sin alertas.</div>`}
+    </section>`;
+
+  $('#panel-cuerpo').innerHTML = gJev + gCitas + gAlertas;
+  pintarDock(total, null);
+}
+
+function pintarDock(total, hechos) {
+  const quedan = hechos === null ? total : total - hechos;
+  $('#abrir-panel-n').textContent = quedan;
+  $('#abrir-panel-n').className = `chip ${quedan ? 'alerta' : 'ok'}`;
+  const enCurso = Boolean(S.estado.job_activo) || S.estado.estado === 'corriendo';
+  $('#aviso-curso').hidden = !enCurso;
+  $('#decidir').toggleAttribute('aria-disabled', enCurso);
+  $('#decidir').style.pointerEvents = enCurso ? 'none' : '';
+  $('#decidir').style.opacity = enCurso ? '0.5' : '';
+  $('#pedir').disabled = enCurso || S.estado.estado !== 'esperando_decision';
+  $('#dock-estado').innerHTML = enCurso
+    ? `<span class="icono info">${ICONO.alerta}</span><div><b>Hay una redacción en curso</b><span>Podrá decidir cuando termine.</span></div>`
+    : total === 0
+      ? `<span class="icono ok">${ICONO.ok}</span><div><b>El borrador está listo para su decisión</b><span>Todas las comprobaciones salieron bien.</span></div>`
+      : hechos === null
+        ? `<span class="icono">${ICONO.alerta}</span><div><b>${plural(total, 'punto', 'puntos')} por revisar</b><span>No bloquean la decisión. Revíselos antes de firmar el fallo.</span></div>`
+        : quedan === 0
+          ? `<span class="icono ok">${ICONO.ok}</span><div><b>Revisó ${total === 1 ? 'el único punto' : `los ${total} puntos`}</b><span>Puede pasar a la decisión.</span></div>`
+          : `<span class="icono">${ICONO.alerta}</span><div><b>${quedan === 1 ? 'Queda 1 punto' : `Quedan ${quedan} puntos`} por revisar</b><span>Lleva ${hechos} de ${total}. No bloquean la decisión.</span></div>`;
+}
+
+function pintarPanel() {
+  if (S.panel === 'A') pintarPanelA();
+  else pintarPanelB();
+}
+
+const NIVELES = [
+  { id: 'mal', nombre: 'Corregir antes de firmar' },
+  { id: 'alerta', nombre: 'Revisar' },
+  { id: 'info', nombre: 'Para tener en cuenta' },
+];
+const CAMPO_EXT = {
+  antecedentes: ['Los antecedentes', 'son', 'largos', 'cortos'],
+  sentencia_impugnada: ['La sentencia impugnada', 'es', 'larga', 'corta'],
+  impugnacion: ['La impugnación', 'es', 'larga', 'corta'],
+  consideraciones: ['Las consideraciones', 'son', 'largas', 'cortas'],
+  'caso concreto': ['El caso concreto', 'es', 'largo', 'corto'],
+};
+const CAMPO_MD = { juzgado_a_quo: 'juzgado de primera instancia', accionante: 'accionante', accionadas: 'accionadas', vinculadas: 'vinculadas', impugnante: 'impugnante', impugnante_rol: 'calidad de quien impugna' };
+const CHEVRON = '<svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const listaPy = (x) => { const v = [...x.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2]); return v.length ? v : [x]; };
+
+function seccionDeCita() {
+  const titulos = new Map(S.vista.indice.map((e) => [e.id, oracion(e.titulo)]));
+  const m = {};
+  for (const pg of S.vista.paginas) for (const bl of pg.bloques) for (const sg of bl.segmentos) if (sg.cita_id) m[sg.cita_id] = titulos.get(bl.seccion) || '';
+  return m;
+}
+
+function humanizar(nodo, tono, texto) {
+  const tipo = `${ETQ_NODO[nodo] || mayus(nodo.replace(/_/g, ' '))}${SECC_NODO[nodo] ? ` · ${SECC_NODO[nodo]}` : ''}`;
+  let m;
+  if ((m = /^(\S+) (.+): texto truncado a (\d+) caracteres para el LLM\.$/.exec(texto)))
+    return { nivel: 'info', tipo: `Archivo ${m[1]}`, titulo: 'El modelo leyó solo una parte de este documento', sub: m[2], detalle: { archivo: m[2], nota: `Se le entregaron los primeros ${Number(m[3]).toLocaleString('es-CO')} caracteres; lo que sigue no se tuvo en cuenta al redactar.` } };
+  if ((m = /^(\S+) (.+) \((\w+)\): páginas sin texto legible: (.+)\.$/.exec(texto)))
+    return { nivel: 'info', tipo: `Archivo ${m[1]}`, titulo: `${/,/.test(m[4]) ? 'Páginas' : 'Página'} ${m[4]} sin texto legible`, sub: m[2], detalle: { archivo: m[2], nota: `El modelo no pudo leer ${/,/.test(m[4]) ? 'esas páginas' : 'esa página'}.` } };
+  if ((m = /^([\w ]+): tiene (\d+) palabras, por (encima del máximo|debajo del mínimo) esperado \((\d+) a (\d+)\)\.$/.exec(texto))) {
+    const c = CAMPO_EXT[m[1]];
+    const largo = m[3].startsWith('encima');
+    return { nivel: 'alerta', tipo, titulo: c ? `${c[0]} ${c[1]} más ${largo ? c[2] : c[3]} de lo esperado` : `${mayus(m[1])}: ${m[2]} palabras`, sub: `${m[2]} palabras; se esperaban entre ${m[4]} y ${m[5]}.`, completa: true };
+  }
+  if ((m = /^En metadatos, campo (\w+), la ingesta extrajo (.+) y el modelo leyó (.+); se conserva el de la ingesta, verifique cuál es correcto\.$/.exec(texto)))
+    return { nivel: 'alerta', tipo, titulo: `${mayus(CAMPO_MD[m[1]] || m[1].replace(/_/g, ' '))}: dos lecturas distintas`, sub: 'Se conservó la que se extrajo del expediente.', detalle: { comparar: [['Extraído del expediente · se conservó', listaPy(m[2])], ['Leído por el modelo', listaPy(m[3])]] } };
+  return { nivel: tono === 'mal' ? 'mal' : 'alerta', tipo, titulo: texto, completaTitulo: true };
+}
+
+function itemsB() {
+  const secc = seccionDeCita();
+  const ids = new Set(S.vista.citas.map((x) => x.id));
+  const items = [];
+  for (const x of S.vista.citas) {
+    const motivos = (x.detalle || '').split(/(?<=\.);\s+/).filter(Boolean);
+    const base = { clave: `cita-${x.id}`, cita: x, tipo: `Cita${secc[x.id] ? ` · ${secc[x.id]}` : ''}`, titulo: mayus(x.fuente || x.id), motivos };
+    if (x.estado === 'verificada') items.push({ ...base, nivel: 'ok', sub: `Verificada · cobertura ${pct(x.cobertura)}` });
+    else items.push({ ...base, nivel: x.estado === 'rechazada' ? 'mal' : 'alerta', sub: motivos[0] || ETQ_CITA[x.estado] });
+  }
+  const jev = filasJev();
+  jev.forEach((f, i) => items.push({
+    clave: `jev-${i}`, jev: f, nivel: f.estado === 'difiere' ? 'alerta' : f.estado === 'coincide' ? 'ok' : 'info',
+    tipo: f.estado === 'difiere' ? 'Jev · no coincide' : f.estado === 'coincide' ? 'Jev · coincide' : 'Jev · sin comparar',
+    titulo: f.etiqueta, sub: `Borrador: ${f.borrador} · Jev: ${f.jev}`,
+  }));
+  for (const a of alertas()) {
+    const rechazo = /^La cita (\w+) \(/.exec(a.texto);
+    if (rechazo && ids.has(rechazo[1])) continue;
+    if (/^Jev lee /.test(a.texto) && jev.length) continue;
+    items.push({ clave: `al-${a.clave}`, ...humanizar(a.nodo, a.tono, a.texto) });
+  }
+  return items;
+}
+
+function detalleB(it) {
+  if (it.cita) {
+    const x = it.cita;
+    const color = x.estado === 'verificada' ? '#4f9a74' : x.estado === 'revisar' ? '#d29a2a' : '#c2463c';
+    return `${x.texto ? `<q>${esc(x.texto)}</q>` : ''}
+      <div class="medidor"><span>Cobertura</span><span class="riel"><i style="width:${Math.round(x.cobertura * 100)}%;background:${color}"></i></span><b>${pct(x.cobertura)}</b></div>
+      ${it.motivos.length ? `<ul class="motivos ${x.estado}">${it.motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+      <div class="acciones-fila"><button type="button" class="btn fantasma" data-texto="${x.id}">Ver en el texto ${ICONO.ir}</button>${enlaceRelatoria(x)}</div>`;
+  }
+  if (it.jev) {
+    const f = it.jev;
+    return `<div class="comparar">
+        <div><span class="que">El borrador dice</span><strong>${esc(f.borrador)}</strong>${f.borradorNota ? `<small>${esc(f.borradorNota)}</small>` : ''}</div>
+        <div><span class="que">Jev lee en el expediente</span><strong>${esc(f.jev)}</strong>${f.jevNota ? `<small>${esc(f.jevNota)}</small>` : ''}</div>
+      </div>
+      ${f.estado === 'difiere' ? `<p class="nota alerta">${esc(f.ayuda)}</p>` : ''}
+      <p class="nota">Jev leyó por su cuenta el fallo de primera instancia y la impugnación. Solo compara con al menos ${pct(S.estado.resumen.jev_metadatos.umbral)} de confianza.</p>`;
+  }
+  if (it.detalle?.archivo) return `<code class="archivo">${esc(it.detalle.archivo)}</code><p class="nota">${esc(it.detalle.nota)}</p>`;
+  if (it.detalle?.comparar) return `<div class="comparar">${it.detalle.comparar.map(([q, v]) => `<div><span class="que">${esc(q)}</span>${v.length > 1 ? `<ul>${v.map((y) => `<li>${esc(y)}</li>`).join('')}</ul>` : `<strong>${esc(v[0])}</strong>`}</div>`).join('')}</div>`;
+  return null;
+}
+
+function filaB(it) {
+  const det = detalleB(it);
+  const abierta = Boolean(det) && S.abierta === it.clave;
+  const hecha = S.revisados.has(it.clave);
+  const contenido = `<span class="fila-tipo">${esc(it.tipo)}</span><span class="fila-titulo">${esc(it.titulo)}</span>${it.sub ? `<span class="fila-sub ${it.completa ? 'completa' : ''}">${esc(it.sub)}</span>` : ''}`;
+  return `<li class="fila n-${it.nivel} ${abierta ? 'abierta' : ''} ${hecha ? 'hecha' : ''} ${it.cita && S.sel === it.cita.id ? 'activa' : ''}" ${it.cita ? `data-cita-fila="${it.cita.id}"` : ''}>
+    ${it.nivel === 'ok'
+      ? `<span class="marca-revisado fija" aria-hidden="true">${ICONO.ok}</span>`
+      : `<button type="button" class="marca-revisado" data-revisar="${it.clave}" aria-pressed="${hecha}" title="${hecha ? 'Marcar como pendiente' : 'Marcar como revisado'}">${ICONO.ok}<span class="solo-lectura">Revisado: ${esc(it.titulo)}</span></button>`}
+    ${det ? `<button type="button" class="fila-boton" data-abrir="${it.clave}" aria-expanded="${abierta}">${contenido}${CHEVRON}</button>` : `<div class="fila-boton">${contenido}</div>`}
+    ${abierta ? `<div class="fila-detalle">${det}</div>` : ''}
+  </li>`;
+}
+
+function pintarPanelB() {
+  const items = itemsB();
+  const orden = NIVELES.flatMap((nv) => items.filter((x) => x.nivel === nv.id));
+  const ok = items.filter((x) => x.nivel === 'ok');
+  const hechos = orden.filter((x) => S.revisados.has(x.clave)).length;
+  $('#panel-resumen').innerHTML = orden.length
+    ? `Lleva <b>${hechos} de ${orden.length}</b> revisados. Nada de esto bloquea la decisión.`
+    : 'Nada pendiente en lo que el sistema pudo comprobar.';
+  $('#resumen-citas').innerHTML = orden.length
+    ? `<div class="progreso" role="progressbar" aria-label="Puntos revisados" aria-valuemin="0" aria-valuemax="${orden.length}" aria-valuenow="${hechos}">${orden.map((x) => `<i class="n-${x.nivel} ${S.revisados.has(x.clave) ? 'hecho' : ''}"></i>`).join('')}</div>`
+    : '';
+  const grupos = NIVELES.map((nv) => {
+    const its = orden.filter((x) => x.nivel === nv.id);
+    if (!its.length) return '';
+    const quedan = its.filter((x) => !S.revisados.has(x.clave)).length;
+    return `<section class="nivel" aria-labelledby="nv-${nv.id}">
+      <div class="nivel-cabeza n-${nv.id}"><i></i><h3 class="nombre" id="nv-${nv.id}">${nv.nombre}</h3><span class="cuenta">${quedan ? `${quedan} de ${its.length}` : '✓'}</span></div>
+      <ul class="filas">${its.map(filaB).join('')}</ul>
+    </section>`;
+  }).join('');
+  const bien = orden.length ? '' : `<div class="todo-bien">${ICONO.ok}<div><b>Todo salió bien</b><span>Las citas se encontraron en la relatoría y Jev coincide con el borrador.</span></div></div>`;
+  const gOk = ok.length ? `<section class="nivel">
+      <button type="button" class="nivel-cabeza n-ok plegable" id="ver-comprobado" aria-expanded="${S.verComprobado}"><i></i><span class="nombre">Comprobado</span><span class="cuenta">${ok.length}</span>${CHEVRON}</button>
+      ${S.verComprobado ? `<ul class="filas">${ok.map(filaB).join('')}</ul>` : ''}
+    </section>` : '';
+  $('#panel-cuerpo').innerHTML = bien + grupos + gOk;
+  pintarDock(orden.length, hechos);
+}
+
+function irACita(id) {
+  const boton = document.querySelector(`.cita[data-cita="${id}"]`);
+  if (!boton) return;
+  cerrarPanelMovil();
+  boton.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  boton.classList.remove('destello'); void boton.offsetWidth; boton.classList.add('destello');
+}
+
+function abrirCita(id, { desdePanel = false } = {}) {
+  const ci = S.vista.citas.find((x) => x.id === id);
+  const boton = document.querySelector(`.cita[data-cita="${id}"]`);
+  if (!ci || !boton) return;
+  S.sel = id;
+  document.querySelectorAll('.cita.sel').forEach((x) => x.classList.remove('sel'));
+  boton.classList.add('sel');
+  document.querySelectorAll('.item.activo').forEach((x) => x.classList.remove('activo'));
+  document.querySelector(`.item[data-ver="${id}"]`)?.classList.add('activo');
+  document.querySelectorAll('.fila.activa').forEach((x) => x.classList.remove('activa'));
+  const fila = document.querySelector(`[data-cita-fila="${id}"]`);
+  fila?.classList.add('activa');
+  if (!desdePanel && innerWidth >= 1024) fila?.scrollIntoView({ block: 'nearest' });
+  const tono = ci.estado;
+  const motivos = (ci.detalle || '').split(/(?<=\.);\s+/).filter(Boolean);
+  const color = tono === 'verificada' ? '#4f9a74' : tono === 'revisar' ? '#d29a2a' : '#c2463c';
+  const pop = $('#pop');
+  pop.innerHTML = `<div class="pop-cabeza"><div>
+        <span class="chip ${tono === 'verificada' ? 'ok' : tono === 'revisar' ? 'alerta' : 'mal'}">${ICONO[tono === 'verificada' ? 'ok' : tono === 'revisar' ? 'alerta' : 'mal']}${ETQ_CITA[tono]}</span>
+        <h3 id="pop-t" tabindex="-1" style="margin-top:.45rem">${esc(mayus(ci.fuente || ci.id))}</h3>
+      </div><button type="button" class="pop-cerrar" data-cerrar-pop aria-label="Cerrar">${ICONO.cerrar}</button></div>
+    <div class="pop-cuerpo">
+    ${ci.texto ? `<q>${esc(ci.texto)}</q>` : ''}
+    <div class="medidor"><span>Cobertura</span><span class="riel"><i style="width:${Math.round(ci.cobertura * 100)}%;background:${color}"></i></span><b>${pct(ci.cobertura)}</b></div>
+    ${motivos.length ? `<ul class="motivos ${tono}">${motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+    ${enlaceRelatoria(ci) ? `<div class="pop-acciones">${enlaceRelatoria(ci, 'btn')}</div>` : ''}
+    </div>`;
+  pop.hidden = false;
+  const suave = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const mostrar = () => {
+    colocarPop();
+    $('#pop-t').focus({ preventScroll: true });
+    if (innerWidth <= 760) return;
+    const limite = innerHeight - remDe('--dock') - 16;
+    const sobra = pop.getBoundingClientRect().bottom - limite;
+    const margen = boton.getBoundingClientRect().top - remDe('--barra') - 70;
+    if (sobra > 0 && !pop.classList.contains('arriba')) scrollBy({ top: Math.min(sobra, margen), behavior: suave });
+  };
+  if (desdePanel) {
+    cerrarPanelMovil();
+    boton.scrollIntoView({ block: 'center', behavior: suave });
+    boton.classList.remove('destello'); void boton.offsetWidth; boton.classList.add('destello');
+    setTimeout(mostrar, 380);
+  } else mostrar();
+}
+
+function urlRelatoria(fuente) {
+  const m = /\b(SU|T|C|A)-(\d+) de (\d{4})/.exec(fuente || '');
+  if (!m) return null;
+  const n = m[2].padStart(3, '0');
+  const aa = String(Number(m[3]) % 100).padStart(2, '0');
+  return `https://www.corteconstitucional.gov.co/relatoria/${m[3]}/${m[1] === 'SU' ? `SU${n}` : `${m[1]}-${n}`}-${aa}.htm`;
+}
+
+const enlaceRelatoria = (ci, clase = 'btn fantasma') => (ci.estado === 'verificada' && ci.url
+  ? `<a class="${clase}" href="${esc(ci.url)}" target="_blank" rel="noopener noreferrer">Abrir en la relatoría ${ICONO.externo}<span class="solo-lectura"> (se abre en una pestaña nueva)</span></a>`
+  : '');
+
+const remDe = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) * 16;
+
+function colocarPop() {
+  const pop = $('#pop');
+  if (pop.hidden || !S.sel) return;
+  const boton = document.querySelector(`.cita[data-cita="${S.sel}"]`);
+  if (!boton) return;
+  const col = $('#doc-col').getBoundingClientRect();
+  const rects = boton.getClientRects();
+  const r = rects[rects.length - 1] || boton.getBoundingClientRect();
+  const ancho = pop.offsetWidth;
+  let izq = r.left - col.left + r.width / 2 - 40;
+  izq = Math.max(12, Math.min(izq, col.width - ancho - 12));
+  let arriba = r.bottom - col.top + 12;
+  const alto = pop.offsetHeight;
+  const espacioAbajo = innerHeight - r.bottom - remDe('--dock');
+  pop.classList.toggle('arriba', espacioAbajo < alto + 24 && r.top - remDe('--barra') - 60 > alto);
+  if (pop.classList.contains('arriba')) arriba = r.top - col.top - alto - 12;
+  pop.style.left = `${izq}px`;
+  pop.style.top = `${arriba}px`;
+  pop.style.setProperty('--flecha', `${Math.max(14, Math.min(r.left - col.left + r.width / 2 - izq - 6, ancho - 26))}px`);
+}
+
+function cerrarPop() {
+  const prev = S.sel && document.querySelector(`.cita[data-cita="${S.sel}"]`);
+  S.sel = null;
+  $('#pop').hidden = true;
+  document.querySelectorAll('.cita.sel, .item.activo, .fila.activa').forEach((x) => x.classList.remove('sel', 'activo', 'activa'));
+  prev?.focus({ preventScroll: true });
+}
+
+function abrirPanelMovil() { $('#panel').classList.add('abierto'); $('#velo').hidden = false; $('#abrir-panel').setAttribute('aria-expanded', 'true'); $('#cerrar-panel').focus(); }
+function cerrarPanelMovil() { if (!$('#panel').classList.contains('abierto')) return; $('#panel').classList.remove('abierto'); $('#velo').hidden = true; $('#abrir-panel').setAttribute('aria-expanded', 'false'); }
+function cerrarIndice() { $('#indice-col').classList.remove('abierto'); $('#abrir-indice').setAttribute('aria-expanded', 'false'); }
+
+let titulos = [];
+function espiar() {
+  titulos = [...document.querySelectorAll('.h-titulo, .h-sub')];
+  const tope = innerHeight * 0.3;
+  let actual = null;
+  let actualTitulo = null;
+  for (const h of titulos) {
+    if (h.getBoundingClientRect().top - tope > 0) break;
+    actual = h;
+    if (h.classList.contains('h-titulo')) actualTitulo = h;
+  }
+  actual ||= titulos[0];
+  actualTitulo ||= titulos[0];
+  const id = actual?.id.slice(2);
+  document.querySelectorAll('#indice button').forEach((x) => (x.dataset.ir === id ? x.setAttribute('aria-current', 'location') : x.removeAttribute('aria-current')));
+  const nombre = (h) => oracion(limpiar(h.textContent));
+  $('#doc-actual').innerHTML = actual === actualTitulo || !actualTitulo ? `<b>${esc(nombre(actual))}</b>` : `<b>${esc(nombre(actualTitulo))}</b> · ${esc(nombre(actual))}`;
+}
+
+function pintarTodo() {
+  escenario();
+  const md = S.estado.resumen.metadatos;
+  const nombre = `${md.accionante} c. ${md.accionadas.join(', ')}`;
+  $('#titulo-caso').textContent = nombre;
+  $('#miga-caso').textContent = nombre;
+  $('#meta-caso').innerHTML = `<span>${ICONO.hash}Radicado ${esc(md.cui_2a)}</span><span>${ICONO.edificio}${esc(md.juzgado_a_quo)}</span>`;
+  pintarIndice();
+  pintarHoja();
+  pintarPanel();
+  cerrarPop();
+  espiar();
+}
+
+document.addEventListener('click', (e) => {
+  const cita = e.target.closest('.cita');
+  if (cita) { if (S.sel === cita.dataset.cita) cerrarPop(); else abrirCita(cita.dataset.cita); return; }
+  const ver = e.target.closest('[data-ver]');
+  if (ver) { abrirCita(ver.dataset.ver, { desdePanel: true }); return; }
+  if (e.target.closest('[data-cerrar-pop]')) { cerrarPop(); return; }
+  const ir = e.target.closest('[data-ir]');
+  if (ir) {
+    cerrarIndice();
+    document.getElementById(`b-${ir.dataset.ir}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  const rev = e.target.closest('[data-revisar]');
+  if (rev) { const k = rev.dataset.revisar; if (S.revisados.has(k)) S.revisados.delete(k); else S.revisados.add(k); pintarPanel(); document.querySelector(`[data-revisar="${k}"]`)?.focus(); return; }
+  const ab = e.target.closest('[data-abrir]');
+  if (ab) { const k = ab.dataset.abrir; S.abierta = S.abierta === k ? null : k; pintarPanel(); document.querySelector(`[data-abrir="${k}"]`)?.focus(); return; }
+  const tx = e.target.closest('[data-texto]');
+  if (tx) { irACita(tx.dataset.texto); return; }
+  if (e.target.closest('#ver-comprobado')) { S.verComprobado = !S.verComprobado; pintarPanel(); $('#ver-comprobado')?.focus(); return; }
+  if (e.target.closest('#ver-verificadas')) { S.verVerificadas = !S.verVerificadas; pintarPanel(); $('#ver-verificadas')?.focus(); return; }
+  if (e.target.closest('#abrir-indice')) { const ab = $('#indice-col').classList.toggle('abierto'); $('#abrir-indice').setAttribute('aria-expanded', String(ab)); return; }
+  if (e.target.closest('#abrir-panel')) { abrirPanelMovil(); return; }
+  if (e.target.closest('#cerrar-panel') || e.target.closest('#velo')) { cerrarPanelMovil(); $('#abrir-panel').focus(); return; }
+  if (e.target.closest('#pedir')) { $('#dlg-form').reset(); $('#dlg').showModal(); return; }
+  if (e.target.closest('#dlg-cancelar')) { $('#dlg').close(); return; }
+  if (!e.target.closest('#pop') && !$('#pop').hidden) cerrarPop();
+  if (!e.target.closest('#indice-col')) cerrarIndice();
+});
+document.addEventListener('keydown', (e) => {
+  const cita = e.target.closest?.('.cita');
+  if (cita && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); cita.click(); return; }
+  if (e.key !== 'Escape') return;
+  if (!$('#pop').hidden) cerrarPop();
+  else if ($('#indice-col').classList.contains('abierto')) { cerrarIndice(); $('#abrir-indice').focus(); }
+  else if ($('#panel').classList.contains('abierto')) { cerrarPanelMovil(); $('#abrir-panel').focus(); }
+});
+$('#plantilla').addEventListener('change', (e) => { S.plantilla = e.target.checked; $('#doc-col').classList.toggle('con-plantilla', S.plantilla); });
+$('#dlg-form').addEventListener('submit', (e) => {
+  const accion = new FormData(e.target).get('accion');
+  const instr = $('#instr').value.trim();
+  if (!accion || !instr) { e.preventDefault(); (accion ? $('#instr') : document.querySelector('input[name=accion]')).focus(); }
+});
+document.querySelectorAll('input[name=esc]').forEach((r) => r.addEventListener('change', () => { S.escenario = r.value; S.verVerificadas = false; S.revisados = new Set(); S.abierta = null; pintarTodo(); }));
+document.querySelectorAll('input[name=panel]').forEach((r) => r.addEventListener('change', () => { S.panel = r.value; S.abierta = null; pintarPanel(); }));
+let pendiente = false;
+addEventListener('scroll', () => { if (pendiente) return; pendiente = true; requestAnimationFrame(() => { pendiente = false; espiar(); colocarPop(); }); }, { passive: true });
+addEventListener('resize', () => { colocarPop(); if (innerWidth >= 1024) cerrarPanelMovil(); });
+
+pintarTodo();
+
+if (new URLSearchParams(location.search).has('revisar')) {
+  const fallas = [];
+  const raiz = document.documentElement;
+  if (raiz.scrollWidth > raiz.clientWidth + 1) fallas.push(`página: scrollWidth ${raiz.scrollWidth} > ${raiz.clientWidth}`);
+  for (const el of document.querySelectorAll('body *')) {
+    if (el.id === 'paginas' || el.closest('.tabla-caja[tabindex], .solo-lectura, .escenario, dialog, #informe-revision, .item .texto small, .doc-actual')) continue;
+    const st = getComputedStyle(el);
+    if (st.display === 'none' || st.display === 'inline' || st.visibility === 'hidden' || st.textOverflow === 'ellipsis') continue;
+    if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) { fallas.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${[...el.classList].join('.')}: ${el.scrollWidth} > ${el.clientWidth}`); el.classList.add('revision-mal'); }
+  }
+  const out = document.createElement('pre');
+  out.id = 'informe-revision';
+  out.textContent = `ancho ${innerWidth}px · desbordes: ${fallas.length}\n${fallas.slice(0, 12).join('\n')}`;
+  document.body.append(out);
+}
+</script>
+</body>
+</html>

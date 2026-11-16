@@ -1,4 +1,4 @@
-.barra { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 0.75rem; padding: 0 1.5rem; height: 3.5rem; background: var(--tinta); color: #e8eef0; }
+.barra { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 0.75rem; padding: 0 1.5rem; height: 3.5rem; background: var(--tinta); color: #e8eef0; }
 .marca { display: flex; align-items: center; gap: 0.6rem; color: inherit; text-decoration: none; }
 .marca img { width: 1.9rem; height: 1.9rem; border-radius: 22%; box-shadow: 0 0 0 1px #3a4d58; }
 .marca b { font-weight: 600; font-size: 1.08rem; letter-spacing: 0.01em; }
@@ -31,7 +31,7 @@ a.paso-enlace:hover b { text-decoration: underline; }
 .paso .marca-paso { position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 1.3rem; height: 1.3rem; border: 2px solid var(--linea); border-radius: 50%; background: var(--fondo); font-size: 0.72rem; font-weight: 600; color: var(--suave); }
 .paso.hecho .marca-paso { background: var(--acento); border-color: var(--acento); color: #fff; }
 .paso.actual .marca-paso { border-color: var(--acento); background: #fff; color: var(--acento); }
-.paso.decide.actual .marca-paso { border-color: var(--sello); color: var(--sello); }
+.paso.decide.actual .marca-paso, .paso.disponible.decide .marca-paso { border-color: var(--sello); color: var(--sello); }
 .paso b { display: block; padding-right: 1rem; font-weight: 600; }
 .paso small { display: block; padding-right: 1rem; color: var(--suave); font-size: 0.86rem; }
 .paso.bloqueado b { color: var(--suave); font-weight: 500; }
@@ -42,7 +42,7 @@ a.paso-enlace:hover b { text-decoration: underline; }
 .btn.cargando { cursor: progress; opacity: 0.85; }
 .btn.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
 .btn.primario:hover:not(:disabled, [aria-disabled=true]) { background: var(--acento-2); border-color: var(--acento-2); }
-.btn.sello { background: var(--sello); border-color: var(--sello); color: #fff; }
+.btn.sello { background: var(--sello); border-color: var(--sello); color: #fff; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 6px 16px -8px rgba(122, 38, 52, 0.7); }
 .btn.sello:hover:not(:disabled, [aria-disabled=true]) { background: var(--sello-2); border-color: var(--sello-2); }
 .btn.peligro { background: var(--mal); border-color: var(--mal); color: #fff; }
 .btn.peligro:hover:not(:disabled, [aria-disabled=true]) { background: #8a2018; border-color: #8a2018; }

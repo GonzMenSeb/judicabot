@@ -4,7 +4,7 @@ Importar siempre desde `../../ui` (barrel `src/ui/index.ts`), `../../estado` y `
 
 ## Reglas del shell (obligatorias)
 
-1. **Un solo `<main>`.** El shell (`rutas/Shell.tsx`) renderiza `<main id="contenido" class="lienzo" tabIndex={-1}>` (max 1180 px, padding inferior de 7rem para barras fijas). Las vistas renderizan un `<div data-vista="nombre">` (o `<section>`) como raíz y **nunca** `<main>`.
+1. **Un solo `<main>`.** El shell (`rutas/Shell.tsx`) renderiza `<main id="contenido" class="lienzo" tabIndex={-1}>` (max 1180 px, o 1480 px con la clase `lienzo-ancho` que el shell añade solo en la vista Borrador; padding inferior de 7rem para barras fijas). Las vistas renderizan un `<div data-vista="nombre">` (o `<section>`) como raíz y **nunca** `<main>`.
 2. **Sin anclas hash para saltos internos.** `href="#seccion"` lo lee el router como ruta y vuelve a Inicio. Para saltar dentro de la página usar `<button>` + `elemento.scrollIntoView()`.
 3. **Foco y título.** Al navegar, el shell mueve el foco a `<main>`, sube al inicio y pone `document.title` por vista ("Borrador · caso-7 · Judicabot"). Para un título propio: `useTitulo("Borrador · Quintero c. EPS")` (de `../../estado`); el shell agrega " · Judicabot".
 4. **Transición sin animación.** Mientras carga el chunk de la vista siguiente se sigue mostrando la anterior (`<main aria-busy="true">`); no hay fundidos ni deslizamientos.

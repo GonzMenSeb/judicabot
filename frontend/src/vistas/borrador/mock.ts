@@ -44,7 +44,7 @@ const citas: CitaVista[] = [
     fuente: "sentencia T-999 de 2019",
     cobertura: 0,
     estado: "rechazada",
-    detalle: "No aparece en el dataset de la Corte Constitucional; Quite la cita o reemplácela por una verificable.",
+    detalle: "No aparece en el dataset de la Corte Constitucional.; Quite la cita o reemplácela por una verificable.",
   },
 ];
 
@@ -306,12 +306,17 @@ export const ESTADO_BORRADOR: EstadoCaso = {
       { nodo: "consideraciones", intento: 1, proveedor: "anthropic", modelo_pedido: "claude-sonnet-5-5", modelo_efectivo: "claude-sonnet-5-5" },
     ],
     alertas: {
-      ingesta: ["El documento 009.pdf tiene 2 páginas sin texto."],
+      ingesta: [
+        "1a-007 007_007RespuestaEPSHorizonteSaludSAS_ContestacionTutela_Radicado2026-00412_Anexos.pdf: texto truncado a 120000 caracteres para el LLM.",
+        "1a-002 002_002EscritoTutelaQuinteroBedoya.pdf (escrito_tutela): páginas sin texto legible: 3, 4.",
+      ],
       apertura: [
         "ALERTA: Jev lee el sentido del fallo como 'niega' (97 %) y la cláusula decision_a_quo ('declaró improcedente la acción de tutela') como 'improcedente' (91 %); verifique decision_a_quo.",
+        "ALERTA: antecedentes: tiene 1202 palabras, por encima del máximo esperado (510 a 1140).",
+        "ALERTA: En metadatos, campo accionadas, la ingesta extrajo ['EPS HORIZONTE SALUD S.A.S.', 'SUPERINTENDENCIA NACIONAL DE SALUD'] y el modelo leyó ['EPS Horizonte Salud S.A.S.', 'Superintendencia Nacional de Salud – Supersalud']; se conserva el de la ingesta, verifique cuál es correcto.",
       ],
       consideraciones: [
-        "ALERTA: La cita sentencia T-999 de 2019 no se encontró en el dataset de la Corte Constitucional.",
+        "BLOQUEA: La cita c3 (sentencia T-999 de 2019) fue rechazada: no aparece en el dataset de la Corte Constitucional.",
       ],
     },
   },
