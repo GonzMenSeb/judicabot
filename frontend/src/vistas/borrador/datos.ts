@@ -150,9 +150,11 @@ export function filasJev(jev: JevMetadatos | null | undefined, md: MetadatosCaso
 
 function normalizarAlertas(alertas: AlertasApi | null | undefined): [string, string][] {
   if (!alertas) return [];
-  if (Array.isArray(alertas)) return alertas.map((m) => ["ingesta", m]);
+  if (Array.isArray(alertas)) return alertas.filter((m) => m !== null && m !== undefined).map((m): [string, string] => ["ingesta", String(m)]);
   return Object.entries(alertas).flatMap(([nodo, mensajes]) =>
-    Array.isArray(mensajes) ? mensajes.map((m): [string, string] => [nodo, m]) : [],
+    (Array.isArray(mensajes) ? mensajes : [mensajes])
+      .filter((m): m is string => m !== null && m !== undefined && m !== "")
+      .map((m): [string, string] => [nodo, String(m)]),
   );
 }
 
@@ -185,7 +187,7 @@ export const dividirMotivos = (detalle: string | null): string[] =>
   (detalle ?? "").split(/(?<=\.);\s+/).filter((m) => m.trim() !== "");
 
 function valoresPython(texto: string): string[] {
-  const valores = [...texto.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2] ?? "");
+  const valores = [...texto.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)].map((m) => (m[1] ?? m[2] ?? "").replace(/\\(.)/g, "$1"));
   return valores.length > 0 ? valores : [texto];
 }
 
@@ -281,8 +283,10 @@ export function marcasDelIndice(vista: Vista): Record<string, MarcaIndice> {
   const estados = new Map(vista.citas.map((c) => [c.id, c.estado]));
   const marcas: Record<string, MarcaIndice> = {};
   let subtitulo: string | null = null;
-  const marcar = (clave: string | null, estado: CitaVista["estado"]) => {
-    if (!clave) return;
+  const contadas = new Set<string>();
+  const marcar = (clave: string | null, estado: CitaVista["estado"], citaId: string) => {
+    if (!clave || contadas.has(`${clave}\0${citaId}`)) return;
+    contadas.add(`${clave}\0${citaId}`);
     const marca = (marcas[clave] ??= { n: 0, mal: false });
     marca.n += 1;
     marca.mal ||= estado === "rechazada";
@@ -293,9 +297,9 @@ export function marcasDelIndice(vista: Vista): Record<string, MarcaIndice> {
       if (bloque.tipo === "encabezado" && bloque.seccion) subtitulo = bloque.id;
       for (const segmento of bloque.segmentos) {
         const estado = segmento.cita_id ? estados.get(segmento.cita_id) : undefined;
-        if (!estado || estado === "verificada") continue;
-        marcar(bloque.seccion, estado);
-        marcar(subtitulo, estado);
+        if (!segmento.cita_id || !estado || estado === "verificada") continue;
+        marcar(bloque.seccion, estado, segmento.cita_id);
+        marcar(subtitulo, estado, segmento.cita_id);
       }
     }
   }
@@ -342,7 +346,7 @@ export function construirRevision(
   normalizarAlertas(alertas).forEach(([nodo, mensaje], i) => {
     const bloquea = /^BLOQUEA:\s*/.test(mensaje);
     const texto = mensaje.replace(/^(ALERTA|BLOQUEA):\s*/, "");
-    const rechazo = /^La cita (\S+) \(/.exec(texto);
+    const rechazo = /^La cita (\S+) \(.*\) (?:fue rechazada|requiere revisión):/.exec(texto);
     if (rechazo?.[1] && idsCitas.has(rechazo[1])) return;
     if (jev.length > 0 && /^Jev lee /.test(texto)) return;
     items.push({ clave: `alerta-${nodo}-${i}`, ...humanizarAlerta(nodo, texto, bloquea), cita: null });

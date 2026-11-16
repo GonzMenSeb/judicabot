@@ -82,7 +82,7 @@ async function abrir() {
   return vista;
 }
 
-const panel = () => screen.getByRole("complementary", { name: "Antes de decidir" });
+const panel = () => document.getElementById("bor-panel") as HTMLElement;
 const indice = () => screen.getByRole("navigation", { name: "Contenido del borrador" });
 const hoja = () => screen.getByRole("article", { name: /Borrador del fallo/ });
 const resumenPanel = () => panel().querySelector(".bor-panel-resumen")?.textContent ?? "";
@@ -93,7 +93,7 @@ const marcaRevisado = (titulo: string) => within(panel()).getByRole("button", { 
 async function abrirDetalleEnTexto(titulo: RegExp, popover: string) {
   fireEvent.click(filaDe(titulo));
   fireEvent.click(within(panel()).getByRole("button", { name: /Ver en el texto/ }));
-  return await screen.findByRole("region", { name: popover });
+  return await screen.findByRole("dialog", { name: popover });
 }
 
 beforeEach(() => {
@@ -357,7 +357,7 @@ describe("Borrador con fallos", () => {
     simularRed({ vista });
     await abrir();
     fireEvent.click(citaEnTexto(/T-999/));
-    const popover = await screen.findByRole("region", { name: "c3" });
+    const popover = await screen.findByRole("dialog", { name: "c3" });
     expect(within(popover).getByText("—")).toBeTruthy();
   });
 });
@@ -458,7 +458,7 @@ describe("Borrador interacción", () => {
     const cita = citaEnTexto(/SU-508/);
     cita.focus();
     fireEvent.click(cita);
-    const popover = await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    const popover = await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     expect(within(popover).getByText("Con alerta", { selector: ".chip" })).toBeTruthy();
     expect(within(popover).getAllByText(/71\s*%/).length).toBeGreaterThan(0);
     expect(within(popover).getByRole("listitem").textContent).toMatch(/Compare con la relatoría/);
@@ -466,7 +466,7 @@ describe("Borrador interacción", () => {
     expect(cita.getAttribute("aria-controls")).toBe("bor-detalle");
     await waitFor(() => expect(document.activeElement).toBe(within(popover).getByRole("heading")));
     fireEvent.click(within(popover).getByRole("button", { name: "Cerrar" }));
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
     expect(document.activeElement).toBe(cita);
   });
 
@@ -476,15 +476,15 @@ describe("Borrador interacción", () => {
     const cita = citaEnTexto(/SU-508/);
     cita.focus();
     fireEvent.keyDown(cita, { key: "Enter" });
-    const popover = await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    const popover = await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     await waitFor(() => expect(document.activeElement).toBe(within(popover).getByRole("heading")));
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
     expect(document.activeElement).toBe(cita);
     fireEvent.keyDown(cita, { key: " " });
-    expect(await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeTruthy();
     fireEvent.keyDown(cita, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
   });
 
   it("volver a pulsar la cita o hacer clic fuera cierra el detalle", async () => {
@@ -492,21 +492,21 @@ describe("Borrador interacción", () => {
     await abrir();
     const cita = citaEnTexto(/SU-508/);
     fireEvent.click(cita);
-    await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     fireEvent.click(cita);
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
 
     fireEvent.click(cita);
-    await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     fireEvent.click(screen.getByRole("heading", { level: 3, name: /ASUNTO/ }));
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
   });
 
   it("enlaza a la relatoría solo cuando la cita verificada trae URL", async () => {
     simularRed();
     await abrir();
     fireEvent.click(citaEnTexto(/sentencia T-760 de 2008/));
-    const popover = await screen.findByRole("region", { name: /Sentencia T-760 de 2008/ });
+    const popover = await screen.findByRole("dialog", { name: /Sentencia T-760 de 2008/ });
     const enlace = within(popover).getByRole("link", { name: /Abrir en la relatoría.*pestaña nueva/ });
     expect(enlace.getAttribute("href")).toBe("https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm");
     expect(enlace.getAttribute("target")).toBe("_blank");
@@ -514,7 +514,7 @@ describe("Borrador interacción", () => {
     fireEvent.click(within(popover).getByRole("button", { name: "Cerrar" }));
 
     fireEvent.click(citaEnTexto(/SU-508/));
-    const otro = await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    const otro = await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     expect(within(otro).queryByRole("link")).toBeNull();
   });
 
@@ -614,9 +614,9 @@ describe("Borrador interacción", () => {
     await abrir();
     fireEvent.click(screen.getByRole("button", { name: /^Revisión/ }));
     fireEvent.click(citaEnTexto(/SU-508/));
-    await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Sentencia SU-508 de 2020" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Sentencia SU-508 de 2020" })).toBeNull();
     expect(panel().classList.contains("abierto")).toBe(true);
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(panel().classList.contains("abierto")).toBe(false);
@@ -630,6 +630,32 @@ describe("Borrador interacción", () => {
     expect(panel().classList.contains("abierto")).toBe(false);
   });
 
+  it("el cajón abierto es un diálogo modal que contiene el foco con Tab", async () => {
+    simularRed();
+    await abrir();
+    expect(panel().getAttribute("role")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Revisión/ }));
+    expect(panel().getAttribute("role")).toBe("dialog");
+    expect(panel().getAttribute("aria-modal")).toBe("true");
+    const cerrar = within(panel()).getByRole("button", { name: "Cerrar la revisión" });
+    await waitFor(() => expect(document.activeElement).toBe(cerrar));
+    fireEvent.keyDown(cerrar, { key: "Tab", shiftKey: true });
+    const foco = Array.from(panel().querySelectorAll<HTMLElement>("button:not([disabled]), a[href]"));
+    expect(document.activeElement).toBe(foco[foco.length - 1]);
+    fireEvent.keyDown(document.activeElement as Element, { key: "Tab" });
+    expect(document.activeElement).toBe(foco[0]);
+  });
+
+  it("el índice móvil recibe el foco al abrirse y lo devuelve al botón al elegir", async () => {
+    simularRed();
+    await abrir();
+    const boton = screen.getByRole("button", { name: "Contenido" });
+    fireEvent.click(boton);
+    await waitFor(() => expect(indice().contains(document.activeElement)).toBe(true));
+    fireEvent.click(document.activeElement as Element);
+    expect(document.activeElement).toBe(boton);
+  });
+
   it("«Ver en el texto» cierra el cajón", async () => {
     simularRed();
     await abrir();
@@ -638,7 +664,7 @@ describe("Borrador interacción", () => {
     fireEvent.click(filaDe(/Sentencia SU-508 de 2020/));
     fireEvent.click(within(panel()).getByRole("button", { name: /Ver en el texto/ }));
     expect(panel().classList.contains("abierto")).toBe(false);
-    await screen.findByRole("region", { name: "Sentencia SU-508 de 2020" });
+    await screen.findByRole("dialog", { name: "Sentencia SU-508 de 2020" });
   });
 
   it("enlaza a la decisión desde la barra inferior", async () => {

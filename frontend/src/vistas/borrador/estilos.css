@@ -1,4 +1,6 @@
-.borrador { --bor-dock: 4.75rem; display: block; }
+html:has(.borrador) { scroll-padding-top: 8rem; scroll-padding-bottom: calc(var(--bor-dock) + 1rem); }
+html:has(.borrador), .borrador { --bor-dock: 4.75rem; }
+.borrador { display: block; }
 .bor-cabeza { margin-bottom: 1.4rem; }
 .bor-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 1.25rem; margin-top: 0.35rem; color: var(--suave); font-size: 0.92rem; }
 .bor-meta span { display: inline-flex; align-items: center; gap: 0.4rem; }
@@ -38,10 +40,11 @@
 }
 
 @media (max-width: 760px) {
-  .borrador { --bor-dock: 7.2rem; padding-bottom: 2rem; }
+  html:has(.borrador), .borrador { --bor-dock: 7.2rem; }
+  .borrador { padding-bottom: 2rem; }
   .bor-cabeza .titulo { font-size: 1.3rem; }
   .bor-doc-actual { display: none; }
-  .bor-doc-barra { justify-content: space-between; }
+  .bor-interruptor { margin-left: auto; }
   .bor-txt-largo, .bor-muestra { display: none; }
 }
 

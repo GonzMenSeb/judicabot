@@ -254,8 +254,15 @@ export default function Borrador({ caso }: PropsVista) {
     return () => window.removeEventListener("resize", alRedimensionar);
   }, [panelAbierto, indiceAbierto]);
 
+  useEffect(() => {
+    if (!indiceAbierto) return;
+    const lista = document.querySelectorAll<HTMLElement>("#bor-indice .bor-indice-lista button");
+    (Array.from(lista).find((b) => b.getAttribute("aria-current") === "location") ?? lista[0])?.focus({ preventScroll: true });
+  }, [indiceAbierto]);
+
   const alSeccion = useCallback((id: string) => {
     setIndiceAbierto(false);
+    if (window.innerWidth < 1280) botonIndice.current?.focus({ preventScroll: true });
     irA(document.getElementById(`b-${id}`));
   }, []);
 

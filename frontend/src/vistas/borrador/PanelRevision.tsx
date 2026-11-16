@@ -229,6 +229,22 @@ export function PanelRevision({
 }: PropsPanelRevision) {
   const [verComprobado, setVerComprobado] = useState(false);
   const cuerpo = useRef<HTMLDivElement>(null);
+  const aside = useRef<HTMLElement>(null);
+
+  const contenerFoco = (e: KeyboardEvent) => {
+    if (e.key !== "Tab") return;
+    const foco = Array.from(aside.current?.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])") ?? []);
+    const primero = foco[0];
+    const ultimo = foco[foco.length - 1];
+    if (!primero || !ultimo) return;
+    if (e.shiftKey && document.activeElement === primero) {
+      e.preventDefault();
+      ultimo.focus();
+    } else if (!e.shiftKey && document.activeElement === ultimo) {
+      e.preventDefault();
+      primero.focus();
+    }
+  };
 
   const pendientes = NIVELES.flatMap((nivel) => items.filter((i) => i.nivel === nivel.id));
   const comprobados = items.filter((i) => i.nivel === "ok");
@@ -254,7 +270,15 @@ export function PanelRevision({
   );
 
   return (
-    <aside id="bor-panel" class={cx("bor-panel", abiertoMovil && "abierto")} aria-labelledby="bor-panel-titulo">
+    <aside
+      id="bor-panel"
+      ref={aside}
+      class={cx("bor-panel", abiertoMovil && "abierto")}
+      role={abiertoMovil ? "dialog" : undefined}
+      aria-modal={abiertoMovil ? true : undefined}
+      aria-labelledby="bor-panel-titulo"
+      onKeyDown={abiertoMovil ? contenerFoco : undefined}
+    >
       <div class="bor-panel-cabeza">
         <div class="bor-panel-cabeza-fila">
           <div>

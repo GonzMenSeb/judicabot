@@ -103,6 +103,7 @@ export function PopoverCita({ cita, motivos, ancla, contenedor, titulo, onCerrar
   return (
     <section
       id="bor-detalle"
+      role="dialog"
       ref={caja}
       class={arriba ? "bor-pop arriba" : "bor-pop"}
       aria-labelledby="bor-detalle-titulo"

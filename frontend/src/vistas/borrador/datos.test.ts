@@ -236,6 +236,16 @@ describe("seccionesDeCitas y marcasDelIndice", () => {
     });
   });
 
+  it("cuenta cada cita una sola vez aunque aparezca en varios segmentos de la sección", () => {
+    const vista = structuredClone(VISTA_BORRADOR);
+    for (const p of vista.paginas)
+      for (const b of p.bloques) {
+        const i = b.segmentos.findIndex((s) => s.cita_id === "c2");
+        if (i >= 0) b.segmentos.splice(i, 0, { ...b.segmentos[i]! });
+      }
+    expect(marcasDelIndice(vista)).toEqual(marcasDelIndice(VISTA_BORRADOR));
+  });
+
   it("sin citas por revisar no hay marcas", () => {
     const vista = { ...VISTA_BORRADOR, citas: VISTA_BORRADOR.citas.map((c): CitaVista => ({ ...c, estado: "verificada" })) };
     expect(marcasDelIndice(vista)).toEqual({});
@@ -289,7 +299,7 @@ describe("construirRevision", () => {
     });
     const c2 = items.find((i) => i.clave === "cita-c2");
     expect(c2?.linea).toBe("La cobertura del fragmento citado es 71 %. Compare con la relatoría antes de firmar.");
-    expect(items.find((i) => i.clave === "cita-c3")?.linea).toBe("No aparece en el dataset de la Corte Constitucional; Quite la cita o reemplácela por una verificable.");
+    expect(items.find((i) => i.clave === "cita-c3")?.linea).toBe("No aparece en el dataset de la Corte Constitucional.");
   });
 
   it("cita sin motivos usa la etiqueta del estado y sin fuente usa el id", () => {
@@ -347,6 +357,25 @@ describe("construirRevision", () => {
     expect(construirRevision([], undefined, [], {})).toEqual([]);
     expect(construirRevision([], {}, [], {})).toEqual([]);
     expect(construirRevision([], null, [], {})).toEqual([]);
+  });
+});
+
+describe("construirRevision, alertas", () => {
+  const citas = VISTA_BORRADOR.citas;
+  const claves = (a: unknown) => construirRevision(citas, a as never, [], {}).filter((i) => i.clave.startsWith("alerta-"));
+
+  it("pliega solo los avisos de cita rechazada o por revisar", () => {
+    expect(claves({ consideraciones: ["BLOQUEA: La cita c3 (sentencia T-999 de 2019) fue rechazada: no aparece.", "ALERTA: La cita c2 (SU-508) requiere revisión: baja."] })).toEqual([]);
+  });
+
+  it("conserva el aviso de cita sin marcador", () => {
+    expect(claves({ consideraciones: ["BLOQUEA: La cita c1 (T-760 de 2008) no se usa en ningún marcador del texto."] })).toHaveLength(1);
+  });
+
+  it("acepta un texto suelto por nodo y no falla con elementos nulos", () => {
+    expect(claves({ apertura: "ALERTA: algo pasó" })).toHaveLength(1);
+    expect(claves({ apertura: ["ALERTA: algo pasó", null, 3] })).toHaveLength(2);
+    expect(claves(["ALERTA: uno", null])).toHaveLength(1);
   });
 });
 

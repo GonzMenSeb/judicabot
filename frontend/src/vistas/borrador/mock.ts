@@ -44,7 +44,7 @@ const citas: CitaVista[] = [
     fuente: "sentencia T-999 de 2019",
     cobertura: 0,
     estado: "rechazada",
-    detalle: "No aparece en el dataset de la Corte Constitucional; Quite la cita o reemplácela por una verificable.",
+    detalle: "No aparece en el dataset de la Corte Constitucional.; Quite la cita o reemplácela por una verificable.",
   },
 ];
 

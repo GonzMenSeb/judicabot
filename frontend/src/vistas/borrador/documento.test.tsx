@@ -141,7 +141,7 @@ function Montado({ cita, motivos = [], onCerrar = () => {}, enfocar = false }: {
 describe("PopoverCita", () => {
   it("es una región con el nombre de la fuente en mayúscula inicial y id bor-detalle", () => {
     render(<Montado cita={{ ...CITAS[0]!, fuente: "sentencia T-123 de 2020" }} />);
-    const region = screen.getByRole("region", { name: "Sentencia T-123 de 2020" });
+    const region = screen.getByRole("dialog", { name: "Sentencia T-123 de 2020" });
     expect(region.id).toBe("bor-detalle");
     expect(within(region).getByRole("heading", { level: 3 }).getAttribute("tabindex")).toBe("-1");
     expect(within(region).getByText("Verificada")).toBeTruthy();
@@ -159,7 +159,7 @@ describe("PopoverCita", () => {
     const fuera = vi.fn();
     document.addEventListener("keydown", fuera);
     render(<Montado cita={CITAS[0]!} onCerrar={onCerrar} />);
-    fireEvent.keyDown(screen.getByRole("region"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onCerrar).toHaveBeenCalledTimes(1);
     expect(fuera).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
@@ -192,7 +192,7 @@ describe("PopoverCita", () => {
 
   it("cobertura null muestra — y fuente vacía cae al id", () => {
     render(<Montado cita={CITAS[2]!} />);
-    expect(screen.getByRole("region", { name: "c3" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "c3" })).toBeTruthy();
     expect(screen.getByText("—")).toBeTruthy();
   });
 });

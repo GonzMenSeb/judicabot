@@ -1,4 +1,4 @@
-.bor-panel { position: sticky; top: 4.5rem; align-self: start; display: flex; flex-direction: column; max-height: calc(100vh - 3.5rem - var(--bor-dock, 4.75rem) - 2rem); min-width: 0; overflow: hidden; background: #fff; border: 1px solid var(--linea); border-radius: 14px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 14px 34px -24px rgba(29, 42, 51, 0.45); }
+.bor-panel { position: sticky; top: 4.5rem; display: flex; flex-direction: column; max-height: calc(100vh - 3.5rem - var(--bor-dock, 4.75rem) - 2rem); min-width: 0; overflow: hidden; background: #fff; border: 1px solid var(--linea); border-radius: 14px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 14px 34px -24px rgba(29, 42, 51, 0.45); }
 .bor-panel-cabeza { flex: none; padding: 1.1rem 1.2rem 1rem; border-bottom: 1px solid #dfe5e8; }
 .bor-panel-cabeza-fila { display: flex; align-items: flex-start; gap: 0.75rem; }
 .bor-panel-cabeza-fila > div { flex: 1; min-width: 0; }
