@@ -135,7 +135,7 @@ export default function InteligenciaArtificial() {
     <>
       <Migas items={MIGAS} />
       <h1 class="titulo">Inteligencia artificial</h1>
-      <p class="sub ia-intro">Qué modelo redacta los borradores y con qué clave.</p>
+      <p class="sub ia-intro">Qué modelo redacta los borradores, con qué clave y cómo se verifican las citas.</p>
     </>
   );
 
@@ -262,6 +262,33 @@ export default function InteligenciaArtificial() {
               />
             </div>
           )}
+        </section>
+
+        <section class="ia-sec" aria-labelledby="ia-extension-t">
+          <h2 id="ia-extension-t">Extensión de la relatoría</h2>
+          <p class="sub">La relatoría de la Corte Constitucional rechaza las consultas de este servidor. La extensión las hace desde un navegador en Colombia para verificar las citas.</p>
+          <Boton href="/api/extension/zip" download="">
+            Descargar extensión (.zip)
+          </Boton>
+          <ol class="ia-pasos" aria-label="Pasos para instalar la extensión">
+            <li>
+              Descomprima el archivo descargado. Adentro queda una carpeta llamada <code>judicabot-relatoria</code>.
+            </li>
+            <li>
+              En Chrome abra <code>chrome://extensions</code>; en Edge, <code>edge://extensions</code>.
+            </li>
+            <li>Active «Modo de desarrollador».</li>
+            <li>
+              Pulse «Cargar descomprimida» y elija la carpeta <code>judicabot-relatoria</code> (la que contiene <code>manifest.json</code>).
+            </li>
+            <li>
+              Abra la extensión desde el botón de extensiones del navegador. En «Servidor» debe quedar <code>{location.origin}</code>; escriba la contraseña de judicabot y pulse «Conectar». Debe aparecer «Conectada».
+            </li>
+            <li>Deje ese navegador abierto. Si se cierra, las citas que el servidor no pueda verificar quedan para revisar.</li>
+          </ol>
+          <p class="sub ia-nota-ext">
+            Para actualizarla, descargue el archivo de nuevo, reemplace la carpeta y pulse «Volver a cargar» en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
+          </p>
         </section>
 
         <section class="ia-sec">
