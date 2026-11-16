@@ -51,6 +51,7 @@ class CitaVista(BaseModel):
     cobertura: float | None
     estado: Literal["verificada", "revisar", "rechazada"]
     detalle: str | None
+    url: str | None = None
 
 
 class EntradaIndice(BaseModel):
@@ -264,6 +265,7 @@ def cita_vista(cv, referencia: str) -> dict:
         "cobertura": cv.cobertura,
         "estado": ESTADOS_CITA[cv.estado],
         "detalle": "; ".join(cv.motivos) or None,
+        "url": cv.url if cv.estado == "ok" and cv.url else None,
     }
 
 

@@ -140,6 +140,7 @@ export interface CitaVista {
   cobertura: number | null;
   estado: "verificada" | "revisar" | "rechazada";
   detalle: string | null;
+  url?: string | null;
 }
 
 export interface Vista {

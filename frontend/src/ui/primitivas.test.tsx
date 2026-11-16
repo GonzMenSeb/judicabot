@@ -114,26 +114,30 @@ describe("Pasos", () => {
 });
 
 describe("Topbar", () => {
-  it("enlaza Inicio, Formato e IA y marca la sección actual", () => {
-    render(<Topbar seccion="formato" clave modelo="Sonnet 5.5" />);
+  it("enlaza Inicio y el engranaje de configuración, y marca la sección actual", () => {
+    const { rerender } = render(<Topbar seccion="configuracion" clave />);
     expect(screen.getByRole("link", { name: "Judicabot, ir al inicio" }).getAttribute("href")).toBe("#/");
-    expect(screen.getByRole("link", { name: "Inicio" }).getAttribute("href")).toBe("#/");
-    const formato = screen.getByRole("link", { name: "Formato de documentos" });
-    expect(formato.getAttribute("href")).toBe("#/formato");
-    expect(formato.getAttribute("aria-current")).toBe("page");
-    const ia = screen.getByRole("link", { name: /Inteligencia artificial/ });
-    expect(ia.getAttribute("href")).toBe("#/ia");
-    expect(ia.textContent).toContain("clave lista");
-    expect(ia.textContent).toContain("Sonnet 5.5");
-    expect(ia.querySelector(".punto")?.className).toBe("punto");
+    const inicio = screen.getByRole("link", { name: "Inicio" });
+    expect(inicio.getAttribute("href")).toBe("#/");
+    expect(inicio.getAttribute("aria-current")).toBeNull();
+    const engranaje = screen.getByRole("link", { name: "Configuración" });
+    expect(engranaje.getAttribute("href")).toBe("#/configuracion");
+    expect(engranaje.getAttribute("aria-current")).toBe("page");
+    expect(engranaje.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(engranaje.querySelector(".punto")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Formato de documentos|Inteligencia artificial/ })).toBeNull();
+
+    rerender(<Topbar seccion="inicio" clave />);
+    expect(screen.getByRole("link", { name: "Inicio" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Configuración" }).getAttribute("aria-current")).toBeNull();
   });
 
-  it("indica cuando falta la clave o se desconoce", () => {
+  it("marca el engranaje cuando falta la clave o se desconoce", () => {
     const { rerender } = render(<Topbar clave={false} />);
-    expect(screen.getByRole("link", { name: /Inteligencia artificial/ }).textContent).toContain("falta la clave");
-    expect(document.querySelector(".punto")?.className).toBe("punto mal");
+    const engranaje = screen.getByRole("link", { name: "Configuración, falta la clave" });
+    expect(engranaje.querySelector(".punto")?.className).toBe("punto mal");
     rerender(<Topbar clave={null} />);
-    expect(document.querySelector(".punto")?.className).toBe("punto nulo");
+    expect(screen.getByRole("link", { name: "Configuración, estado de la clave desconocido" }).querySelector(".punto")?.className).toBe("punto nulo");
   });
 });
 

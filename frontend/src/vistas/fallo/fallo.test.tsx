@@ -25,15 +25,25 @@ const ARCHIVOS = [
 const b = (id: string, tipo: Bloque["tipo"], ...segmentos: Bloque["segmentos"]): Bloque => ({ id, tipo, origen: "modelo", seccion: id === "t1" ? "s" : null, segmentos });
 const pie = (n: number): Bloque => b(`pie-${n}`, "pie", { texto: "Pie del juzgado" });
 
+const RELATORIA = "https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm";
+
 const VISTA: Vista = {
   tipo: "fallo",
   sha256: "abc",
   paginas: [
     { bloques: [b("e1", "parrafo", { texto: "JUZGADO DE PRUEBA", negrita: true }), b("t1", "titulo", { texto: "I. ASUNTO" }), b("p1", "parrafo", { texto: "<img src=x onerror=alert(1)> Texto del asunto" }), pie(1)] },
-    { bloques: [b("p2", "parrafo", { texto: "Según " }, { texto: "(sentencia SU-508 de 2020)", cita_id: "c2" }), pie(2)] },
+    {
+      bloques: [
+        b("p2", "parrafo", { texto: "Según " }, { texto: "(sentencia SU-508 de 2020)", cita_id: "c2" }, { texto: " y " }, { texto: "(sentencia T-760 de 2008)", cita_id: "c1" }),
+        pie(2),
+      ],
+    },
     { bloques: [b("p3", "resuelve_numeral", { texto: "PRIMERO: REVOCAR", negrita: true }), pie(3)] },
   ],
-  citas: [{ id: "c2", texto: "x", fuente: "sentencia SU-508 de 2020", cobertura: 0.7, estado: "revisar", detalle: "Cobertura baja" }],
+  citas: [
+    { id: "c2", texto: "x", fuente: "sentencia SU-508 de 2020", cobertura: 0.7, estado: "revisar", detalle: "Cobertura baja" },
+    { id: "c1", texto: "y", fuente: "sentencia T-760 de 2008", cobertura: 1, estado: "verificada", detalle: null, url: RELATORIA },
+  ],
   indice: [{ id: "t1", titulo: "I. ASUNTO" }],
 };
 
@@ -100,6 +110,32 @@ describe("Fallo", () => {
     const cita = container.querySelector(".cita.revisar");
     expect(cita?.getAttribute("title")).toBe("Cobertura baja");
     expect(cita?.textContent).toContain("cita con alerta");
+  });
+
+  it("enlaza a la relatoría las citas verificadas con URL y deja las demás sin enlace", async () => {
+    responder();
+    const { container } = render(<Fallo caso="caso-1" />);
+    await screen.findByText("(sentencia T-760 de 2008)");
+    const enlaces = container.querySelectorAll(".visor a");
+    expect(enlaces.length).toBe(1);
+    const enlace = enlaces[0] as HTMLAnchorElement;
+    expect(enlace.getAttribute("href")).toBe(RELATORIA);
+    expect(enlace.getAttribute("target")).toBe("_blank");
+    expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(enlace.classList.contains("cita")).toBe(true);
+    expect(enlace.textContent).toContain("(sentencia T-760 de 2008)");
+    expect(enlace.textContent).toContain("se abre en una pestaña nueva");
+    expect(container.querySelector(".cita.revisar")?.tagName).toBe("SPAN");
+  });
+
+  it("no enlaza una cita con alerta aunque traiga URL", async () => {
+    const vista = structuredClone(VISTA);
+    vista.citas = vista.citas.map((c) => ({ ...c, url: RELATORIA }));
+    responder({ vista });
+    const { container } = render(<Fallo caso="caso-1" />);
+    await screen.findByText("(sentencia SU-508 de 2020)");
+    expect(container.querySelector(".cita.revisar")?.tagName).toBe("SPAN");
+    expect(container.querySelectorAll(".visor a").length).toBe(1);
   });
 
   it("cambia de página con las flechas y con las miniaturas", async () => {

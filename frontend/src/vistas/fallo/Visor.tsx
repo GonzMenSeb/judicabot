@@ -19,12 +19,19 @@ function Texto({ segmento, citas }: { segmento: Segmento; citas: Citas }) {
   if (segmento.cita_id) {
     const cita = citas.get(segmento.cita_id);
     const estado = cita?.estado ?? "rechazada";
-    nodo = (
-      <span class={cx("cita", estado !== "verificada" && estado)} title={cita?.detalle ?? undefined}>
-        {nodo}
-        {estado !== "verificada" && <span class="solo-lectura">{AVISO_CITA[estado]}</span>}
-      </span>
-    );
+    const aviso = estado !== "verificada" && <span class="solo-lectura">{AVISO_CITA[estado]}</span>;
+    nodo =
+      estado === "verificada" && cita?.url ? (
+        <a class="cita" href={cita.url} target="_blank" rel="noopener noreferrer" title={cita.detalle ?? undefined}>
+          {nodo}
+          <span class="solo-lectura"> (se abre en una pestaña nueva)</span>
+        </a>
+      ) : (
+        <span class={cx("cita", estado !== "verificada" && estado)} title={cita?.detalle ?? undefined}>
+          {nodo}
+          {aviso}
+        </span>
+      );
   }
   return <>{nodo}</>;
 }

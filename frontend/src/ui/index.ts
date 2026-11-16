@@ -13,6 +13,8 @@ export { Hoja } from "./Hoja";
 export type { PropsHoja } from "./Hoja";
 export { Migas } from "./Migas";
 export type { ItemMiga, PropsMigas } from "./Migas";
+export { Panel } from "./Panel";
+export type { ItemPanel, PropsPanel } from "./Panel";
 export { PASOS, Pasos } from "./Pasos";
 export type { EtapaPaso, PropsPasos } from "./Pasos";
 export { Toasts } from "./Toasts";

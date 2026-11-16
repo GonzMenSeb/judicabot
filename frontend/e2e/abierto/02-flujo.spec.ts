@@ -15,7 +15,7 @@ import {
 
 const NOMBRE = "Caso A amparo";
 const comparable = (texto: string) => normalizar(texto);
-const MARCAS_DE_CITA = / \((?:cita con alerta|cita sin verificar)\)/g;
+const MARCAS_DE_CITA = / \((?:cita con alerta|cita sin verificar|se abre en una pestaña nueva)\)/g;
 const ROLES: Record<string, string> = {
   "001.pdf": "acta_reparto_1a",
   "002.pdf": "escrito_tutela",

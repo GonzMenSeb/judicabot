@@ -1,20 +1,22 @@
-import { act, render, screen, waitFor } from "@testing-library/preact";
+import { act, render, screen, waitFor, within } from "@testing-library/preact";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { errorEstadoServidor, estadoServidor, mostrarToast, tituloVista, toasts, useTitulo } from "../estado";
 import { Rutas, mostrada } from "./Rutas";
 import { Shell, seccionDe, tituloDeRuta } from "./Shell";
-import { coincidir, ruta } from "./router";
+import { coincidir, configuracion, ruta, sincronizar } from "./router";
 
 vi.mock("../vistas/inicio", () => ({ default: () => <div data-vista="inicio"><h1>Inicio</h1></div> }));
-vi.mock("../vistas/formato", async () => {
+vi.mock("../vistas/casos", async () => {
   await new Promise((r) => setTimeout(r, 30));
-  return { default: () => <div data-vista="formato"><h1>Formato de documentos</h1></div> };
+  return { default: () => <div data-vista="casos"><h1>Casos</h1></div> };
 });
+vi.mock("../vistas/formato", () => ({ default: () => <div data-vista="formato"><p>Cuerpo del formato</p></div> }));
 vi.mock("../vistas/borrador", () => ({ default: () => <div data-vista="borrador"><h1>Borrador</h1></div> }));
 
 const irA = async (hash: string) => {
   await act(async () => {
-    ruta.value = coincidir(hash);
+    history.replaceState(null, "", hash);
+    sincronizar();
   });
 };
 
@@ -39,7 +41,9 @@ beforeEach(() => {
   toasts.value = [];
   tituloVista.value = null;
   mostrada.value = null;
+  history.replaceState(null, "", "/");
   ruta.value = coincidir("");
+  configuracion.value = null;
   document.title = "";
 });
 
@@ -47,13 +51,14 @@ describe("helpers de ruta", () => {
   it("compone el título por vista", () => {
     expect(tituloDeRuta(coincidir("#/"))).toBe("Judicabot");
     expect(tituloDeRuta(coincidir("#/segunda"))).toBe("Casos de segunda instancia · Judicabot");
-    expect(tituloDeRuta(coincidir("#/formato"))).toBe("Formato de documentos · Judicabot");
     expect(tituloDeRuta(coincidir("#/segunda/c9/decision"))).toBe("Decisión · c9 · Judicabot");
+    expect(tituloDeRuta(coincidir("#/configuracion/formato"))).toBe("Formato de documentos · Configuración · Judicabot");
+    expect(tituloDeRuta({ ...coincidir("#/segunda/c9/decision"), configuracion: "ia" })).toBe("Inteligencia artificial · Configuración · Judicabot");
   });
   it("resalta la sección del menú", () => {
-    expect(seccionDe("ia")).toBe("ia");
-    expect(seccionDe("formato")).toBe("formato");
-    expect(seccionDe("borrador")).toBe("inicio");
+    expect(seccionDe(coincidir("#/configuracion/ia"))).toBe("configuracion");
+    expect(seccionDe(coincidir("#/segunda/c9/borrador"))).toBe("inicio");
+    expect(seccionDe(coincidir("#/"))).toBe("inicio");
   });
 });
 
@@ -63,18 +68,23 @@ describe("Shell", () => {
     expect(await screen.findByRole("heading", { name: "Inicio" })).toBeTruthy();
     expect(document.querySelectorAll("main#contenido")).toHaveLength(1);
     expect(screen.getByRole("banner")).toBeTruthy();
-    const ia = await screen.findByRole("link", { name: /Inteligencia artificial.*clave lista/ });
-    expect(ia.textContent).toContain("Sonnet 5.5");
+    const engranaje = await screen.findByRole("link", { name: "Configuración" });
+    expect(engranaje.getAttribute("href")).toBe("#/configuracion");
+    expect(screen.queryByRole("link", { name: /Inteligencia artificial/ })).toBeNull();
     expect(document.title).toBe("Judicabot");
   });
 
-  it("la barra refleja la clave y el modelo del proveedor activo", async () => {
+  it("el engranaje refleja la clave del proveedor activo", async () => {
     render(<Montaje />);
     await act(async () => {
       estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", modelo: "gemini-4-carbon" } as const;
     });
-    const ia = await screen.findByRole("link", { name: /Inteligencia artificial.*falta la clave/ });
-    expect(ia.textContent).toContain("Gemini 4 Carbon");
+    const engranaje = await screen.findByRole("link", { name: "Configuración, falta la clave" });
+    expect(engranaje.querySelector(".punto")?.className).toBe("punto mal");
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", api_key: false, gemini_key: true, modelo: "gemini-4-carbon" } as const;
+    });
+    expect(screen.getByRole("link", { name: "Configuración" }).querySelector(".punto")).toBeNull();
   });
 
   it("no roba el foco en la primera carga y lo mueve al main al navegar", async () => {
@@ -100,11 +110,11 @@ describe("Shell", () => {
     });
     observador.observe(document.body, { childList: true, subtree: true });
     await act(async () => {
-      ruta.value = coincidir("#/formato");
+      ruta.value = coincidir("#/segunda");
     });
     expect(document.querySelector("main#contenido")?.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByRole("heading", { name: "Inicio" })).toBeTruthy();
-    await screen.findByRole("heading", { name: /Formato/ });
+    await screen.findByRole("heading", { name: "Casos" });
     observador.disconnect();
     expect(vistoCargando).toBe(false);
   });
@@ -132,5 +142,39 @@ describe("Shell", () => {
     });
     expect(region?.textContent).toContain("Guardado");
     expect(document.querySelector(".toasts")).toBe(region);
+  });
+
+  it("abre la configuración sobre la página sin moverla, con su título, y lleva los toasts al panel", async () => {
+    render(<Montaje />);
+    await irA("#/segunda/caso-7/borrador");
+    await screen.findByRole("heading", { name: "Borrador" });
+    await waitFor(() => expect(document.title).toBe("Borrador · caso-7 · Judicabot"));
+    vi.mocked(window.scrollTo).mockClear();
+    const principal = document.querySelector<HTMLElement>("main#contenido")!;
+
+    await irA("#/configuracion/formato");
+    const panel = await screen.findByRole("dialog", { name: "Configuración" });
+    expect(await within(panel).findByText("Cuerpo del formato")).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 1, name: "Formato de documentos" })).toBeTruthy();
+    expect(within(principal).getByRole("heading", { name: "Borrador" })).toBeTruthy();
+    expect(principal.getAttribute("aria-busy")).toBeNull();
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /^Configuración/ }).getAttribute("aria-current")).toBe("page");
+    await waitFor(() => expect(document.title).toBe("Formato de documentos · Configuración · Judicabot"));
+
+    await act(async () => {
+      mostrarToast("Formato guardado", { tipo: "ok", ms: 0 });
+    });
+    const regiones = document.querySelectorAll(".toasts");
+    expect(regiones).toHaveLength(1);
+    expect(panel.contains(regiones[0] ?? null)).toBe(true);
+    expect(regiones[0]?.textContent).toContain("Formato guardado");
+
+    await irA("#/segunda/caso-7/borrador");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(document.querySelectorAll(".toasts")).toHaveLength(1);
+    expect(panel.contains(document.querySelector(".toasts"))).toBe(false);
+    await waitFor(() => expect(document.title).toBe("Borrador · caso-7 · Judicabot"));
   });
 });

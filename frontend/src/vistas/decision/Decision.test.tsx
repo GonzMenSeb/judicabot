@@ -269,7 +269,7 @@ describe("Decisión: clave del proveedor activo", () => {
     await intentarEnviar();
     const aviso = (await screen.findByText(/Falta la clave de la API de Gemini/)).closest(".aviso") as HTMLElement;
     expect(aviso.textContent).toContain("configúrela en Inteligencia artificial");
-    expect(within(aviso).getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/ia");
+    expect(within(aviso).getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/configuracion/ia");
     expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
     expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
   });

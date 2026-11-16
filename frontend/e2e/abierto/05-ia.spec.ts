@@ -3,24 +3,37 @@ import { capturar, expect, test } from "../apoyo";
 
 async function agregarClave(page: Page, seccion: string, etiqueta: string, valor: string): Promise<void> {
   await page.getByRole("region", { name: seccion }).getByRole("button", { name: "Agregar clave" }).click();
-  const dialogo = page.getByRole("dialog");
+  const dialogo = page.getByRole("dialog", { name: /^Agregar la clave/ });
   await dialogo.getByLabel(etiqueta).fill(valor);
   await dialogo.getByRole("button", { name: "Guardar clave" }).click();
   await expect(page.getByRole("region", { name: seccion }).getByText("Hay una clave lista.")).toBeVisible();
 }
 
+const enlaceDeIa = (page: Page) =>
+  page.getByRole("dialog", { name: "Configuración" }).getByRole("navigation", { name: "Secciones de configuración" }).getByRole("link", { name: /Inteligencia artificial/ });
+
 test("ia: cambiar modelo, modo de Jev y avanzadas persiste tras recargar", async ({ page, request }) => {
   await page.goto("/#/ia");
-  await expect(page.getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/#\/configuracion\/ia$/);
+  const panel = page.getByRole("dialog", { name: "Configuración" });
+  await expect(panel.getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
+  const enlaceIa = enlaceDeIa(page);
+  await expect(enlaceIa).toHaveAttribute("aria-current", "page");
+  await expect(enlaceIa).toContainText("Sonnet 5.5");
   await expect(page.getByRole("radio", { name: /^Anthropic/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /^Apagado/ })).toBeChecked();
   const { api_key: conClave } = (await (await request.get("/api/ia")).json()) as { api_key: boolean };
+  const engranaje = page.getByRole("banner").getByRole("link", { name: /^Configuración/ });
   if (!conClave) {
     await expect(page.getByText("Falta la clave de Anthropic")).toBeVisible();
     await expect(page.getByRole("radio", { name: /^Sonnet 5.5/ })).toHaveCount(0);
+    await expect(enlaceIa.locator(".punto")).toHaveClass("punto mal");
+    await expect(engranaje).toHaveAccessibleName("Configuración, falta la clave");
     await agregarClave(page, "Anthropic", "Clave de la API de Anthropic", "sk-ant-e2e-sin-uso");
   }
   await expect(page.getByText("Falta la clave de Anthropic")).toHaveCount(0);
+  await expect(enlaceIa.locator(".punto")).toHaveClass("punto");
+  await expect(engranaje).toHaveAccessibleName("Configuración");
   await expect(page.getByRole("radio", { name: /^Sonnet 5.5/ })).toBeChecked();
   await capturar(page, "17-ia");
 
@@ -46,7 +59,7 @@ test("ia: cambiar modelo, modo de Jev y avanzadas persiste tras recargar", async
   await expect(page.getByRole("combobox", { name: "Esfuerzo de razonamiento" })).toHaveValue("medium");
   await page.getByText("Opciones avanzadas").click();
   await expect(page.getByRole("spinbutton", { name: "Máximo de tokens de salida" })).toHaveValue("32000");
-  await expect(page.getByRole("link", { name: /Opus 5.5/ })).toBeVisible();
+  await expect(enlaceIa).toContainText("Opus 5.5");
   await capturar(page, "18-ia-guardada");
 
   await page.locator("label", { hasText: "Sonnet 5.5" }).click();
@@ -60,7 +73,14 @@ test("ia: cambiar modelo, modo de Jev y avanzadas persiste tras recargar", async
 });
 
 test("ia: con la clave de Gemini aparecen sus modelos y sus niveles, y se puede activar", async ({ page, request }) => {
-  await page.goto("/#/ia");
+  await page.goto("/#/");
+  const engranaje = page.getByRole("banner").getByRole("link", { name: /^Configuración/ });
+  await engranaje.click();
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
+  const enlaceIa = enlaceDeIa(page);
+  await enlaceIa.click();
+  await expect(page).toHaveURL(/#\/configuracion\/ia$/);
+  await expect(page.getByRole("dialog", { name: "Configuración" }).getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
   const gemini = page.getByRole("region", { name: "Gemini (Google)" });
   await expect(gemini.getByText("Con una clave gratuita, Google puede usar lo que se envía")).toBeVisible();
   await expect(gemini.getByRole("radio")).toHaveCount(0);
@@ -68,9 +88,15 @@ test("ia: con la clave de Gemini aparecen sus modelos y sus niveles, y se puede 
   await page.locator("label", { hasText: "Gemini (Google)" }).click();
   await expect(page.getByText("Falta la clave de Gemini (Google)")).toBeVisible();
   await capturar(page, "19-ia-gemini-sin-clave");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(enlaceIa).toContainText("Gemini 4 Argon");
+  await expect(enlaceIa.locator(".punto")).toHaveClass("punto mal");
+  await expect(engranaje).toHaveAccessibleName("Configuración, falta la clave");
 
   await agregarClave(page, "Gemini (Google)", "Clave de la API de Gemini", "AIza-e2e-sin-uso");
   await expect(page.getByText("Falta la clave de Gemini (Google)")).toHaveCount(0);
+  await expect(enlaceIa.locator(".punto")).toHaveClass("punto");
+  await expect(engranaje).toHaveAccessibleName("Configuración");
   await expect(page.getByRole("radio", { name: /^Gemini 4 Argon/ })).toBeChecked();
   const nivel = gemini.getByRole("combobox", { name: "Nivel de razonamiento" });
   await expect(nivel.locator("option")).toHaveText(["Bajo (low)", "Medio (medium)", "Alto (high)"]);
@@ -90,7 +116,9 @@ test("ia: con la clave de Gemini aparecen sus modelos y sus niveles, y se puede 
   await expect(page.getByRole("radio", { name: /^Gemini \(Google\)/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /^Gemini 4 Hydrogen/ })).toBeChecked();
   await expect(nivel).toHaveValue("xhigh");
-  await expect(page.getByRole("link", { name: /Gemini 4 Hydrogen/ })).toBeVisible();
+  await expect(enlaceIa).toContainText("Gemini 4 Hydrogen");
+  await expect(enlaceIa.locator(".punto")).toHaveClass("punto");
+  await expect(engranaje).toHaveAccessibleName("Configuración");
   await capturar(page, "19b-ia-gemini");
 
   await page.locator("label", { hasText: "Anthropic" }).first().click();

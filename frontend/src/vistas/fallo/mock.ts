@@ -33,7 +33,7 @@ const conPie = (n: number, bloques: Bloque[]): PaginaVista => ({
 });
 
 const CITAS: CitaVista[] = [
-  { id: "c1", texto: "la salud tiene doble connotación: derecho fundamental y servicio público esencial", fuente: "sentencia T-760 de 2008", cobertura: 0.98, estado: "verificada", detalle: null },
+  { id: "c1", texto: "la salud tiene doble connotación: derecho fundamental y servicio público esencial", fuente: "sentencia T-760 de 2008", cobertura: 0.98, estado: "verificada", detalle: null, url: "https://www.corteconstitucional.gov.co/relatoria/2008/T-760-08.htm" },
   { id: "c2", texto: "la garantía de continuidad de los tratamientos en curso hace parte del núcleo esencial", fuente: "sentencia SU-508 de 2020", cobertura: 0.71, estado: "revisar", detalle: "La cobertura del fragmento citado es 71 %. Compare con la relatoría antes de firmar." },
   { id: "c3", texto: "la EPS no puede suspender el servicio por trámites internos", fuente: "sentencia T-999 de 2019", cobertura: null, estado: "rechazada", detalle: "No aparece en el dataset de la Corte Constitucional." },
 ];

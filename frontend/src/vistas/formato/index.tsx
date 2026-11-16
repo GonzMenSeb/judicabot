@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { api, ErrorApi, esAbortado } from "../../api";
 import type { CampoFormato, Despacho, FormatoRespuesta } from "../../api/contrato";
 import { mostrarToast } from "../../estado";
-import { Aviso, Boton, Cargando, Dialogo, Migas } from "../../ui";
+import { Aviso, Boton, Cargando, Dialogo } from "../../ui";
 import { Formulario } from "./Formulario";
 import { Previa } from "./Previa";
 import { useGuardiaSalida } from "./guardia";
@@ -69,6 +69,10 @@ export default function Formato() {
   const secciones = useMemo(() => (carga ? agrupar(carga.campos) : []), [carga]);
   const sucio = carga !== null && actual !== null && esSucio(actual, carga.guardado);
   const guardia = useGuardiaSalida(sucio);
+
+  useEffect(() => {
+    if (sucio) document.activeElement?.scrollIntoView?.({ block: "nearest" });
+  }, [sucio]);
 
   useLayoutEffect(() => {
     if (!enfocarError.current || !carga) return;
@@ -152,8 +156,6 @@ export default function Formato() {
   const nErrores = Object.keys(errores.porCampo).length;
   return (
     <div data-vista="formato" data-sucio={sucio ? "" : undefined}>
-      <Migas items={[{ texto: "Inicio", href: "#/" }, { texto: "Formato de documentos" }]} />
-      <h1 class="titulo">Formato de los documentos</h1>
       <p class="sub fmt-intro">Lo que escriba aquí aparece en el fallo, el auto, el oficio y los correos. La vista previa muestra dónde.</p>
       <Aviso class="fmt-aviso">
         <strong>Los cambios aplican solo a casos nuevos.</strong> Cada caso conserva el formato que tenía cuando se creó.
