@@ -67,7 +67,7 @@ Con el proveedor `gemini` el modelo por defecto es `gemini-4-argon` con nivel de
 1. Variable de entorno antes de arrancar: `export GEMINI_API_KEY=AIza...`. El servidor solo lee `GEMINI_API_KEY`: `GOOGLE_API_KEY` no se usa.
 2. Botón de la clave de Gemini en **Inteligencia artificial** (`POST /api/gemini-key`). Se guarda solo en la memoria del proceso: no se escribe a disco, no se devuelve por la API y se pierde al reiniciar el servidor. Solo admite caracteres ASCII visibles, sin espacios ni saltos de línea; una clave de la variable con otros caracteres falla con un mensaje que no la repite.
 
-**Uso de los datos.** Con una clave del nivel gratuito de Google, Google puede usar lo que se envía y las respuestas para mejorar sus productos, incluida la revisión por personas. Para casos reales use una clave de un proyecto de Google Cloud con la facturación activa: en ese caso Google no usa las instrucciones ni las respuestas para mejorar sus productos ([Condiciones adicionales de la API de Gemini](https://aistudio.google.com/docs/terms.md)). La pantalla lo advierte en la sección de Gemini.
+**Uso de los datos.** Con una clave del nivel gratuito de Google, Google puede usar lo que se envía y las respuestas para mejorar sus productos, incluida la revisión por personas. Para casos reales use una clave de un proyecto de Google Cloud con la facturación activa: en ese caso Google no usa las instrucciones ni las respuestas para mejorar sus productos ([Condiciones adicionales de la API de Gemini](https://aistudio.google.com/docs/terms)). La pantalla lo advierte en la sección de Gemini.
 
 ## Jev (segunda opinión, opcional)
 

@@ -418,7 +418,7 @@ describe("Proveedores", () => {
     expect(aviso.textContent).toMatch(/personas pueden revisarlo/);
     expect(aviso.textContent).toMatch(/facturación activa/);
     const enlace = within(aviso).getByRole("link", { name: "Condiciones adicionales de la API de Gemini" });
-    expect(enlace.getAttribute("href")).toBe("https://aistudio.google.com/docs/terms.md");
+    expect(enlace.getAttribute("href")).toBe("https://aistudio.google.com/docs/terms");
   });
 
   it("al agregar la clave de Gemini muestra sus modelos y niveles", async () => {

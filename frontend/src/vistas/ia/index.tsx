@@ -288,7 +288,7 @@ export default function InteligenciaArtificial() {
           <Aviso class="ia-aviso-datos" tipo="alerta" titulo="Con una clave gratuita, Google puede usar lo que se envía">
             Si la clave es del nivel gratuito, Google puede usar el contenido que recibe y las respuestas para mejorar sus productos, y personas pueden revisarlo. Para casos reales use una clave de un
             proyecto de Google Cloud con la facturación activa: con ella Google no usa las instrucciones ni las respuestas para mejorar sus productos (
-            <a href="https://aistudio.google.com/docs/terms.md" target="_blank" rel="noreferrer">
+            <a href="https://aistudio.google.com/docs/terms" target="_blank" rel="noreferrer">
               Condiciones adicionales de la API de Gemini
             </a>
             ).
