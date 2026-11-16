@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { ModoJev, PreferenciasIa } from "../../api/contrato";
-import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje, useTitulo } from "../../estado";
-import { Aviso, Boton, Cargando, Migas } from "../../ui";
+import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje } from "../../estado";
+import { Aviso, Boton, Cargando } from "../../ui";
 import { DATOS_CLAVE, DialogoClave } from "./DialogoClave";
 import type { TipoClave } from "./DialogoClave";
 import { aCuerpo, aFormulario, CAMPOS_AVANZADOS, ESFUERZOS, igual, leerErrorServidor, MAX_REINTENTOS, MAX_TOKENS, validar } from "./formulario";
@@ -10,8 +10,6 @@ import type { CampoForm, ErroresForm, Formulario } from "./formulario";
 import { opcionesModelo, OPCIONES_JEV } from "./modelos";
 import { Tarjetas } from "./Tarjetas";
 import "./estilos.css";
-
-const MIGAS = [{ texto: "Inicio", href: "#/" }, { texto: "Inteligencia artificial" }];
 
 function EstadoClave({ hay, textoSi, textoNo, accion, onAccion }: { hay: boolean; textoSi: string; textoNo: string; accion: [string, string]; onAccion: () => void }) {
   return (
@@ -36,7 +34,6 @@ function MensajeError({ id, texto }: { id: string; texto?: string }) {
 }
 
 export default function InteligenciaArtificial() {
-  useTitulo("Inteligencia artificial");
   const raiz = useRef<HTMLFormElement>(null);
   const [base, setBase] = useState<PreferenciasIa | null>(null);
   const [form, setForm] = useState<Formulario | null>(null);
@@ -131,13 +128,7 @@ export default function InteligenciaArtificial() {
     void cargarEstadoServidor(true);
   };
 
-  const cabecera = (
-    <>
-      <Migas items={MIGAS} />
-      <h1 class="titulo">Inteligencia artificial</h1>
-      <p class="sub ia-intro">Qué modelo redacta los borradores, con qué clave y cómo se verifican las citas.</p>
-    </>
-  );
+  const cabecera = <p class="sub">Qué modelo redacta los borradores y con qué clave.</p>;
 
   if (errorCarga) {
     return (
@@ -262,33 +253,6 @@ export default function InteligenciaArtificial() {
               />
             </div>
           )}
-        </section>
-
-        <section class="ia-sec" aria-labelledby="ia-extension-t">
-          <h2 id="ia-extension-t">Extensión de la relatoría</h2>
-          <p class="sub">La relatoría de la Corte Constitucional rechaza las consultas de este servidor. La extensión las hace desde un navegador en Colombia para verificar las citas.</p>
-          <Boton href="/api/extension/zip" download="">
-            Descargar extensión (.zip)
-          </Boton>
-          <ol class="ia-pasos" aria-label="Pasos para instalar la extensión">
-            <li>
-              Descomprima el archivo descargado y mueva la carpeta <code>judicabot-relatoria</code> que queda adentro a un lugar fijo, por ejemplo Documentos. No la borre: el navegador la usa mientras la extensión esté instalada.
-            </li>
-            <li>
-              En Chrome abra <code>chrome://extensions</code>; en Edge, <code>edge://extensions</code>.
-            </li>
-            <li>Active «Modo de desarrollador».</li>
-            <li>
-              Pulse «Cargar extensión sin empaquetar» (según el navegador puede decir «Cargar descomprimida» o «Cargar desempaquetado») y elija la carpeta <code>judicabot-relatoria</code> (la que contiene <code>manifest.json</code>).
-            </li>
-            <li>
-              Abra la extensión desde el botón de extensiones del navegador. En «Servidor» debe quedar <code>{location.origin}</code>; escriba la contraseña de judicabot y pulse «Conectar». Debe aparecer «Conectada».
-            </li>
-            <li>Deje ese navegador abierto. Si se cierra, las citas que el servidor no pueda verificar quedan para revisar.</li>
-          </ol>
-          <p class="sub ia-nota-ext">
-            Para actualizarla, descargue el archivo de nuevo, descomprímalo y copie el contenido de su carpeta <code>judicabot-relatoria</code> sobre la carpeta que ya instaló, reemplazando los archivos; después pulse el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
-          </p>
         </section>
 
         <section class="ia-sec">

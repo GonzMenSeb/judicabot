@@ -11,6 +11,8 @@ test.describe.configure({ mode: "serial" });
 
 test("formato: editar un campo, guardar y conservar tras recargar", async ({ page, request }) => {
   await page.goto("/#/formato");
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
+  await expect(page.getByRole("dialog", { name: "Configuración" }).getByRole("heading", { name: "Formato de documentos", level: 1 })).toBeVisible();
   const juez = page.getByRole("textbox", { name: "Nombre del juez", exact: true });
   await expect(juez).toHaveValue(JUEZ_ORIGINAL);
   await expect(page.getByRole("region", { name: "Cambios sin guardar" })).toHaveCount(0);
@@ -23,6 +25,7 @@ test("formato: editar un campo, guardar y conservar tras recargar", async ({ pag
   const guardado = (await (await request.get("/api/formato")).json()) as { valores: { juez: string } };
   expect(guardado.valores.juez).toBe(JUEZ_NUEVO);
   await page.reload();
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
   await expect(page.getByRole("textbox", { name: "Nombre del juez", exact: true })).toHaveValue(JUEZ_NUEVO);
   await capturar(page, "15-formato-guardado");
 });
@@ -32,21 +35,25 @@ test("formato: la guardia de cambios sin guardar y descartar", async ({ page }) 
   const ciudad = page.getByRole("textbox", { name: "Ciudad", exact: true });
   await expect(ciudad).toHaveValue("Medellín");
   await ciudad.fill("Bogotá");
-  await page.getByRole("link", { name: "Inicio", exact: true }).first().click();
+  const panel = page.getByRole("dialog", { name: "Configuración" });
+  const cerrar = panel.getByRole("button", { name: "Cerrar configuración" });
+  await cerrar.click();
   const dialogo = page.getByRole("dialog", { name: "Hay cambios sin guardar" });
   await expect(dialogo).toBeVisible();
   await expect(dialogo.getByRole("button", { name: "Seguir editando" })).toBeFocused();
   await dialogo.getByRole("button", { name: "Seguir editando" }).click();
   await expect(dialogo).toBeHidden();
-  await expect(page).toHaveURL(/#\/formato$/);
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
+  await expect(panel).toBeVisible();
   await expect(ciudad).toHaveValue("Bogotá");
   await capturar(page, "16-formato-guardia");
   await page.getByRole("button", { name: "Descartar" }).click();
   await expect(ciudad).toHaveValue("Medellín");
   await ciudad.fill("Cali");
-  await page.getByRole("link", { name: "Inicio", exact: true }).first().click();
+  await page.keyboard.press("Escape");
   await dialogo.getByRole("button", { name: "Salir sin guardar" }).click();
   await expect(page).toHaveURL(/#\/$/);
+  await expect(panel).toBeHidden();
   await expect(page.getByRole("heading", { name: "Elige el proceso a realizar" })).toBeVisible();
   await expect
     .poll(

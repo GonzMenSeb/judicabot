@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormatoCuerpo, FormatoRespuesta } from "../../api/contrato";
 import { toasts } from "../../estado";
-import { coincidir, ruta } from "../../rutas";
+import { coincidir, navegar, ruta } from "../../rutas";
 import Formato from "./index";
 import { CAMPOS_MOCK, DOCUMENTOS_MOCK, VALORES_MOCK } from "./mock";
 
@@ -48,7 +48,7 @@ const servidorNormal = () =>
 
 async function montar() {
   const vista = render(<Formato />);
-  await screen.findByRole("heading", { name: "Formato de los documentos" });
+  await screen.findByRole("heading", { level: 2, name: "Despacho" });
   return vista;
 }
 
@@ -85,6 +85,13 @@ describe("Formato de documentos", () => {
     const pestanas = within(screen.getByRole("group", { name: "Documento de la vista previa" })).getAllByRole("button");
     expect(pestanas.map((b) => b.textContent)).toEqual(["Fallo", "Auto", "Oficio", "Correos", "Formato de calidad"]);
     expect(pestanas[0]?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("deja el título y las migas al panel de configuración", async () => {
+    await montar();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Migas de pan" })).toBeNull();
+    expect(screen.getByText(/Lo que escriba aquí aparece en el fallo/)).toBeTruthy();
   });
 
   it("arma la vista previa con los valores en edición y muestra la barra de cambios", async () => {
@@ -187,7 +194,7 @@ describe("Formato de documentos", () => {
     render(<Formato />);
     expect((await screen.findByRole("alert")).textContent).toContain("Servidor caído");
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    await screen.findByRole("heading", { name: "Formato de los documentos" });
+    await screen.findByRole("heading", { level: 2, name: "Despacho" });
     expect(intentos).toBe(2);
   });
 });
@@ -229,8 +236,8 @@ describe("editor de listas", () => {
 describe("guardia de salida", () => {
   const enlaceExterno = () => {
     const a = document.createElement("a");
-    a.href = "#/ia";
-    a.textContent = "Ir a IA";
+    a.href = "#/segunda";
+    a.textContent = "Ir a los casos";
     document.body.append(a);
     return a;
   };
@@ -250,7 +257,7 @@ describe("guardia de salida", () => {
 
     fireEvent.click(enlace);
     fireEvent.click(await screen.findByRole("button", { name: "Salir sin guardar", hidden: true }));
-    await waitFor(() => expect(location.hash).toBe("#/ia"));
+    await waitFor(() => expect(location.hash).toBe("#/segunda"));
     enlace.remove();
   });
 
@@ -258,9 +265,23 @@ describe("guardia de salida", () => {
     await montar();
     const enlace = enlaceExterno();
     fireEvent.click(enlace);
-    await waitFor(() => expect(location.hash).toBe("#/ia"));
+    await waitFor(() => expect(location.hash).toBe("#/segunda"));
     expect(screen.queryByText(/pierde los cambios/)).toBeNull();
     enlace.remove();
+  });
+
+  it("pide confirmación ante una navegación programática, como cerrar la configuración", async () => {
+    await montar();
+    escribir("Ciudad", "Cali");
+    await waitFor(() => expect(barra()).not.toBeNull());
+    await act(async () => {
+      navegar("#/segunda");
+    });
+    expect(location.hash).toBe("");
+    expect(await screen.findByText(/pierde los cambios/)).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Salir sin guardar", hidden: true }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda"));
   });
 
   it("cancela las navegaciones del historial cuando el navegador lo permite", async () => {
@@ -270,20 +291,21 @@ describe("guardia de salida", () => {
       await montar();
       escribir("Ciudad", "Cali");
       await waitFor(() => expect(barra()).not.toBeNull());
-      const intentar = (cancelable: boolean, url = "http://localhost:3000/#/ia", sameDocument = true) => {
-        const evento = Object.assign(new Event("navigate", { cancelable }), { destination: { url, sameDocument } });
+      const intentar = (cancelable: boolean, url = "http://localhost:3000/#/segunda", sameDocument = true, navigationType = "push") => {
+        const evento = Object.assign(new Event("navigate", { cancelable }), { destination: { url, sameDocument }, navigationType });
         navegacion.dispatchEvent(evento);
         return evento.defaultPrevented;
       };
       await act(async () => {
         expect(intentar(false)).toBe(false);
         expect(intentar(true, "http://localhost:3000/otra", false)).toBe(false);
+        expect(intentar(true, "http://localhost:3000/#/configuracion/ia", true, "replace")).toBe(false);
         expect(intentar(true)).toBe(true);
       });
       expect(await screen.findByText(/pierde los cambios/)).toBeTruthy();
 
       fireEvent.click(await screen.findByRole("button", { name: "Salir sin guardar", hidden: true }));
-      await waitFor(() => expect(location.hash).toBe("#/ia"));
+      await waitFor(() => expect(location.hash).toBe("#/segunda"));
     } finally {
       Reflect.deleteProperty(window, "navigation");
     }

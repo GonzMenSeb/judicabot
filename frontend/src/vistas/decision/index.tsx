@@ -280,7 +280,7 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
         <Aviso
           tipo="error"
           titulo="No se pudo enviar la decisión"
-          acciones={errorEnvio.startsWith("Falta la API key") ? <Boton href="#/ia">Ir a Inteligencia artificial</Boton> : <Boton href={`${base}/proceso`}>Ver el proceso</Boton>}
+          acciones={errorEnvio.startsWith("Falta la API key") ? <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton> : <Boton href={`${base}/proceso`}>Ver el proceso</Boton>}
         >
           {errorEnvio}
         </Aviso>

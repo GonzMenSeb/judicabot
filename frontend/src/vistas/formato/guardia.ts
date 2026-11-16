@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "preact/hooks";
-import { navegar } from "../../rutas";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { navegarDirecto, protegerSalida, saliendoDelPanel } from "../../rutas";
 
 export interface GuardiaSalida {
   destino: string | null;
@@ -9,6 +9,7 @@ export interface GuardiaSalida {
 
 interface EventoNavegar extends Event {
   destination: { url: string; sameDocument: boolean };
+  navigationType: string;
 }
 
 const esPrimario = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
@@ -17,7 +18,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
   const [destino, setDestino] = useState<string | null>(null);
   const libre = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!sucio) return;
 
     const alDescargar = (e: BeforeUnloadEvent) => {
@@ -33,8 +34,8 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
       setDestino(href);
     };
     const alNavegar = (e: Event) => {
-      const { destination } = e as EventoNavegar;
-      if (libre.current || !e.cancelable || !destination.sameDocument) return;
+      const { destination, navigationType } = e as EventoNavegar;
+      if (libre.current || saliendoDelPanel() || !e.cancelable || !destination.sameDocument || navigationType === "replace") return;
       const hash = new URL(destination.url).hash;
       if (hash === location.hash) return;
       e.preventDefault();
@@ -45,10 +46,16 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
     addEventListener("beforeunload", alDescargar);
     document.addEventListener("click", alHacerClic, true);
     navegacion?.addEventListener("navigate", alNavegar);
+    const soltarGuardia = protegerSalida((hash) => {
+      if (libre.current || hash === location.hash) return false;
+      setDestino(hash);
+      return true;
+    });
     return () => {
       removeEventListener("beforeunload", alDescargar);
       document.removeEventListener("click", alHacerClic, true);
       navegacion?.removeEventListener("navigate", alNavegar);
+      soltarGuardia();
     };
   }, [sucio]);
 
@@ -61,7 +68,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
       setDestino(null);
       libre.current = true;
       try {
-        navegar(adonde);
+        navegarDirecto(adonde);
       } finally {
         libre.current = false;
       }

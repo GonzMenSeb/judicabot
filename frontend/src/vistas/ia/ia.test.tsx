@@ -60,7 +60,8 @@ afterEach(() => {
 describe("Inteligencia artificial", () => {
   it("muestra el modelo, las claves y Jev apagado con los datos del servidor", async () => {
     await montar();
-    expect(screen.getByRole("heading", { level: 1, name: "Inteligencia artificial" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Migas de pan" })).toBeNull();
     const modelos = screen.getAllByRole("radio", { name: /5\.5/ });
     expect(modelos.map((m) => m.closest("label")?.querySelector("b")?.textContent)).toEqual(["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
     expect((screen.getByRole("radio", { name: /Sonnet 5\.5/ }) as HTMLInputElement).checked).toBe(true);
@@ -290,48 +291,13 @@ describe("Claves", () => {
     expect((within(screen.getByRole("dialog", { hidden: true })).getByLabelText("Clave de la API de Anthropic") as HTMLInputElement).value).toBe("");
   });
 
-  it("ofrece descargar la extensión de la relatoría", async () => {
+  it("no incluye la extensión de la relatoría ni su descarga", async () => {
     const llamadas = await montar();
-    expect(screen.getByRole("heading", { level: 2, name: "Extensión de la relatoría" })).toBeTruthy();
-    const enlace = screen.getByRole("link", { name: "Descargar extensión (.zip)" });
-    expect(enlace.getAttribute("href")).toBe("/api/extension/zip");
-    expect(enlace.getAttribute("download")).toBe("");
-    expect(enlace.classList.contains("btn")).toBe(true);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Modelo", "Clave de Anthropic", "Jev, segunda opinión"]);
+    expect(screen.queryByText("Extensión de la relatoría")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Descargar extensión (.zip)" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Pasos para instalar la extensión" })).toBeNull();
+    expect(screen.queryByText(/citas/)).toBeNull();
     expect(llamadas.some((l) => l.clave.includes("/api/extension"))).toBe(false);
-  });
-
-  it("la sección de la extensión va después de Jev y antes de las opciones avanzadas", async () => {
-    await montar();
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
-      "Modelo",
-      "Clave de Anthropic",
-      "Jev, segunda opinión",
-      "Extensión de la relatoría",
-    ]);
-    const titulo = screen.getByRole("heading", { level: 2, name: "Extensión de la relatoría" });
-    expect(titulo.compareDocumentPosition(screen.getByText("Opciones avanzadas")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("los pasos de instalación muestran el servidor de esta instalación", async () => {
-    await montar();
-    const lista = screen.getByRole("list", { name: "Pasos para instalar la extensión" });
-    expect(within(lista).getAllByRole("listitem")).toHaveLength(6);
-    for (const texto of ["chrome://extensions", "edge://extensions", "Cargar extensión sin empaquetar", "judicabot-relatoria"]) {
-      expect(lista.textContent).toContain(texto);
-    }
-    expect(within(lista).getByText(location.origin).tagName).toBe("CODE");
-  });
-
-  it("descargar la extensión no deja cambios sin guardar", async () => {
-    const llamadas = await montar();
-    const barra = guardar().parentElement as HTMLElement;
-    expect(within(barra).getByRole("status").textContent).toBe("");
-    const enlace = screen.getByRole("link", { name: "Descargar extensión (.zip)" });
-    enlace.addEventListener("click", (ev) => ev.preventDefault());
-    fireEvent.click(enlace);
-    expect(within(barra).getByRole("status").textContent).toBe("");
-    fireEvent.click(guardar());
-    await Promise.resolve();
-    expect(llamadas.some((l) => l.clave.includes("/api/extension") || l.clave === "PUT /api/ia")).toBe(false);
   });
 });
