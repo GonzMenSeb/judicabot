@@ -11,6 +11,7 @@ from tutela2.llm import ErrorLLM, FakeClient
 
 VARIABLE = "TUTELA2_MODELOS_PERMITIDOS"
 SONNET, HAIKU, OPUS = cfgmod.MODELOS
+ARGON, CARBON, HYDROGEN = cfgmod.MODELOS_GEMINI
 
 
 def test_tutela2_proveedor_fake_fuerza_el_cliente_falso_sin_relatoria(tmp_path, monkeypatch):
@@ -87,6 +88,60 @@ def test_cliente_para_acepta_los_modelos_permitidos_y_no_restringe_sin_variable(
     monkeypatch.setenv(VARIABLE, f"{SONNET},{OPUS}")
     cfg = Config(llm=LLMConfig(modelo_por_nodo={"apertura": SONNET, "caso_concreto": OPUS}))
     assert llm.cliente_para(cfg) == "cliente"
+
+
+def test_modelos_permitidos_por_proveedor_comparten_la_variable(monkeypatch):
+    assert cfgmod.modelos_permitidos("gemini") == cfgmod.MODELOS_GEMINI
+    monkeypatch.setenv(VARIABLE, f"{HYDROGEN},{SONNET},{ARGON}")
+    assert cfgmod.modelos_permitidos() == (SONNET,)
+    assert cfgmod.modelos_permitidos("gemini") == (ARGON, HYDROGEN)
+    assert cfgmod.modelo_permitido(ARGON) and cfgmod.modelo_permitido(SONNET) and not cfgmod.modelo_permitido(CARBON)
+    assert not cfgmod.modelo_permitido(ARGON, "anthropic") and cfgmod.modelo_permitido(ARGON, "gemini")
+
+
+def gemini(**extra) -> Config:
+    return Config(llm=LLMConfig(proveedor="gemini", modelo=ARGON, **extra))
+
+
+def test_con_gemini_los_ajustes_por_nodo_de_claude_se_ignoran():
+    cfg = gemini(effort="medium", modelo_por_nodo={"apertura": OPUS, "caso_concreto": HYDROGEN}, effort_por_nodo={"apertura": "max", "caso_concreto": "xhigh"})
+    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [ARGON, ARGON, HYDROGEN]
+    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["medium", "medium", "xhigh"]
+
+
+def test_con_gemini_el_nivel_por_nodo_debe_admitirlo_el_modelo_del_nodo():
+    cfg = gemini(effort_por_nodo={"apertura": "xhigh", "consideraciones": "low"})
+    assert cfg.effort_para("apertura") == "high" and cfg.effort_para("consideraciones") == "low"
+
+
+def test_con_gemini_el_nivel_global_debe_admitirlo_el_modelo_del_nodo():
+    cfg = Config(llm=LLMConfig(proveedor="gemini", modelo=HYDROGEN, effort="xhigh", modelo_por_nodo={"apertura": ARGON}))
+    assert cfg.effort_para("apertura") == "high" and cfg.effort_para("caso_concreto") == "xhigh"
+    cfg.llm.effort_por_nodo = {"apertura": "medium"}
+    assert cfg.effort_para("apertura") == "medium"
+
+
+def test_con_anthropic_los_ajustes_por_nodo_de_gemini_se_ignoran():
+    cfg = Config(llm=LLMConfig(modelo=SONNET, modelo_por_nodo={"apertura": ARGON, "caso_concreto": OPUS}, effort_por_nodo={"apertura": "max", "caso_concreto": "ultra"}))
+    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [SONNET, SONNET, OPUS]
+    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["max", "high", "high"]
+
+
+def test_el_proveedor_falso_no_filtra_los_ajustes_por_nodo():
+    cfg = Config(llm=LLMConfig(proveedor="fake", modelo_por_nodo={"apertura": "otro"}, effort_por_nodo={"apertura": "x"}))
+    assert cfg.modelo_para("apertura") == "otro" and cfg.effort_para("apertura") == "x"
+
+
+def test_cliente_para_gemini_usa_su_cliente_y_su_lista_permitida(monkeypatch):
+    monkeypatch.setattr(llm, "GeminiClient", lambda: "gemini")
+    assert llm.cliente_para(gemini()) == "gemini"
+    monkeypatch.setenv(VARIABLE, f"{SONNET},{CARBON}")
+    with pytest.raises(ErrorLLM) as e:
+        llm.cliente_para(gemini())
+    assert ARGON in str(e.value) and f"permitidos: {CARBON}." in str(e.value)
+    monkeypatch.setenv(VARIABLE, SONNET)
+    with pytest.raises(ErrorLLM, match="ninguno"):
+        llm.cliente_para(gemini())
 
 
 def test_cliente_falso_no_depende_de_la_lista_permitida(monkeypatch):

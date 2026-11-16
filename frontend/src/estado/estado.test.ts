@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cargarEstadoServidor, cerrarToast, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, toasts } from "./index";
+import { cargarEstadoServidor, cerrarToast, claveActiva, claveDe, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, proveedorDelCaso, proveedorSinClave, toasts } from "./index";
 
 describe("fechaRelativa", () => {
   const ahora = Date.parse("2026-11-03T12:00:00Z");
@@ -48,6 +48,10 @@ describe("plural y porcentaje", () => {
 
   it("da nombre legible al modelo", () => {
     expect(nombreModelo("claude-sonnet-5-5")).toBe("Sonnet 5.5");
+    expect(nombreModelo("gemini-4-argon")).toBe("Gemini 4 Argon");
+    expect(nombreModelo("gemini-4-hydrogen")).toBe("Gemini 4 Hydrogen");
+    expect(nombreModelo("gemini-3.8-flash")).toBe("Gemini 3.8 Flash");
+    expect(nombreModelo("gemini-4-argon-001")).toBe("gemini-4-argon-001");
     expect(nombreModelo("otro")).toBe("otro");
   });
 });
@@ -90,7 +94,7 @@ describe("estadoServidor", () => {
   });
 
   it("carga una sola vez y permite forzar", async () => {
-    const cuerpo = { api_key: true, jev_key: false, modelo: "claude-sonnet-5-5", modelos: ["claude-sonnet-5-5"] };
+    const cuerpo = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: ["claude-sonnet-5-5"], modelos_gemini: [] };
     const falso = vi.fn(async () => new Response(JSON.stringify(cuerpo), { status: 200 }));
     vi.stubGlobal("fetch", falso);
     await Promise.all([cargarEstadoServidor(true), cargarEstadoServidor()]);
@@ -102,12 +106,33 @@ describe("estadoServidor", () => {
     expect(falso).toHaveBeenCalledTimes(2);
   });
 
+  it("la clave activa es la del proveedor elegido", () => {
+    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+    expect(claveActiva(base)).toBe(true);
+    expect(claveActiva({ ...base, proveedor: "gemini" })).toBe(false);
+    expect(claveActiva({ ...base, proveedor: "gemini", gemini_key: true, api_key: false })).toBe(true);
+    expect(claveDe(base, "gemini")).toBe(false);
+  });
+
+  it("dentro de un caso manda el proveedor que resuelve la ejecución, no el del servidor", () => {
+    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+    expect(proveedorSinClave(base, "gemini")).toBe("gemini");
+    expect(proveedorSinClave(base, "anthropic")).toBeNull();
+    expect(proveedorSinClave(base, null)).toBeNull();
+    expect(proveedorSinClave({ ...base, api_key: false }, undefined)).toBe("anthropic");
+    expect(proveedorSinClave({ ...base, api_key: false }, "fake")).toBeNull();
+    expect(proveedorSinClave(null, "gemini")).toBeNull();
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, "anthropic")).toBe("anthropic");
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, "fake")).toBe("gemini");
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, null)).toBe("gemini");
+  });
+
   it("marca error y permite reintentar", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
     await cargarEstadoServidor(true);
     expect(errorEstadoServidor.value).toBe(true);
     expect(estadoServidor.value).toBeNull();
-    const cuerpo = { api_key: false, jev_key: false, modelo: "claude-haiku-5-5", modelos: [] };
+    const cuerpo = { proveedor: "gemini", api_key: false, gemini_key: true, jev_key: false, modelo: "gemini-4-argon", modelos: [], modelos_gemini: ["gemini-4-argon"] };
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(cuerpo), { status: 200 })));
     await cargarEstadoServidor();
     expect(errorEstadoServidor.value).toBe(false);

@@ -28,10 +28,12 @@ function Montaje() {
   );
 }
 
+const SERVIDOR = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(JSON.stringify({ api_key: true, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [] }))),
+    vi.fn(async () => new Response(JSON.stringify(SERVIDOR))),
   );
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   estadoServidor.value = null;
@@ -70,6 +72,19 @@ describe("Shell", () => {
     expect(engranaje.getAttribute("href")).toBe("#/configuracion");
     expect(screen.queryByRole("link", { name: /Inteligencia artificial/ })).toBeNull();
     expect(document.title).toBe("Judicabot");
+  });
+
+  it("el engranaje refleja la clave del proveedor activo", async () => {
+    render(<Montaje />);
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", modelo: "gemini-4-carbon" } as const;
+    });
+    const engranaje = await screen.findByRole("link", { name: "Configuración, falta la clave" });
+    expect(engranaje.querySelector(".punto")?.className).toBe("punto mal");
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", api_key: false, gemini_key: true, modelo: "gemini-4-carbon" } as const;
+    });
+    expect(screen.getByRole("link", { name: "Configuración" }).querySelector(".punto")).toBeNull();
   });
 
   it("no roba el foco en la primera carga y lo mueve al main al navegar", async () => {

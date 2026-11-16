@@ -14,12 +14,13 @@ export interface PropsTarjetas {
   onCambio: (valor: string) => void;
   idDescripcion?: string;
   idError?: string;
+  class?: string;
 }
 
-export function Tarjetas({ nombre, legenda, opciones, valor, onCambio, idDescripcion, idError }: PropsTarjetas) {
+export function Tarjetas({ nombre, legenda, opciones, valor, onCambio, idDescripcion, idError, class: clase }: PropsTarjetas) {
   const describe = [idDescripcion, idError].filter(Boolean).join(" ") || undefined;
   return (
-    <fieldset class="ia-tarjetas" aria-describedby={describe}>
+    <fieldset class={cx("ia-tarjetas", clase)} aria-describedby={describe}>
       <legend class="solo-lectura">{legenda}</legend>
       {opciones.map((o) => (
         <label key={o.valor} class={cx("ia-op", valor === o.valor && "sel")}>

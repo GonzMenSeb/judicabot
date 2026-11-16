@@ -126,7 +126,7 @@ def _llamar(
     eventos.emitir(
         nodo,
         "lee",
-        f"Llamada al modelo {modelo}{'' if cfg.llm.proveedor == 'anthropic' else f' (proveedor {cfg.llm.proveedor})'}, "
+        f"Llamada al modelo {modelo}{' (proveedor fake)' if cfg.llm.proveedor == 'fake' else ''}, "
         f"intento {intento}: {len(user)} caracteres de entrada.",
         {"nodo": nodo, "intento": intento, "modelo": modelo, "proveedor": cfg.llm.proveedor, "caracteres_entrada": len(user)},
     )

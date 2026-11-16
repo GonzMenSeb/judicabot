@@ -3,9 +3,18 @@ import type { PreferenciasIa, PreferenciasIaCuerpo } from "../../api/contrato";
 import type { MockRuta } from "../../api/mock";
 
 let preferencias: PreferenciasIa = {
+  proveedor: "anthropic",
   modelo: "claude-sonnet-5-5",
   modelos: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
+  gemini: { modelo: "gemini-4-argon", razonamiento: "high" },
+  modelos_gemini: ["gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"],
+  razonamientos_gemini: {
+    "gemini-4-argon": ["low", "medium", "high"],
+    "gemini-4-carbon": ["low", "medium", "high"],
+    "gemini-4-hydrogen": ["low", "medium", "high", "xhigh"],
+  },
   api_key: true,
+  gemini_key: false,
   jev_key: false,
   jev: { modo: "apagado", umbral: 0.9 },
   effort: "high",
@@ -15,7 +24,11 @@ let preferencias: PreferenciasIa = {
 
 function errores(cuerpo: PreferenciasIaCuerpo): { campo: string; mensaje: string }[] {
   const lista: { campo: string; mensaje: string }[] = [];
-  if (!preferencias.modelos.includes(cuerpo.modelo)) lista.push({ campo: "modelo", mensaje: "debe ser uno de: claude-sonnet-5-5, claude-haiku-5-5 o claude-opus-5-5." });
+  if (cuerpo.modelo !== undefined && !preferencias.modelos.includes(cuerpo.modelo)) lista.push({ campo: "modelo", mensaje: "debe ser uno de: claude-sonnet-5-5, claude-haiku-5-5 o claude-opus-5-5." });
+  if (cuerpo.gemini && !preferencias.modelos_gemini.includes(cuerpo.gemini.modelo)) lista.push({ campo: "gemini.modelo", mensaje: "debe ser uno de: gemini-4-argon, gemini-4-carbon o gemini-4-hydrogen." });
+  else if (cuerpo.gemini && !(preferencias.razonamientos_gemini[cuerpo.gemini.modelo] ?? []).includes(cuerpo.gemini.razonamiento)) {
+    lista.push({ campo: "gemini.razonamiento", mensaje: `con ${cuerpo.gemini.modelo} debe ser uno de: low, medium o high.` });
+  }
   if (!(cuerpo.jev.umbral >= 0 && cuerpo.jev.umbral <= 1)) lista.push({ campo: "jev.umbral", mensaje: "debe estar entre 0 y 1." });
   if (!Number.isInteger(cuerpo.max_tokens) || cuerpo.max_tokens < 1 || cuerpo.max_tokens > 64000) lista.push({ campo: "max_tokens", mensaje: "debe estar entre 1 y 64000." });
   if (!Number.isInteger(cuerpo.max_retries) || cuerpo.max_retries < 0 || cuerpo.max_retries > 5) lista.push({ campo: "max_retries", mensaje: "debe estar entre 0 y 5." });
@@ -33,7 +46,7 @@ export const mocks: MockRuta[] = [
       const nuevo = cuerpo as PreferenciasIaCuerpo;
       const lista = errores(nuevo);
       if (lista.length) throw new ErrorApi(422, { errores: lista }, "Error 422");
-      preferencias = { ...preferencias, ...nuevo, jev: { ...nuevo.jev } };
+      preferencias = { ...preferencias, ...nuevo, gemini: { ...(nuevo.gemini ?? preferencias.gemini) }, jev: { ...nuevo.jev } };
       return structuredClone(preferencias);
     },
   },
@@ -44,6 +57,15 @@ export const mocks: MockRuta[] = [
       if (!claveDe(cuerpo)) throw new ErrorApi(422, "La API key no puede estar vacía.", "La API key no puede estar vacía.");
       preferencias = { ...preferencias, api_key: true };
       return { api_key: true };
+    },
+  },
+  {
+    metodo: "POST",
+    ruta: "/api/gemini-key",
+    respuesta: ({ cuerpo }) => {
+      if (!claveDe(cuerpo)) throw new ErrorApi(422, "La clave de Gemini no puede estar vacía.", "La clave de Gemini no puede estar vacía.");
+      preferencias = { ...preferencias, gemini_key: true };
+      return { gemini_key: true };
     },
   },
   {

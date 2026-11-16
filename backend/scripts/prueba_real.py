@@ -124,7 +124,7 @@ def verificar_config(cfg: Config) -> None:
 def fijar_entorno() -> None:
     os.environ["TUTELA2_MODELO"] = MODELOS_PERMITIDOS[0]
     os.environ["TUTELA2_JEV_MODO"] = "apagado"
-    for variable in ("TUTELA2_PROVEEDOR", "JEV_API_KEY"):
+    for variable in ("TUTELA2_PROVEEDOR", "TUTELA2_PROVEEDOR_LLM", "JEV_API_KEY"):
         os.environ.pop(variable, None)
     for variable in [v for v in os.environ if v.startswith("ANTHROPIC_") and v != "ANTHROPIC_API_KEY"]:
         os.environ.pop(variable)

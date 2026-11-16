@@ -98,3 +98,18 @@ def test_flujo_completo_fake_termina_con_el_arbol_de_salidas(caso) -> None:
         "trabajo/previo.docx",
     }
     assert set(r["salidas"]) == esperadas, sorted(set(r["salidas"]) ^ esperadas)
+
+
+def test_aislar_proveedor_ignora_el_entorno_de_gemini(tmp_path, monkeypatch) -> None:
+    from tutela2 import config as cfgmod
+
+    modulo = _modulo()
+    modulo.generar(tmp_path)
+    modulo.preparar(tmp_path, "anthropic")
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "gemini")
+    monkeypatch.setenv("TUTELA2_GEMINI_MODELO", "gemini-4-argon")
+    monkeypatch.setenv("TUTELA2_GEMINI_RAZONAMIENTO", "high")
+    assert cfgmod.cargar(tmp_path).llm.proveedor == "gemini"
+    modulo.aislar_proveedor()
+    cfg = cfgmod.cargar(tmp_path)
+    assert cfg.llm.proveedor == "anthropic" and cfg.llm.modelo == "claude-sonnet-5-5"

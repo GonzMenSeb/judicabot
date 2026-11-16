@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from tutela2 import config as cfgmod
 from tutela2 import preferencias as pref
@@ -17,10 +17,20 @@ class IAJev(BaseModel):
     umbral: float
 
 
+class IAGemini(BaseModel):
+    modelo: pref.ModeloGemini
+    razonamiento: pref.RazonamientoGemini
+
+
 class IAEstado(BaseModel):
+    proveedor: pref.Proveedor
     modelo: pref.Modelo
     modelos: list[str]
+    gemini: IAGemini
+    modelos_gemini: list[str]
+    razonamientos_gemini: dict[str, list[pref.RazonamientoGemini]]
     api_key: bool
+    gemini_key: bool
     jev_key: bool
     jev: IAJev
     effort: pref.Effort
@@ -52,6 +62,9 @@ def _mensaje(e: dict[str, Any]) -> str:
         *cabeza, cola = permitidos
         opciones = f"{', '.join(cabeza)} o {cola}" if cabeza else cola
         return f"debe ser uno de: {opciones}."
+    if tipo == "razonamiento_no_admitido":
+        *cabeza, cola = e["ctx"]["admitidos"]
+        return f"con {e['ctx']['modelo']} debe ser uno de: {', '.join(cabeza)} o {cola}."
     if tipo == "literal_error":
         opciones = str((e.get("ctx") or {}).get("expected", "")).replace("'", "").replace(" or ", " o ")
         return f"debe ser uno de: {opciones}."
@@ -101,9 +114,17 @@ def _estado() -> IAEstado:
     llm, jev = cfgmod.LLMConfig(), cfgmod.JevConfig()
     claves = server.estado_servidor()
     return IAEstado(
+        proveedor=claves["proveedor"],
         modelo=_o(guardadas.modelo, llm.modelo),
         modelos=list(cfgmod.modelos_permitidos()),
+        gemini=IAGemini(
+            modelo=_o(guardadas.gemini.modelo, cfgmod.MODELO_GEMINI),
+            razonamiento=_o(guardadas.gemini.razonamiento, cfgmod.RAZONAMIENTO_GEMINI),
+        ),
+        modelos_gemini=list(cfgmod.modelos_permitidos("gemini")),
+        razonamientos_gemini={m: list(n) for m, n in cfgmod.RAZONAMIENTOS_GEMINI.items()},
         api_key=claves["api_key"],
+        gemini_key=claves["gemini_key"],
         jev_key=claves["jev_key"],
         jev=IAJev(modo=_o(guardadas.jev.modo, jev.modo), umbral=_o(guardadas.jev.umbral, jev.umbral_confianza)),
         effort=_o(guardadas.effort, llm.effort),
@@ -121,5 +142,8 @@ def obtener_ia() -> IAEstado:
 def guardar_ia(body: pref.Preferencias) -> IAEstado:
     from tutela2 import server
 
-    pref.actualizar(server._preferencias(), body)
+    try:
+        pref.actualizar(server._preferencias(), body)
+    except ValidationError as exc:
+        raise RequestValidationError([{**e, "loc": ("body", *e["loc"])} for e in exc.errors()]) from exc
     return _estado()

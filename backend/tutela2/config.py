@@ -11,6 +11,17 @@ from tutela2.models import limpiar_control
 
 NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
+MODELOS_GEMINI = ("gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen")
+CATALOGO = {"anthropic": MODELOS, "gemini": MODELOS_GEMINI}
+MODELO_GEMINI = "gemini-4-argon"
+ESFUERZOS = ("low", "medium", "high", "xhigh", "max")
+NIVELES_GEMINI = ("low", "medium", "high", "xhigh")
+RAZONAMIENTOS_GEMINI = {
+    "gemini-4-argon": ("low", "medium", "high"),
+    "gemini-4-carbon": ("low", "medium", "high"),
+    "gemini-4-hydrogen": ("low", "medium", "high", "xhigh"),
+}
+RAZONAMIENTO_GEMINI = "high"
 RESPALDO_CLIENTE = {"claude-haiku-5-5": "claude-sonnet-5-5"}
 VARIABLE_MODELOS_PERMITIDOS = "TUTELA2_MODELOS_PERMITIDOS"
 VARIABLE_CACHE = "TUTELA2_CACHE_DIR"
@@ -20,18 +31,26 @@ def _modelos_pedidos() -> set[str]:
     return {m.strip() for m in os.environ.get(VARIABLE_MODELOS_PERMITIDOS, "").split(",") if m.strip()}
 
 
-def modelos_permitidos() -> tuple[str, ...]:
-    """TUTELA2_MODELOS_PERMITIDOS (ids separados por comas) restringe los modelos de MODELOS; apagada, rigen todos."""
+def modelos_permitidos(proveedor: str = "anthropic") -> tuple[str, ...]:
+    """TUTELA2_MODELOS_PERMITIDOS (ids separados por comas) restringe los modelos del catálogo del proveedor; apagada, rigen todos."""
+    catalogo = CATALOGO[proveedor]
     pedidos = _modelos_pedidos()
-    return tuple(m for m in MODELOS if m in pedidos) if pedidos else MODELOS
+    return tuple(m for m in catalogo if m in pedidos) if pedidos else catalogo
 
 
-def modelo_permitido(modelo: str) -> bool:
-    return not _modelos_pedidos() or modelo in modelos_permitidos()
+def modelo_permitido(modelo: str, proveedor: str | None = None) -> bool:
+    proveedores = [proveedor] if proveedor in CATALOGO else list(CATALOGO)
+    return not _modelos_pedidos() or any(modelo in modelos_permitidos(p) for p in proveedores)
+
+
+def niveles_admitidos(proveedor: str, modelo: str) -> tuple[str, ...] | None:
+    if proveedor == "gemini":
+        return RAZONAMIENTOS_GEMINI.get(modelo, NIVELES_GEMINI)
+    return ESFUERZOS if proveedor == "anthropic" else None
 
 
 class LLMConfig(BaseModel):
-    proveedor: Literal["anthropic", "fake"] = "anthropic"
+    proveedor: Literal["anthropic", "gemini", "fake"] = "anthropic"
     modelo: str = "claude-sonnet-5-5"
     effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
     max_tokens: int = 64000
@@ -127,10 +146,16 @@ class Config(BaseModel):
     prompts_override: dict[str, str] = {}
 
     def modelo_para(self, nodo: str) -> str:
-        return self.llm.modelo_por_nodo.get(nodo) or self.llm.modelo
+        modelo = self.llm.modelo_por_nodo.get(nodo)
+        catalogo = CATALOGO.get(self.llm.proveedor)
+        return modelo if modelo and (catalogo is None or modelo in catalogo) else self.llm.modelo
 
     def effort_para(self, nodo: str) -> str:
-        return self.llm.effort_por_nodo.get(nodo) or self.llm.effort
+        admitidos = niveles_admitidos(self.llm.proveedor, self.modelo_para(nodo))
+        for effort in (self.llm.effort_por_nodo.get(nodo), self.llm.effort):
+            if effort and (admitidos is None or effort in admitidos):
+                return effort
+        return RAZONAMIENTO_GEMINI if RAZONAMIENTO_GEMINI in admitidos else admitidos[-1]
 
     def cache_path(self) -> Path:
         """TUTELA2_CACHE_DIR, si está definida y no vacía, manda sobre cache_dir (los config.json de caso ya guardan el valor por defecto)."""

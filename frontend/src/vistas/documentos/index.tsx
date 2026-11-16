@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, cancelable, ErrorApi, esAbortado } from "../../api";
-import type { CasoResumen, JobInicio } from "../../api/contrato";
-import { cargarEstadoServidor, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, useTitulo } from "../../estado";
+import type { CasoResumen, JobInicio, ProveedorCaso } from "../../api/contrato";
+import { cargarEstadoServidor, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, proveedorDelCaso, proveedorSinClave, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Migas, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
@@ -18,7 +18,7 @@ import { Progreso } from "./Progreso";
 import { cambiosAuto, cuerpoRevision, hayCambios, sinConfirmar } from "./revision";
 import type { CambiosRoles, EdicionAuto } from "./revision";
 import { OBLIGATORIOS, etiquetaRol, ingestaDe, salidasPrevias } from "./tipos";
-import type { ClaveAuto, ConfigCaso, DatosAuto, DocResumen, EstadoCaso, JobEstado, ResumenIngesta, RolDoc } from "./tipos";
+import type { ClaveAuto, DatosAuto, DocResumen, EstadoCaso, JobEstado, ResumenIngesta, RolDoc } from "./tipos";
 
 interface AvisoVista {
   tipo: "alerta" | "error" | "info";
@@ -43,7 +43,7 @@ export default function Documentos({ caso }: PropsVista) {
 function VistaDocumentos({ caso }: { caso: string }) {
   const [estado, setEstado] = useState<EstadoCaso | null>(null);
   const [info, setInfo] = useState<CasoResumen | null>(null);
-  const [proveedor, setProveedor] = useState<string | null>(null);
+  const [proveedor, setProveedor] = useState<ProveedorCaso | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [noExiste, setNoExiste] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
@@ -67,10 +67,9 @@ function VistaDocumentos({ caso }: { caso: string }) {
     setErrorCarga(null);
     setNoExiste(false);
     try {
-      const [est, resumen, cfg] = await Promise.all([
+      const [est, resumen] = await Promise.all([
         api.get<EstadoCaso>(`${base}/estado`, { signal }),
         api.get<CasoResumen>(`${base}/resumen`, { signal }).catch(() => null),
-        api.get<ConfigCaso>(`${base}/config`, { signal }).catch(() => null),
       ]);
       let activo: Trabajo | null = null;
       if (est.job_activo) {
@@ -79,7 +78,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
       }
       setEstado(est);
       setInfo(resumen);
-      setProveedor(cfg?.llm?.proveedor ?? null);
+      setProveedor(est.proveedor_llm ?? null);
       setTrabajo(activo);
     } catch (error) {
       if (esAbortado(error)) return;
@@ -146,8 +145,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
 
   const faltaClave = async (): Promise<boolean> => {
     await cargarEstadoServidor(true);
-    const servidor = estadoServidor.value;
-    return Boolean(servidor) && !servidor?.api_key && proveedor !== "fake";
+    return proveedorSinClave(estadoServidor.value, proveedor) !== null;
   };
 
   const iniciar = async () => {
@@ -391,6 +389,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
       />
       <DialogoClave
         abierto={pidiendoClave}
+        proveedor={estadoServidor.value ? proveedorDelCaso(estadoServidor.value, proveedor) : "anthropic"}
         onCerrar={() => setPidiendoClave(false)}
         onGuardada={() => {
           setPidiendoClave(false);

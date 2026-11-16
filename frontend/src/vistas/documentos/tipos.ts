@@ -1,3 +1,5 @@
+import type { ProveedorCaso } from "../../api/contrato";
+
 export const ROLES = [
   { id: "acta_reparto_1a", etiqueta: "Acta de reparto de primera instancia" },
   { id: "acta_reparto_2a", etiqueta: "Acta de reparto de la impugnación" },
@@ -72,6 +74,7 @@ export interface EstadoCaso {
   error: string | null;
   job_activo?: string | null;
   ingesta?: ResumenIngesta;
+  proveedor_llm?: ProveedorCaso | null;
 }
 
 export interface RevisionCuerpo {
@@ -85,10 +88,6 @@ export interface JobEstado {
   cmd: "nuevo" | "iniciar" | "decidir" | "continuar";
   estado: "corriendo" | "terminado" | "error";
   error: string | null;
-}
-
-export interface ConfigCaso {
-  llm?: { proveedor?: "anthropic" | "fake" };
 }
 
 export interface SalidaPrevia {

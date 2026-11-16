@@ -64,7 +64,7 @@ def api(monkeypatch) -> types.SimpleNamespace:
     return types.SimpleNamespace(modulo=fake, llamadas=llamadas, soltar=soltar)
 
 
-_VARIABLES_ENTORNO = ("TUTELA2_MODELO", "ANTHROPIC_API_KEY", "JEV_API_KEY")
+_VARIABLES_ENTORNO = ("TUTELA2_MODELO", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "JEV_API_KEY")
 
 
 @pytest.fixture(autouse=True)
@@ -461,6 +461,37 @@ def test_api_key_solo_en_memoria(cliente, tmp_path, monkeypatch):
     _subir(cliente, "x", {"a.pdf": b"1"})
     assert not any(b"sk-ant-prueba" in p.read_bytes() for p in tmp_path.rglob("*") if p.is_file())
     monkeypatch.delenv("ANTHROPIC_API_KEY")
+
+
+def test_clave_de_gemini_solo_en_memoria(cliente, tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    estado = cliente.get("/api/estado-servidor").json()
+    assert estado["gemini_key"] is False and estado["api_key"] is False
+    r = cliente.post("/api/gemini-key", json={"key": "  AIza-prueba-456  "})
+    assert r.status_code == 200 and r.json() == {"gemini_key": True}
+    assert "AIza" not in r.text
+    assert os.environ["GEMINI_API_KEY"] == "AIza-prueba-456"
+    estado = cliente.get("/api/estado-servidor")
+    assert estado.json()["gemini_key"] is True and estado.json()["api_key"] is False and "AIza" not in estado.text
+    assert "AIza" not in cliente.get("/api/ia").text
+    _subir(cliente, "x", {"a.pdf": b"1"})
+    assert not any(b"AIza-prueba" in p.read_bytes() for p in tmp_path.rglob("*") if p.is_file())
+    monkeypatch.delenv("GEMINI_API_KEY")
+
+
+def test_clave_de_gemini_vacia_se_rechaza(cliente, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = cliente.post("/api/gemini-key", json={"key": " \n "})
+    assert r.status_code == 422 and r.json()["detail"] == "La clave de Gemini no puede estar vacía."
+    assert "GEMINI_API_KEY" not in os.environ
+
+
+@pytest.mark.parametrize("clave", ["AIzaSECRETO\r\nX", "AIzaSECRETO\nx", "AIza SECRETO", "clave​SECRETO", "AIzañandú"])
+def test_clave_de_gemini_con_caracteres_no_validos_se_rechaza_sin_repetirla(cliente, monkeypatch, clave):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = cliente.post("/api/gemini-key", json={"key": clave})
+    assert r.status_code == 422 and "GEMINI_API_KEY" not in os.environ
+    assert "SECRETO" not in r.text and "ñandú" not in r.text
 
 
 def test_api_key_vacia_se_rechaza(cliente, monkeypatch):

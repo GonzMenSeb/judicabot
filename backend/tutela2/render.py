@@ -1129,7 +1129,7 @@ def _version() -> str:
         return "desconocida"
 
 
-PROVEEDORES = {"anthropic": "Anthropic PBC", "jev": "TypeSafe AI"}
+PROVEEDORES = {"anthropic": "Anthropic PBC", "gemini": "Google LLC", "jev": "TypeSafe AI"}
 HERRAMIENTA = "Judicabot"
 _SUFIJO_ALIAS = "-latest"
 USO_IA = (

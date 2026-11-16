@@ -49,9 +49,18 @@ export function porcentaje(fraccion: number | null | undefined, decimales = 0): 
   return formato.format(fraccion);
 }
 
+const mayuscula = (texto: string) => `${texto.charAt(0).toUpperCase()}${texto.slice(1)}`;
+
 export function nombreModelo(id: string): string {
-  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
-  if (!m) return id;
-  const [, familia = "", mayor = "", menor = ""] = m;
-  return `${familia.charAt(0).toUpperCase()}${familia.slice(1)} ${mayor}.${menor}`;
+  const claude = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
+  if (claude) {
+    const [, familia = "", mayor = "", menor = ""] = claude;
+    return `${mayuscula(familia)} ${mayor}.${menor}`;
+  }
+  const gemini = /^gemini-(\d+(?:\.\d+)?)-([a-z]+)$/.exec(id);
+  if (gemini) {
+    const [, version = "", familia = ""] = gemini;
+    return `Gemini ${version} ${mayuscula(familia)}`;
+  }
+  return id;
 }

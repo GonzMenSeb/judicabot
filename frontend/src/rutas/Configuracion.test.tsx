@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FormatoRespuesta } from "../api/contrato";
+import type { EstadoServidor, FormatoRespuesta } from "../api/contrato";
 import { estadoServidor, toasts } from "../estado";
 import { CAMPOS_MOCK, DOCUMENTOS_MOCK, VALORES_MOCK } from "../vistas/formato/mock";
 import { mostrada, Rutas } from "./Rutas";
@@ -10,7 +10,7 @@ import { coincidir, configuracion, navegar, ruta } from "./router";
 vi.mock("../vistas/inicio", () => ({ default: () => <div data-vista="inicio"><h1>Inicio</h1></div> }));
 vi.mock("../vistas/casos", () => ({ default: () => <div data-vista="casos"><h1>Casos</h1></div> }));
 vi.mock("../vistas/documentos", () => ({ default: () => <div data-vista="documentos"><h1>Documentos</h1></div> }));
-vi.mock("../vistas/ia", () => ({ default: () => <div data-vista="ia"><h2>Modelo</h2></div> }));
+vi.mock("../vistas/ia", () => ({ default: () => <div data-vista="ia"><h2>Proveedor</h2></div> }));
 
 const formato: FormatoRespuesta = { campos: CAMPOS_MOCK, valores: VALORES_MOCK, plantilla_gen: "B", documentos: DOCUMENTOS_MOCK };
 
@@ -42,10 +42,12 @@ async function abrirSobreCasos() {
   await within(panel()).findByRole("heading", { level: 2, name: "Despacho" });
 }
 
+const SERVIDOR: EstadoServidor = { proveedor: "anthropic", api_key: false, gemini_key: false, jev_key: false, modelo: "claude-opus-5-5", modelos: [], modelos_gemini: [] };
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => json(url === "/api/formato" ? formato : { api_key: false, jev_key: false, modelo: "claude-opus-5-5", modelos: [] })),
+    vi.fn(async (url: string) => json(url === "/api/formato" ? formato : SERVIDOR)),
   );
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   estadoServidor.value = null;
@@ -77,11 +79,29 @@ describe("panel de configuración", () => {
     expect(engranaje().textContent).toBe("Configuración, falta la clave");
   });
 
+  it("el estado de la IA en la navegación y en el engranaje sigue al proveedor activo", async () => {
+    await abrirSobreCasos();
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", api_key: true, modelo: "gemini-4-argon" };
+    });
+    const ia = await within(navegacion()).findByRole("link", { name: /Inteligencia artificial.*Gemini 4 Argon.*falta la clave/ });
+    expect(ia.querySelector(".punto")?.className).toBe("punto mal");
+    expect(engranaje().textContent).toBe("Configuración, falta la clave");
+
+    await act(async () => {
+      estadoServidor.value = { ...SERVIDOR, proveedor: "gemini", gemini_key: true, modelo: "gemini-4-argon" };
+    });
+    expect(ia.textContent).toMatch(/Gemini 4 Argon.*clave lista/);
+    expect(ia.querySelector(".punto")?.className).toBe("punto");
+    expect(engranaje().textContent).toBe("Configuración");
+    expect(engranaje().querySelector(".punto")).toBeNull();
+  });
+
   it("cambia de sección con la navegación del panel", async () => {
     await abrirSobreCasos();
     await esperarHash(() => fireEvent.click(within(navegacion()).getByRole("link", { name: /Inteligencia artificial/ })));
     expect(location.hash).toBe("#/configuracion/ia");
-    expect(await within(panel()).findByRole("heading", { level: 2, name: "Modelo" })).toBeTruthy();
+    expect(await within(panel()).findByRole("heading", { level: 2, name: "Proveedor" })).toBeTruthy();
     expect(within(panel()).getByRole("heading", { level: 1, name: "Inteligencia artificial" })).toBeTruthy();
     expect(within(navegacion()).getByRole("link", { current: "page" }).getAttribute("href")).toBe("#/configuracion/ia");
   });
@@ -234,6 +254,6 @@ describe("panel de configuración", () => {
     expect(location.hash).toBe("#/configuracion/formato");
     await esperarHash(() => fireEvent.click(within(guardia).getByRole("button", { name: "Salir sin guardar" })));
     expect(location.hash).toBe("#/configuracion/ia");
-    expect(await within(panel()).findByRole("heading", { level: 2, name: "Modelo" })).toBeTruthy();
+    expect(await within(panel()).findByRole("heading", { level: 2, name: "Proveedor" })).toBeTruthy();
   });
 });

@@ -1,13 +1,22 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PreferenciasIa } from "../../api/contrato";
 import { toasts } from "../../estado";
 import InteligenciaArtificial from "./index";
 
 const base = (): PreferenciasIa => ({
+  proveedor: "anthropic",
   modelo: "claude-sonnet-5-5",
   modelos: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
+  gemini: { modelo: "gemini-4-argon", razonamiento: "high" },
+  modelos_gemini: ["gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"],
+  razonamientos_gemini: {
+    "gemini-4-argon": ["low", "medium", "high"],
+    "gemini-4-carbon": ["low", "medium", "high"],
+    "gemini-4-hydrogen": ["low", "medium", "high", "xhigh"],
+  },
   api_key: true,
+  gemini_key: false,
   jev_key: false,
   jev: { modo: "apagado", umbral: 0.9 },
   effort: "high",
@@ -38,16 +47,20 @@ function simular(rutas: Record<string, Manejador>) {
   return llamadas;
 }
 
-const estadoServidor: Manejador = () => ({ cuerpo: { api_key: true, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [] } });
+const estadoServidor: Manejador = () => ({
+  cuerpo: { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] },
+});
 
 async function montar(extra: Record<string, Manejador> = {}, inicial: PreferenciasIa = base()) {
   const llamadas = simular({ "GET /api/ia": () => ({ cuerpo: inicial }), "GET /api/estado-servidor": estadoServidor, ...extra });
   render(<InteligenciaArtificial />);
-  await screen.findByRole("heading", { name: "Modelo" });
+  await screen.findByRole("heading", { name: "Proveedor" });
   return llamadas;
 }
 
 const guardar = () => screen.getByRole("button", { name: "Guardar cambios" });
+const seccion = (nombre: string) => screen.getByRole("region", { name: nombre });
+const textos = (radios: HTMLElement[]) => radios.map((r) => r.closest("label")?.querySelector("b")?.textContent);
 
 beforeEach(() => {
   toasts.value = [];
@@ -62,11 +75,12 @@ describe("Inteligencia artificial", () => {
     await montar();
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Migas de pan" })).toBeNull();
-    const modelos = screen.getAllByRole("radio", { name: /5\.5/ });
-    expect(modelos.map((m) => m.closest("label")?.querySelector("b")?.textContent)).toEqual(["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
+    const modelos = within(seccion("Anthropic")).getAllByRole("radio");
+    expect(textos(modelos)).toEqual(["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
     expect((screen.getByRole("radio", { name: /Sonnet 5\.5/ }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText("Hay una clave lista.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reemplazar clave" })).toBeTruthy();
+    expect(within(seccion("Anthropic")).getByText("Hay una clave lista.")).toBeTruthy();
+    expect(within(seccion("Anthropic")).getByRole("button", { name: "Reemplazar clave" })).toBeTruthy();
+    expect((within(seccion("Anthropic")).getByLabelText("Esfuerzo de razonamiento") as HTMLSelectElement).value).toBe("high");
     expect((screen.getByRole("radio", { name: /Apagado/ }) as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByText(/artículo 8\.6/)).toBeNull();
     expect(screen.queryByLabelText("Confianza mínima de Jev")).toBeNull();
@@ -80,7 +94,7 @@ describe("Inteligencia artificial", () => {
     expect(screen.getByText(/artículo 8\.6 del Acuerdo PCSJA24-12243/)).toBeTruthy();
     expect(screen.getByText("Esta información sale del despacho")).toBeTruthy();
     expect(screen.getByText(/No hay clave de Jev/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Agregar clave" })).toBeTruthy();
+    expect(within(seccion("Jev, segunda opinión")).getByRole("button", { name: "Agregar clave" })).toBeTruthy();
     const umbral = screen.getByLabelText("Confianza mínima de Jev") as HTMLInputElement;
     expect(umbral.value).toBe("90");
     fireEvent.input(umbral, { target: { value: "75" } });
@@ -101,8 +115,8 @@ describe("Inteligencia artificial", () => {
     const put = llamadas.find((l) => l.clave === "PUT /api/ia");
     expect(put?.cuerpo).toEqual({
       modelo: "claude-opus-5-5",
-      jev: { modo: "relleno", umbral: 0.8 },
       effort: "high",
+      jev: { modo: "relleno", umbral: 0.8 },
       max_tokens: 64000,
       max_retries: 1,
     });
@@ -171,7 +185,7 @@ describe("Inteligencia artificial", () => {
     expect(alerta.textContent).toContain("No se pudieron cargar las preferencias");
     expect(alerta.textContent).toContain("Fallo del servidor.");
     fireEvent.click(within(alerta).getByRole("button", { name: "Reintentar" }));
-    await screen.findByRole("heading", { name: "Modelo" });
+    await screen.findByRole("heading", { name: "Proveedor" });
     expect(intentos).toBe(2);
   });
 
@@ -238,8 +252,8 @@ describe("Modelos permitidos por el servidor", () => {
 describe("Claves", () => {
   it("guarda la clave de Anthropic sin conservarla en el navegador", async () => {
     const llamadas = await montar({ "POST /api/api-key": () => ({ cuerpo: { api_key: true } }) }, { ...base(), api_key: false });
-    expect(screen.getByText("No hay clave. Sin ella no se puede redactar.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Agregar clave" }));
+    expect(screen.getByText("No hay clave. Agréguela para elegir el modelo de Anthropic.")).toBeTruthy();
+    fireEvent.click(within(seccion("Anthropic")).getByRole("button", { name: "Agregar clave" }));
 
     const dialogo = screen.getByRole("dialog", { hidden: true });
     const campo = within(dialogo).getByLabelText("Clave de la API de Anthropic") as HTMLInputElement;
@@ -247,7 +261,8 @@ describe("Claves", () => {
     fireEvent.input(campo, { target: { value: "  sk-ant-secreta  " } });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar clave" }));
 
-    await screen.findByText("Hay una clave lista.");
+    await within(seccion("Anthropic")).findByText("Hay una clave lista.");
+    expect(within(seccion("Anthropic")).getAllByRole("radio")).toHaveLength(3);
     expect(llamadas.find((l) => l.clave === "POST /api/api-key")?.cuerpo).toEqual({ key: "sk-ant-secreta" });
     expect(document.querySelector("dialog input")).toBeNull();
     expect(document.body.innerHTML).not.toContain("sk-ant-secreta");
@@ -260,7 +275,7 @@ describe("Claves", () => {
     const mensaje = "La clave de Jev solo admite caracteres ASCII visibles, sin espacios ni saltos de línea.";
     await montar({ "POST /api/jev-key": () => ({ estado: 422, cuerpo: { detail: mensaje } }) });
     fireEvent.click(screen.getByRole("radio", { name: /Sombra/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Agregar clave" }));
+    fireEvent.click(within(seccion("Jev, segunda opinión")).getByRole("button", { name: "Agregar clave" }));
     const dialogo = screen.getByRole("dialog", { hidden: true });
     fireEvent.input(within(dialogo).getByLabelText("Clave de Jev"), { target: { value: "con espacio" } });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar clave" }));
@@ -293,11 +308,152 @@ describe("Claves", () => {
 
   it("no incluye la extensión de la relatoría ni su descarga", async () => {
     const llamadas = await montar();
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Modelo", "Clave de Anthropic", "Jev, segunda opinión"]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Proveedor", "Anthropic", "Gemini (Google)", "Jev, segunda opinión"]);
     expect(screen.queryByText("Extensión de la relatoría")).toBeNull();
     expect(screen.queryByRole("link", { name: "Descargar extensión (.zip)" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Pasos para instalar la extensión" })).toBeNull();
     expect(screen.queryByText(/citas/)).toBeNull();
     expect(llamadas.some((l) => l.clave.includes("/api/extension"))).toBe(false);
+  });
+});
+
+describe("Proveedores", () => {
+  const radiosGemini = () => within(seccion("Gemini (Google)")).queryAllByRole("radio") as HTMLInputElement[];
+  const conGemini = (extra: Partial<PreferenciasIa> = {}): PreferenciasIa => ({ ...base(), gemini_key: true, ...extra });
+  const nivel = () => within(seccion("Gemini (Google)")).getByLabelText("Nivel de razonamiento") as HTMLSelectElement;
+  const opcionesNivel = () => Array.from(nivel().options).map((o) => o.value);
+
+  it("muestra los proveedores con el estado de su clave y Anthropic activo", async () => {
+    await montar();
+    const tarjetas = within(seccion("Proveedor")).getAllByRole("radio") as HTMLInputElement[];
+    expect(textos(tarjetas)).toEqual(["Anthropic", "Gemini (Google)"]);
+    expect(tarjetas.map((t) => t.checked)).toEqual([true, false]);
+    expect(seccion("Proveedor").textContent).toContain("Modelos Claude. Clave lista.");
+    expect(seccion("Proveedor").textContent).toContain("Modelos Gemini. Sin clave.");
+    expect(screen.queryByText(/^Falta la clave de/)).toBeNull();
+  });
+
+  it("sin la clave de Gemini oculta sus opciones, avisa al elegirlo y guarda solo el proveedor", async () => {
+    const llamadas = await montar({ "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...base(), ...(cuerpo as object) } }) });
+    expect(radiosGemini()).toHaveLength(0);
+    expect(within(seccion("Gemini (Google)")).queryByLabelText("Nivel de razonamiento")).toBeNull();
+    expect(within(seccion("Gemini (Google)")).getByText("No hay clave. Agréguela para elegir el modelo de Gemini.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /^Gemini \(Google\)/ }));
+    const aviso = screen.getByText("Falta la clave de Gemini (Google)").closest(".aviso") as HTMLElement;
+    expect(aviso.classList.contains("alerta")).toBe(true);
+    expect(aviso.textContent).toContain("La redacción no funcionará");
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    const put = llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo as Record<string, unknown>;
+    expect(put.proveedor).toBe("gemini");
+    expect(put).not.toHaveProperty("gemini");
+    expect(put.modelo).toBe("claude-sonnet-5-5");
+  });
+
+  it("sin la clave de Anthropic oculta su modelo y su esfuerzo y no los envía", async () => {
+    const llamadas = await montar({ "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...base(), api_key: false, ...(cuerpo as object) } }) }, { ...base(), api_key: false });
+    expect(screen.queryAllByRole("radio", { name: /5\.5/ })).toHaveLength(0);
+    expect(screen.queryByLabelText("Esfuerzo de razonamiento")).toBeNull();
+    expect(screen.getByText("Falta la clave de Anthropic")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /Sombra/ }));
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    const put = llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo as Record<string, unknown>;
+    expect(put).not.toHaveProperty("modelo");
+    expect(put).not.toHaveProperty("effort");
+    expect(put.jev).toEqual({ modo: "sombra", umbral: 0.9 });
+  });
+
+  it("no envía el proveedor si el usuario no lo cambió, para no pisar el del servidor", async () => {
+    const llamadas = await montar({ "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...conGemini({ proveedor: "gemini" }), ...(cuerpo as object) } }) }, conGemini({ proveedor: "gemini" }));
+    expect((screen.getByRole("radio", { name: /^Gemini \(Google\)/ }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.input(screen.getByLabelText("Reintentos por llamada"), { target: { value: "3" } });
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    const put = llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo as Record<string, unknown>;
+    expect(put).not.toHaveProperty("proveedor");
+    expect(put.max_retries).toBe(3);
+  });
+
+  it("avisa que con una clave gratuita Google puede usar lo que se envía", async () => {
+    await montar();
+    const aviso = within(seccion("Gemini (Google)")).getByText("Con una clave gratuita, Google puede usar lo que se envía").closest(".aviso") as HTMLElement;
+    expect(aviso.classList.contains("alerta")).toBe(true);
+    expect(aviso.textContent).toMatch(/nivel gratuito/);
+    expect(aviso.textContent).toMatch(/personas pueden revisarlo/);
+    expect(aviso.textContent).toMatch(/facturación activa/);
+    const enlace = within(aviso).getByRole("link", { name: "Condiciones adicionales de la API de Gemini" });
+    expect(enlace.getAttribute("href")).toBe("https://aistudio.google.com/docs/terms");
+  });
+
+  it("al agregar la clave de Gemini muestra sus modelos y niveles", async () => {
+    const llamadas = await montar({ "POST /api/gemini-key": () => ({ cuerpo: { gemini_key: true } }) });
+    fireEvent.click(within(seccion("Gemini (Google)")).getByRole("button", { name: "Agregar clave" }));
+    const dialogo = screen.getByRole("dialog", { hidden: true });
+    expect(within(dialogo).getByRole("heading", { name: "Agregar la clave de Gemini" })).toBeTruthy();
+    const campo = within(dialogo).getByLabelText("Clave de la API de Gemini") as HTMLInputElement;
+    expect(campo.type).toBe("password");
+    expect(campo.placeholder).toBe("AIza…");
+    fireEvent.input(campo, { target: { value: " AIza-secreta " } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar clave" }));
+
+    await within(seccion("Gemini (Google)")).findByText("Hay una clave lista.");
+    expect(llamadas.find((l) => l.clave === "POST /api/gemini-key")?.cuerpo).toEqual({ key: "AIza-secreta" });
+    expect(document.body.innerHTML).not.toContain("AIza-secreta");
+    expect(toasts.value.map((t) => t.texto)).toContain("Clave de Gemini guardada.");
+    expect(textos(radiosGemini())).toEqual(["Gemini 4 Argon", "Gemini 4 Carbon", "Gemini 4 Hydrogen"]);
+    expect(radiosGemini()[0]?.checked).toBe(true);
+    expect(opcionesNivel()).toEqual(["low", "medium", "high"]);
+    expect(seccion("Proveedor").textContent).toContain("Modelos Gemini. Clave lista.");
+  });
+
+  it("lista solo los niveles que admite el modelo y ajusta el nivel al cambiarlo", async () => {
+    const llamadas = await montar({ "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...conGemini(), ...(cuerpo as object) } }) }, conGemini());
+    fireEvent.click(screen.getByRole("radio", { name: /^Gemini 4 Hydrogen/ }));
+    expect(opcionesNivel()).toEqual(["low", "medium", "high", "xhigh"]);
+    fireEvent.change(nivel(), { target: { value: "xhigh" } });
+    expect(nivel().value).toBe("xhigh");
+    fireEvent.click(screen.getByRole("radio", { name: /^Gemini 4 Carbon/ }));
+    expect(opcionesNivel()).toEqual(["low", "medium", "high"]);
+    expect(nivel().value).toBe("high");
+    fireEvent.change(nivel(), { target: { value: "medium" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^Gemini \(Google\)/ }));
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    expect(llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo).toMatchObject({
+      proveedor: "gemini",
+      modelo: "claude-sonnet-5-5",
+      gemini: { modelo: "gemini-4-carbon", razonamiento: "medium" },
+    });
+  });
+
+  it("muestra el error del servidor en el nivel de razonamiento", async () => {
+    await montar(
+      { "PUT /api/ia": () => ({ estado: 422, cuerpo: { detail: { errores: [{ campo: "gemini.razonamiento", mensaje: "con gemini-4-carbon debe ser uno de: low, medium o high." }] } } }) },
+      conGemini(),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /^Gemini 4 Carbon/ }));
+    fireEvent.click(guardar());
+    expect(await screen.findByText("Con gemini-4-carbon debe ser uno de: low, medium o high.")).toBeTruthy();
+    expect(nivel().getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("avisa cuando el servidor no permite ningún modelo de Gemini o el guardado", async () => {
+    await montar({}, conGemini({ modelos_gemini: [] }));
+    expect(screen.getByText("No hay modelos de Gemini permitidos en este servidor")).toBeTruthy();
+    expect(radiosGemini()).toHaveLength(0);
+    cleanup();
+    await montar({}, conGemini({ modelos_gemini: ["gemini-4-hydrogen"] }));
+    const aviso = screen.getByText("El modelo de Gemini guardado no está permitido en este servidor").closest(".aviso") as HTMLElement;
+    expect(aviso.textContent).toContain("Gemini 4 Argon");
+    expect(textos(radiosGemini())).toEqual(["Gemini 4 Hydrogen"]);
+  });
+
+  it("el esfuerzo de Anthropic ya no está en las opciones avanzadas", async () => {
+    await montar();
+    const detalles = document.querySelector("details") as HTMLDetailsElement;
+    expect(within(detalles).queryByLabelText("Esfuerzo de razonamiento")).toBeNull();
+    expect(within(detalles).getByLabelText("Máximo de tokens de salida")).toBeTruthy();
+    expect(within(detalles).getByLabelText("Reintentos por llamada")).toBeTruthy();
   });
 });

@@ -169,11 +169,24 @@ export interface DecisionVistaRespuesta {
 
 export type ModoJev = "apagado" | "sombra" | "relleno";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type Proveedor = "anthropic" | "gemini";
+export type ProveedorCaso = Proveedor | "fake";
+export type RazonamientoGemini = "low" | "medium" | "high" | "xhigh";
+
+export interface PreferenciasGemini {
+  modelo: string;
+  razonamiento: RazonamientoGemini;
+}
 
 export interface PreferenciasIa {
+  proveedor: Proveedor;
   modelo: string;
   modelos: string[];
+  gemini: PreferenciasGemini;
+  modelos_gemini: string[];
+  razonamientos_gemini: Record<string, RazonamientoGemini[]>;
   api_key: boolean;
+  gemini_key: boolean;
   jev_key: boolean;
   jev: { modo: ModoJev; umbral: number };
   effort: Effort;
@@ -182,18 +195,23 @@ export interface PreferenciasIa {
 }
 
 export interface PreferenciasIaCuerpo {
-  modelo: string;
+  proveedor?: Proveedor;
+  modelo?: string;
+  effort?: Effort;
+  gemini?: PreferenciasGemini;
   jev: { modo: ModoJev; umbral: number };
-  effort: Effort;
   max_tokens: number;
   max_retries: number;
 }
 
 export interface EstadoServidor {
+  proveedor: Proveedor;
   api_key: boolean;
+  gemini_key: boolean;
   jev_key: boolean;
   modelo: string;
   modelos: string[];
+  modelos_gemini: string[];
 }
 
 export interface EstadoDataset {

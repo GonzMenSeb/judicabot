@@ -2,15 +2,18 @@ import { nombreModelo } from "../../estado";
 import type { ModoJev } from "../../api/contrato";
 import type { OpcionTarjeta } from "./Tarjetas";
 
-const FAMILIAS = ["sonnet", "opus", "haiku"];
+const FAMILIAS = ["sonnet", "opus", "haiku", "argon", "carbon", "hydrogen"];
 
 const DETALLES: Record<string, string> = {
   sonnet: "Recomendado. Equilibrio entre calidad, tiempo y costo.",
   opus: "El más cuidadoso. Más lento y más costoso.",
   haiku: "El más rápido. Si rechaza una tarea, se reintenta con Sonnet.",
+  argon: "Recomendado. Equilibrio entre calidad, tiempo y costo.",
+  carbon: "El más cuidadoso. Más lento y más costoso.",
+  hydrogen: "El más rápido.",
 };
 
-const familiaDe = (id: string) => /^claude-([a-z]+)-/.exec(id)?.[1] ?? "";
+const familiaDe = (id: string) => /^(?:claude|gemini-\d+(?:\.\d+)?)-([a-z]+)(?:-|$)/.exec(id)?.[1] ?? "";
 
 const posicion = (id: string) => {
   const i = FAMILIAS.indexOf(familiaDe(id));

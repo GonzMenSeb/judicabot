@@ -30,6 +30,6 @@ test("extensión: sección propia del panel con la descarga y los pasos de insta
 
   await secciones.getByRole("link", { name: /^Inteligencia artificial/ }).click();
   await expect(page).toHaveURL(/#\/configuracion\/ia$/);
-  await expect(panel.getByRole("heading", { name: "Modelo", level: 2 })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Proveedor", level: 2 })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Descargar extensión (.zip)" })).toHaveCount(0);
 });

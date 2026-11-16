@@ -736,6 +736,10 @@
             "title": "Api Key",
             "type": "boolean"
           },
+          "gemini_key": {
+            "title": "Gemini Key",
+            "type": "boolean"
+          },
           "jev_key": {
             "title": "Jev Key",
             "type": "boolean"
@@ -750,13 +754,31 @@
             },
             "title": "Modelos",
             "type": "array"
+          },
+          "modelos_gemini": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modelos Gemini",
+            "type": "array"
+          },
+          "proveedor": {
+            "enum": [
+              "anthropic",
+              "gemini"
+            ],
+            "title": "Proveedor",
+            "type": "string"
           }
         },
         "required": [
+          "proveedor",
           "api_key",
+          "gemini_key",
           "jev_key",
           "modelo",
-          "modelos"
+          "modelos",
+          "modelos_gemini"
         ],
         "title": "EstadoServidor",
         "type": "object"
@@ -985,6 +1007,46 @@
         "title": "FormatoRespuesta",
         "type": "object"
       },
+      "GeminiPreferencias": {
+        "additionalProperties": false,
+        "properties": {
+          "modelo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gemini-4-argon",
+                  "gemini-4-carbon",
+                  "gemini-4-hydrogen"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelo"
+          },
+          "razonamiento": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razonamiento"
+          }
+        },
+        "title": "GeminiPreferencias",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1061,6 +1123,13 @@
             "title": "Effort",
             "type": "string"
           },
+          "gemini": {
+            "$ref": "#/components/schemas/IAGemini"
+          },
+          "gemini_key": {
+            "title": "Gemini Key",
+            "type": "boolean"
+          },
           "jev": {
             "$ref": "#/components/schemas/IAJev"
           },
@@ -1091,12 +1160,48 @@
             },
             "title": "Modelos",
             "type": "array"
+          },
+          "modelos_gemini": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modelos Gemini",
+            "type": "array"
+          },
+          "proveedor": {
+            "enum": [
+              "anthropic",
+              "gemini"
+            ],
+            "title": "Proveedor",
+            "type": "string"
+          },
+          "razonamientos_gemini": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Razonamientos Gemini",
+            "type": "object"
           }
         },
         "required": [
+          "proveedor",
           "modelo",
           "modelos",
+          "gemini",
+          "modelos_gemini",
+          "razonamientos_gemini",
           "api_key",
+          "gemini_key",
           "jev_key",
           "jev",
           "effort",
@@ -1104,6 +1209,35 @@
           "max_retries"
         ],
         "title": "IAEstado",
+        "type": "object"
+      },
+      "IAGemini": {
+        "properties": {
+          "modelo": {
+            "enum": [
+              "gemini-4-argon",
+              "gemini-4-carbon",
+              "gemini-4-hydrogen"
+            ],
+            "title": "Modelo",
+            "type": "string"
+          },
+          "razonamiento": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "title": "Razonamiento",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelo",
+          "razonamiento"
+        ],
+        "title": "IAGemini",
         "type": "object"
       },
       "IAJev": {
@@ -1254,6 +1388,9 @@
             ],
             "title": "Effort"
           },
+          "gemini": {
+            "$ref": "#/components/schemas/GeminiPreferencias"
+          },
           "jev": {
             "$ref": "#/components/schemas/JevPreferencias"
           },
@@ -1298,6 +1435,21 @@
               }
             ],
             "title": "Modelo"
+          },
+          "proveedor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "anthropic",
+                  "gemini"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proveedor"
           }
         },
         "title": "Preferencias",
@@ -2252,6 +2404,48 @@
         "tags": [
           "formato"
         ]
+      }
+    },
+    "/api/gemini-key": {
+      "post": {
+        "operationId": "guardar_gemini_key_api_gemini_key_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Guardar Gemini Key Api Gemini Key Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guardar Gemini Key"
       }
     },
     "/api/ia": {

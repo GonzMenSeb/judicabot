@@ -193,6 +193,7 @@ def test_entorno_fuerza_jev_apagado_y_modelo_y_quita_llaves_ajenas(pr, monkeypat
         "TUTELA2_JEV_MODO": "relleno",
         "TUTELA2_MODELO": "claude-opus-5-5",
         "TUTELA2_PROVEEDOR": "fake",
+        "TUTELA2_PROVEEDOR_LLM": "gemini",
         "JEV_API_KEY": "x",
         "ANTHROPIC_AUTH_TOKEN": "y",
     }.items():
@@ -203,7 +204,7 @@ def test_entorno_fuerza_jev_apagado_y_modelo_y_quita_llaves_ajenas(pr, monkeypat
     assert cfg.jev.modo == "apagado"
     assert cfg.llm.modelo == SONNET
     assert cfg.llm.proveedor == "anthropic"
-    assert "JEV_API_KEY" not in os.environ and "TUTELA2_PROVEEDOR" not in os.environ
+    assert "JEV_API_KEY" not in os.environ and "TUTELA2_PROVEEDOR" not in os.environ and "TUTELA2_PROVEEDOR_LLM" not in os.environ
     assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
 
 

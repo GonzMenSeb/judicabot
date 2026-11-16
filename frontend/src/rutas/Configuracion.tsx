@@ -1,6 +1,6 @@
 import type { ComponentType } from "preact";
 import { useEffect } from "preact/hooks";
-import { estadoServidor, nombreModelo } from "../estado";
+import { claveActiva, estadoServidor, nombreModelo } from "../estado";
 import { Cargando } from "../ui/Estados";
 import { Panel } from "../ui/Panel";
 import { claseClave, estadoClave, ID_CONFIGURACION } from "../ui/Topbar";
@@ -9,7 +9,7 @@ import type { SeccionConfiguracion } from "./router";
 
 function EstadoIa() {
   const servidor = estadoServidor.value;
-  const clave = servidor ? servidor.api_key : null;
+  const clave = servidor ? claveActiva(servidor) : null;
   return (
     <>
       <span class={claseClave(clave)} aria-hidden="true" />

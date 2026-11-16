@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 from tutela2 import config as cfgmod
@@ -20,13 +20,20 @@ ARCHIVO = ".preferencias.json"
 MAX_TOKENS = 64000
 MAX_REINTENTOS = 5
 
+Proveedor = Literal["anthropic", "gemini"]
 Modelo = Literal[cfgmod.MODELOS]
+ModeloGemini = Literal[cfgmod.MODELOS_GEMINI]
 Modo = Literal["apagado", "sombra", "relleno"]
-Effort = Literal["low", "medium", "high", "xhigh", "max"]
+Effort = Literal[cfgmod.ESFUERZOS]
+RazonamientoGemini = Literal[cfgmod.NIVELES_GEMINI]
 
-_SOLO_LECTURA = ("modelos", "api_key", "jev_key")
+COMPLETAS = {"completas": True}
+_SOLO_LECTURA = ("modelos", "modelos_gemini", "razonamientos_gemini", "api_key", "gemini_key", "jev_key")
 _VARIABLES = {
+    ("proveedor",): "TUTELA2_PROVEEDOR_LLM",
     ("modelo",): "TUTELA2_MODELO",
+    ("gemini", "modelo"): "TUTELA2_GEMINI_MODELO",
+    ("gemini", "razonamiento"): "TUTELA2_GEMINI_RAZONAMIENTO",
     ("jev", "modo"): "TUTELA2_JEV_MODO",
     ("jev", "umbral"): "TUTELA2_JEV_UMBRAL",
     ("effort",): "TUTELA2_EFFORT",
@@ -42,13 +49,49 @@ class _Estricto(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _exigir_permitido(valor: Any, proveedor: str) -> Any:
+    permitidos = cfgmod.modelos_permitidos(proveedor)
+    if isinstance(valor, str) and valor not in permitidos:
+        raise PydanticCustomError("modelo_no_permitido", "modelo no permitido", {"permitidos": list(permitidos)})
+    return valor
+
+
 class JevPreferencias(_Estricto):
     modo: Modo | None = None
     umbral: Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)] | None = None
 
 
+class GeminiPreferencias(_Estricto):
+    modelo: ModeloGemini | None = None
+    razonamiento: RazonamientoGemini | None = None
+
+    @field_validator("modelo", mode="before")
+    @classmethod
+    def _modelo_permitido(cls, valor: Any) -> Any:
+        return _exigir_permitido(valor, "gemini")
+
+    @field_validator("razonamiento")
+    @classmethod
+    def _razonamiento_del_modelo(cls, valor: Any, info: ValidationInfo) -> Any:
+        if valor is None or "modelo" not in info.data:
+            return valor
+        modelo = info.data["modelo"]
+        if modelo is None:
+            if not (info.context or {}).get("completas"):
+                return valor
+            modelo = cfgmod.MODELO_GEMINI
+        admitidos = cfgmod.RAZONAMIENTOS_GEMINI[modelo]
+        if valor not in admitidos:
+            raise PydanticCustomError(
+                "razonamiento_no_admitido", "nivel no admitido por el modelo", {"modelo": modelo, "admitidos": list(admitidos)}
+            )
+        return valor
+
+
 class Preferencias(_Estricto):
+    proveedor: Proveedor | None = None
     modelo: Modelo | None = None
+    gemini: GeminiPreferencias = Field(default_factory=GeminiPreferencias)
     jev: JevPreferencias = Field(default_factory=JevPreferencias)
     effort: Effort | None = None
     max_tokens: Annotated[int, Field(ge=1, le=MAX_TOKENS)] | None = None
@@ -60,17 +103,15 @@ class Preferencias(_Estricto):
         if not isinstance(datos, dict):
             return datos
         datos = {k: v for k, v in datos.items() if k not in _SOLO_LECTURA}
-        if datos.get("jev") is None:
-            datos.pop("jev", None)
+        for anidado in ("gemini", "jev"):
+            if datos.get(anidado) is None:
+                datos.pop(anidado, None)
         return datos
 
     @field_validator("modelo", mode="before")
     @classmethod
     def _modelo_permitido(cls, valor: Any) -> Any:
-        permitidos = cfgmod.modelos_permitidos()
-        if isinstance(valor, str) and valor not in permitidos:
-            raise PydanticCustomError("modelo_no_permitido", "modelo no permitido", {"permitidos": list(permitidos)})
-        return valor
+        return _exigir_permitido(valor, "anthropic")
 
     @field_validator("max_tokens", "max_retries", mode="before")
     @classmethod
@@ -82,8 +123,9 @@ class Preferencias(_Estricto):
 
 def _a_dict(prefs: Preferencias) -> dict[str, Any]:
     datos = prefs.model_dump(exclude_none=True)
-    if not datos.get("jev"):
-        datos.pop("jev", None)
+    for anidado in ("gemini", "jev"):
+        if not datos.get(anidado):
+            datos.pop(anidado, None)
     return datos
 
 
@@ -102,7 +144,7 @@ def _depurar(bruto: Any, origen: str) -> Preferencias:
     bruto = copy.deepcopy(bruto)
     for _ in range(16):
         try:
-            return Preferencias.model_validate(bruto)
+            return Preferencias.model_validate(bruto, context=COMPLETAS)
         except ValidationError as exc:
             for e in exc.errors():
                 log.warning("Se ignora la preferencia %s de %s: %s", ".".join(map(str, e["loc"])), origen, e["type"])
@@ -142,8 +184,8 @@ def _escribir(archivo: Path, datos: dict[str, Any]) -> None:
 def actualizar(archivo: Path, cambios: Preferencias) -> Preferencias:
     with _LOCK:
         datos = _fusionar(_a_dict(leer(archivo)), _a_dict(cambios))
+        prefs = Preferencias.model_validate(datos, context=COMPLETAS)
         _escribir(archivo, datos)
-        prefs = Preferencias.model_validate(datos)
         aplicar_entorno(prefs)
         return prefs
 
@@ -178,11 +220,32 @@ def desde_entorno() -> Preferencias:
     return _depurar(bruto, "el entorno")
 
 
+def efectivas(guardadas: Preferencias) -> Preferencias:
+    return _depurar(_fusionar(_a_dict(desde_entorno()), _a_dict(guardadas)), "el entorno")
+
+
+def proveedor_activo(prefs: Preferencias) -> str:
+    return prefs.proveedor or "anthropic"
+
+
+def modelo_activo(prefs: Preferencias) -> str:
+    if prefs.proveedor == "gemini":
+        return prefs.gemini.modelo or cfgmod.MODELO_GEMINI
+    return prefs.modelo or cfgmod.LLMConfig().modelo
+
+
 def superponer(cfg: cfgmod.Config, prefs: Preferencias) -> cfgmod.Config:
-    if prefs.modelo is not None:
-        cfg.llm.modelo = prefs.modelo
-    if prefs.effort is not None:
-        cfg.llm.effort = prefs.effort
+    if prefs.proveedor is not None and cfg.llm.proveedor != "fake":
+        cfg.llm.proveedor = prefs.proveedor
+    if cfg.llm.proveedor == "gemini":
+        propio = cfg.llm.modelo in cfgmod.MODELOS_GEMINI
+        cfg.llm.modelo = prefs.gemini.modelo or (cfg.llm.modelo if propio else cfgmod.MODELO_GEMINI)
+        cfg.llm.effort = prefs.gemini.razonamiento or (cfg.llm.effort if propio else cfgmod.RAZONAMIENTO_GEMINI)
+    else:
+        if prefs.modelo is not None:
+            cfg.llm.modelo = prefs.modelo
+        if prefs.effort is not None:
+            cfg.llm.effort = prefs.effort
     if prefs.max_tokens is not None:
         cfg.llm.max_tokens = prefs.max_tokens
     if prefs.max_retries is not None:

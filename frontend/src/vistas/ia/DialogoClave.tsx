@@ -3,7 +3,7 @@ import { api } from "../../api";
 import { Aviso, Boton, Dialogo } from "../../ui";
 import { leerErrorServidor } from "./formulario";
 
-export type TipoClave = "anthropic" | "jev";
+export type TipoClave = "anthropic" | "gemini" | "jev";
 
 interface DatosClave {
   ruta: string;
@@ -20,6 +20,13 @@ export const DATOS_CLAVE: Record<TipoClave, DatosClave> = {
     etiqueta: "Clave de la API de Anthropic",
     marcador: "sk-ant-…",
     vacio: "Escriba la clave de la API de Anthropic.",
+  },
+  gemini: {
+    ruta: "/api/gemini-key",
+    proveedor: "Gemini",
+    etiqueta: "Clave de la API de Gemini",
+    marcador: "AIza…",
+    vacio: "Escriba la clave de la API de Gemini.",
   },
   jev: {
     ruta: "/api/jev-key",

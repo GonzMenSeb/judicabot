@@ -1240,6 +1240,36 @@ def test_declaracion_con_llamadas_de_jev_nombra_a_cada_proveedor_con_sus_modelos
     assert "fragmentos" in uso and "Redacción de antecedentes" in uso
 
 
+def _llamada_gemini(modelo_pedido: str, modelo_efectivo: str | None, nodo: str = "consideraciones") -> dict:
+    return {**_llamada(modelo_pedido, modelo_efectivo), "nodo": nodo, "proveedor": "gemini"}
+
+
+def test_declaracion_solo_con_gemini_nombra_a_google(tmp_path):
+    estado = construir_estado()
+    estado["bitacora"] = [
+        _llamada_gemini("gemini-4-argon", "gemini-4-argon", "apertura"),
+        _llamada_gemini("gemini-4-carbon", "gemini-4-carbon"),
+    ]
+    cfg = Config(llm=LLMConfig(proveedor="gemini", modelo="gemini-4-argon"))
+    plano = "\n".join(lineas(render.render_declaracion_ia(estado, cfg, tmp_path / "d.docx", hoy=HOY)))
+    assert "Empresa proveedora | Google LLC" in plano
+    assert "Modelos usados | gemini-4-argon, gemini-4-carbon" in plano
+    assert "Anthropic" not in plano and "TypeSafe" not in plano
+    assert "gemini / gemini-4-carbon" in plano
+
+
+def test_declaracion_mixta_nombra_a_cada_proveedor_con_sus_modelos(tmp_path):
+    estado = construir_estado()
+    estado["bitacora"] = [
+        _llamada("claude-sonnet-5-5", "claude-sonnet-5-5"),
+        _llamada_gemini("gemini-4-hydrogen", "gemini-4-hydrogen"),
+        _llamada_jev("roles"),
+    ]
+    plano = "\n".join(lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY)))
+    assert "Empresa proveedora | Anthropic PBC; Google LLC; TypeSafe AI" in plano
+    assert "Modelos usados | Anthropic PBC: claude-sonnet-5-5; Google LLC: gemini-4-hydrogen; TypeSafe AI: jev-1.14.0" in plano
+
+
 def test_declaracion_con_jev_solo_menciona_lo_que_se_le_pidio(tmp_path):
     estado = construir_estado()
     estado["bitacora"] = [_llamada("claude-sonnet-5-5", "claude-sonnet-5-5"), _llamada_jev("roles")]

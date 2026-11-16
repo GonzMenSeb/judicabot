@@ -417,6 +417,9 @@ def preparar_entrada(args: argparse.Namespace, scratch: Path) -> tuple[Any, _Cap
     from tutela2 import graph, ingest
     from tutela2.models import Ingesta
 
+    import caso_sintetico
+
+    caso_sintetico.aislar_proveedor()
     if args.caso:
         carpeta = Path(args.caso).expanduser().resolve()
         archivo = carpeta / "caso.json"
@@ -426,8 +429,6 @@ def preparar_entrada(args: argparse.Namespace, scratch: Path) -> tuple[Any, _Cap
         ing = Ingesta.model_validate_json(archivo.read_text(encoding="utf-8"))
         origen, sintetico = str(carpeta), False
     else:
-        import caso_sintetico
-
         if not shutil.which("soffice"):
             raise SystemExit("El caso sintético necesita LibreOffice (soffice); instálelo o use --caso <carpeta de un caso ya creado>.")
         caso_sintetico.generar(scratch)

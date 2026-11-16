@@ -44,10 +44,13 @@ agregarMocks([
     metodo: "GET",
     ruta: "/api/estado-servidor",
     respuesta: {
+      proveedor: "anthropic",
       api_key: true,
+      gemini_key: false,
       jev_key: false,
       modelo: "claude-sonnet-5-5",
       modelos: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
+      modelos_gemini: ["gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"],
     },
   },
 ]);

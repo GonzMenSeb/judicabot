@@ -1,11 +1,24 @@
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
-import type { ModoJev, PreferenciasIa } from "../../api/contrato";
-import { cargarEstadoServidor, mostrarToast, nombreModelo, porcentaje } from "../../estado";
+import type { ModoJev, PreferenciasIa, Proveedor, RazonamientoGemini } from "../../api/contrato";
+import { cargarEstadoServidor, claveDe, DATOS_PROVEEDOR, mostrarToast, nombreModelo, porcentaje } from "../../estado";
 import { Aviso, Boton, Cargando } from "../../ui";
 import { DATOS_CLAVE, DialogoClave } from "./DialogoClave";
 import type { TipoClave } from "./DialogoClave";
-import { aCuerpo, aFormulario, CAMPOS_AVANZADOS, ESFUERZOS, igual, leerErrorServidor, MAX_REINTENTOS, MAX_TOKENS, validar } from "./formulario";
+import {
+  aCuerpo,
+  aFormulario,
+  CAMPOS_AVANZADOS,
+  ESFUERZOS,
+  igual,
+  leerErrorServidor,
+  MAX_REINTENTOS,
+  MAX_TOKENS,
+  NIVELES_GEMINI,
+  nivelAjustado,
+  nivelesDe,
+  validar,
+} from "./formulario";
 import type { CampoForm, ErroresForm, Formulario } from "./formulario";
 import { opcionesModelo, OPCIONES_JEV } from "./modelos";
 import { Tarjetas } from "./Tarjetas";
@@ -24,6 +37,17 @@ function EstadoClave({ hay, textoSi, textoNo, accion, onAccion }: { hay: boolean
 }
 
 const describe = (id: string, error?: string) => (error ? `${id}-d ${id}-e` : `${id}-d`);
+
+const FAMILIA: Record<Proveedor, string> = { anthropic: "Modelos Claude", gemini: "Modelos Gemini" };
+
+const opcionesProveedor = (p: PreferenciasIa) =>
+  (["anthropic", "gemini"] as const).map((valor) => ({
+    valor,
+    titulo: DATOS_PROVEEDOR[valor].nombre,
+    detalle: `${FAMILIA[valor]}. ${claveDe(p, valor) ? "Clave lista." : "Sin clave."}`,
+  }));
+
+const MEMORIA = "La clave vive solo en la memoria del servidor: no se guarda en disco y se pierde al reiniciarlo.";
 
 function MensajeError({ id, texto }: { id: string; texto?: string }) {
   return texto ? (
@@ -49,8 +73,11 @@ export default function InteligenciaArtificial() {
   const idUmbral = useId();
   const idTokens = useId();
   const idReintentos = useId();
+  const idProveedor = useId();
   const idEsfuerzo = useId();
   const idModelo = useId();
+  const idModeloGemini = useId();
+  const idNivel = useId();
   const idModo = useId();
   const idProximamente = useId();
 
@@ -94,7 +121,7 @@ export default function InteligenciaArtificial() {
     if (!base || !form) return;
     setGuardado(false);
     setGenerales([]);
-    const locales = validar(form, base.modelos);
+    const locales = validar(form, base);
     setIntentado(true);
     if (Object.keys(locales).length) {
       mostrarErrores(locales);
@@ -103,7 +130,7 @@ export default function InteligenciaArtificial() {
     if (igual(form, aFormulario(base))) return;
     setGuardando(true);
     try {
-      const nuevo = await api.put<PreferenciasIa>("/api/ia", aCuerpo(form));
+      const nuevo = await api.put<PreferenciasIa>("/api/ia", aCuerpo(form, base));
       setBase(nuevo);
       setForm(aFormulario(nuevo));
       setErrServidor({});
@@ -122,7 +149,7 @@ export default function InteligenciaArtificial() {
   };
 
   const claveGuardada = (tipo: TipoClave) => {
-    setBase((b) => (b ? { ...b, api_key: tipo === "anthropic" || b.api_key, jev_key: tipo === "jev" || b.jev_key } : b));
+    setBase((b) => (b ? { ...b, api_key: tipo === "anthropic" || b.api_key, gemini_key: tipo === "gemini" || b.gemini_key, jev_key: tipo === "jev" || b.jev_key } : b));
     setClaveAbierta(null);
     mostrarToast(`Clave de ${DATOS_CLAVE[tipo].proveedor} guardada.`, { tipo: "ok" });
     void cargarEstadoServidor(true);
@@ -150,57 +177,167 @@ export default function InteligenciaArtificial() {
     );
   }
 
-  const errores: ErroresForm = { ...(intentado ? validar(form, base.modelos) : {}), ...errServidor };
+  const errores: ErroresForm = { ...(intentado ? validar(form, base) : {}), ...errServidor };
   const cambios = !igual(form, aFormulario(base));
   const encendido = form.modo !== "apagado";
   const sinModelos = base.modelos.length === 0;
   const modeloNoPermitido = !base.modelos.includes(base.modelo);
+  const sinModelosGemini = base.modelos_gemini.length === 0;
+  const modeloGeminiNoPermitido = !base.modelos_gemini.includes(base.gemini.modelo);
+  const nombreActivo = DATOS_PROVEEDOR[form.proveedor].nombre;
   const estado = cambios ? "Hay cambios sin guardar." : guardado ? "Cambios guardados." : "";
 
   return (
     <div data-vista="ia" class="ia">
       {cabecera}
       <form ref={raiz} onSubmit={guardar} noValidate>
-        <section class="ia-sec" aria-labelledby={`${idModelo}-t`}>
-          <h2 id={`${idModelo}-t`}>Modelo</h2>
-          <p class="sub" id={`${idModelo}-d`}>
-            Vale para todos los casos desde la siguiente redacción.
+        <section class="ia-sec" aria-labelledby={`${idProveedor}-t`}>
+          <h2 id={`${idProveedor}-t`}>Proveedor</h2>
+          <p class="sub" id={`${idProveedor}-d`}>
+            Quién redacta los borradores. Vale para todos los casos desde la siguiente redacción.
           </p>
-          {sinModelos ? (
-            <Aviso class="ia-aviso-modelo" tipo="alerta" titulo="No hay modelos permitidos en este servidor">
-              La configuración del servidor (TUTELA2_MODELOS_PERMITIDOS) no deja ningún modelo disponible, así que la redacción no funcionará hasta que se corrija.
+          <Tarjetas
+            nombre="proveedor"
+            legenda="Proveedor"
+            class="ia-tarjetas-dos"
+            opciones={opcionesProveedor(base)}
+            valor={form.proveedor}
+            onCambio={(v) => editar({ proveedor: v as Proveedor }, ["proveedor"])}
+            idDescripcion={`${idProveedor}-d`}
+            idError={errores.proveedor ? `${idProveedor}-e` : undefined}
+          />
+          <MensajeError id={`${idProveedor}-e`} texto={errores.proveedor} />
+          {!claveDe(base, form.proveedor) && (
+            <Aviso class="ia-aviso-clave" tipo="alerta" titulo={`Falta la clave de ${nombreActivo}`}>
+              La redacción no funcionará hasta que agregue la clave en la sección {nombreActivo}, más abajo.
             </Aviso>
-          ) : (
-            modeloNoPermitido && (
-              <Aviso class="ia-aviso-modelo" tipo="alerta" titulo="El modelo guardado no está permitido en este servidor">
-                El modelo guardado ({nombreModelo(base.modelo)}) no está entre los que este servidor permite, y la redacción fallará mientras no elija uno de los disponibles y guarde.
-              </Aviso>
-            )
           )}
-          {!sinModelos && (
-            <Tarjetas
-              nombre="modelo"
-              legenda="Modelo"
-              opciones={opcionesModelo(base.modelos)}
-              valor={form.modelo}
-              onCambio={(v) => editar({ modelo: v }, ["modelo"])}
-              idDescripcion={`${idModelo}-d`}
-              idError={errores.modelo ? `${idModelo}-e` : undefined}
-            />
-          )}
-          <MensajeError id={`${idModelo}-e`} texto={errores.modelo} />
         </section>
 
-        <section class="ia-sec" aria-labelledby="ia-clave-t">
-          <h2 id="ia-clave-t">Clave de Anthropic</h2>
-          <p class="sub">Vive solo en la memoria del servidor: no se guarda en disco y se pierde al reiniciarlo.</p>
+        <section class="ia-sec" aria-labelledby="ia-anthropic-t">
+          <h2 id="ia-anthropic-t">Anthropic</h2>
+          <p class="sub">{MEMORIA}</p>
           <EstadoClave
             hay={base.api_key}
             textoSi="Hay una clave lista."
-            textoNo="No hay clave. Sin ella no se puede redactar."
+            textoNo="No hay clave. Agréguela para elegir el modelo de Anthropic."
             accion={["Reemplazar clave", "Agregar clave"]}
             onAccion={() => setClaveAbierta("anthropic")}
           />
+          {base.api_key && (
+            <div class="ia-opciones">
+              <h3 id={`${idModelo}-t`}>Modelo</h3>
+              {sinModelos ? (
+                <Aviso tipo="alerta" titulo="No hay modelos permitidos en este servidor">
+                  La configuración del servidor (TUTELA2_MODELOS_PERMITIDOS) no deja ningún modelo disponible, así que la redacción no funcionará hasta que se corrija.
+                </Aviso>
+              ) : (
+                <>
+                  {modeloNoPermitido && (
+                    <Aviso tipo="alerta" titulo="El modelo guardado no está permitido en este servidor">
+                      El modelo guardado ({nombreModelo(base.modelo)}) no está entre los que este servidor permite, y la redacción fallará mientras no elija uno de los disponibles y guarde.
+                    </Aviso>
+                  )}
+                  <div>
+                    <Tarjetas
+                      nombre="modelo"
+                      legenda="Modelo de Anthropic"
+                      opciones={opcionesModelo(base.modelos)}
+                      valor={form.modelo}
+                      onCambio={(v) => editar({ modelo: v }, ["modelo"])}
+                      idError={errores.modelo ? `${idModelo}-e` : undefined}
+                    />
+                    <MensajeError id={`${idModelo}-e`} texto={errores.modelo} />
+                  </div>
+                  <div class="campo ia-razonamiento">
+                    <label for={idEsfuerzo}>Esfuerzo de razonamiento</label>
+                    <select
+                      id={idEsfuerzo}
+                      value={form.effort}
+                      aria-describedby={describe(idEsfuerzo, errores.effort)}
+                      aria-invalid={errores.effort ? "true" : undefined}
+                      onChange={(ev) => editar({ effort: ev.currentTarget.value as Formulario["effort"] }, ["effort"])}
+                    >
+                      {ESFUERZOS.map((o) => (
+                        <option key={o.valor} value={o.valor}>
+                          {o.texto}
+                        </option>
+                      ))}
+                    </select>
+                    <small id={`${idEsfuerzo}-d`}>Más esfuerzo razona más a fondo, pero tarda más y cuesta más.</small>
+                    <MensajeError id={`${idEsfuerzo}-e`} texto={errores.effort} />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section class="ia-sec" aria-labelledby="ia-gemini-t">
+          <h2 id="ia-gemini-t">Gemini (Google)</h2>
+          <p class="sub">{MEMORIA}</p>
+          <Aviso class="ia-aviso-datos" tipo="alerta" titulo="Con una clave gratuita, Google puede usar lo que se envía">
+            Si la clave es del nivel gratuito, Google puede usar el contenido que recibe y las respuestas para mejorar sus productos, y personas pueden revisarlo. Para casos reales use una clave de un
+            proyecto de Google Cloud con la facturación activa: con ella Google no usa las instrucciones ni las respuestas para mejorar sus productos (
+            <a href="https://aistudio.google.com/docs/terms" target="_blank" rel="noreferrer">
+              Condiciones adicionales de la API de Gemini
+            </a>
+            ).
+          </Aviso>
+          <EstadoClave
+            hay={base.gemini_key}
+            textoSi="Hay una clave lista."
+            textoNo="No hay clave. Agréguela para elegir el modelo de Gemini."
+            accion={["Reemplazar clave", "Agregar clave"]}
+            onAccion={() => setClaveAbierta("gemini")}
+          />
+          {base.gemini_key && (
+            <div class="ia-opciones">
+              <h3 id={`${idModeloGemini}-t`}>Modelo</h3>
+              {sinModelosGemini ? (
+                <Aviso tipo="alerta" titulo="No hay modelos de Gemini permitidos en este servidor">
+                  La configuración del servidor (TUTELA2_MODELOS_PERMITIDOS) no deja ningún modelo de Gemini disponible, así que con este proveedor la redacción no funcionará hasta que se corrija.
+                </Aviso>
+              ) : (
+                <>
+                  {modeloGeminiNoPermitido && (
+                    <Aviso tipo="alerta" titulo="El modelo de Gemini guardado no está permitido en este servidor">
+                      El modelo guardado ({nombreModelo(base.gemini.modelo)}) no está entre los que este servidor permite, y la redacción con Gemini fallará mientras no elija uno de los disponibles y guarde.
+                    </Aviso>
+                  )}
+                  <div>
+                    <Tarjetas
+                      nombre="modelo-gemini"
+                      legenda="Modelo de Gemini"
+                      opciones={opcionesModelo(base.modelos_gemini)}
+                      valor={form.modeloGemini}
+                      onCambio={(v) => editar({ modeloGemini: v, razonamiento: nivelAjustado(base, v, form.razonamiento) }, ["gemini_modelo", "razonamiento"])}
+                      idError={errores.gemini_modelo ? `${idModeloGemini}-e` : undefined}
+                    />
+                    <MensajeError id={`${idModeloGemini}-e`} texto={errores.gemini_modelo} />
+                  </div>
+                  <div class="campo ia-razonamiento">
+                    <label for={idNivel}>Nivel de razonamiento</label>
+                    <select
+                      id={idNivel}
+                      value={form.razonamiento}
+                      aria-describedby={describe(idNivel, errores.razonamiento)}
+                      aria-invalid={errores.razonamiento ? "true" : undefined}
+                      onChange={(ev) => editar({ razonamiento: ev.currentTarget.value as RazonamientoGemini }, ["razonamiento"])}
+                    >
+                      {NIVELES_GEMINI.filter((o) => nivelesDe(base, form.modeloGemini).includes(o.valor)).map((o) => (
+                        <option key={o.valor} value={o.valor}>
+                          {o.texto}
+                        </option>
+                      ))}
+                    </select>
+                    <small id={`${idNivel}-d`}>Solo los niveles que admite {nombreModelo(form.modeloGemini)}. Más razonamiento piensa más a fondo, pero tarda más y cuesta más.</small>
+                    <MensajeError id={`${idNivel}-e`} texto={errores.razonamiento} />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         <section class="ia-sec" aria-labelledby={`${idModo}-t`}>
@@ -259,24 +396,6 @@ export default function InteligenciaArtificial() {
           <details class="avanzado" open={avanzado} onToggle={(ev) => setAvanzado(ev.currentTarget.open)}>
             <summary>Opciones avanzadas</summary>
             <div class="ia-campos">
-              <div class="campo">
-                <label for={idEsfuerzo}>Esfuerzo de razonamiento</label>
-                <select
-                  id={idEsfuerzo}
-                  value={form.effort}
-                  aria-describedby={describe(idEsfuerzo, errores.effort)}
-                  aria-invalid={errores.effort ? "true" : undefined}
-                  onChange={(ev) => editar({ effort: ev.currentTarget.value as Formulario["effort"] }, ["effort"])}
-                >
-                  {ESFUERZOS.map((o) => (
-                    <option key={o.valor} value={o.valor}>
-                      {o.texto}
-                    </option>
-                  ))}
-                </select>
-                <small id={`${idEsfuerzo}-d`}>Más esfuerzo razona más a fondo, pero tarda más y cuesta más.</small>
-                <MensajeError id={`${idEsfuerzo}-e`} texto={errores.effort} />
-              </div>
               <div class="campo">
                 <label for={idTokens}>Máximo de tokens de salida</label>
                 <input
@@ -344,7 +463,7 @@ export default function InteligenciaArtificial() {
       </form>
       <DialogoClave
         tipo={claveAbierta}
-        existente={claveAbierta === "jev" ? base.jev_key : base.api_key}
+        existente={claveAbierta === "jev" ? base.jev_key : claveAbierta === "gemini" ? base.gemini_key : base.api_key}
         onCerrar={() => setClaveAbierta(null)}
         onGuardada={claveGuardada}
       />

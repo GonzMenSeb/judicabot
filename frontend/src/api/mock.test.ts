@@ -6,8 +6,10 @@ const peticion = (metodo: "GET" | "POST", ruta: string, cuerpo: unknown = undefi
 
 describe("mocks", () => {
   it("incluye el estado del servidor por defecto", async () => {
-    const respuesta = (await resolverMock(peticion("GET", "/api/estado-servidor"))) as { modelos: string[] };
+    const respuesta = (await resolverMock(peticion("GET", "/api/estado-servidor"))) as { proveedor: string; modelos: string[]; modelos_gemini: string[] };
     expect(respuesta.modelos).toContain("claude-sonnet-5-5");
+    expect(respuesta.proveedor).toBe("anthropic");
+    expect(respuesta.modelos_gemini).toContain("gemini-4-argon");
   });
 
   it("empareja rutas de texto exactas con o sin consulta y respeta el método", async () => {

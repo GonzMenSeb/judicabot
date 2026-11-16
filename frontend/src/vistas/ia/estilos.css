@@ -4,8 +4,14 @@
 .ia-sec h2 { font-size: 1.15rem; font-weight: 600; }
 .ia-sec > .sub { font-size: 0.92rem; margin: 0.15rem 0 1rem; }
 
-.ia-aviso-modelo { margin-bottom: 1rem; }
-.ia-tarjetas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ia-aviso-clave { margin-top: 1rem; }
+.ia-aviso-datos { margin-bottom: 1rem; }
+.ia-aviso-datos a { color: inherit; }
+.ia-opciones { display: grid; gap: 1rem; margin-top: 1.4rem; }
+.ia-opciones h3 { font-size: 0.98rem; font-weight: 600; }
+.ia-razonamiento { max-width: 24rem; }
+.ia-tarjetas { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ia-tarjetas.ia-tarjetas-dos { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 34rem; }
 .ia-op { position: relative; display: grid; gap: 0.25rem; align-content: start; padding: 0.9rem 1rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; cursor: pointer; }
 .ia-op:hover { border-color: var(--acento); }
 .ia-op.sel { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-fondo); }
@@ -34,7 +40,7 @@
 .ia-error { margin-top: 0.3rem; color: var(--mal); font-size: 0.86rem; }
 
 .ia-aviso-guardar { margin-top: 2rem; }
-.ia-guardar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; margin-top: 2rem; padding: 0.9rem 0; background: var(--fondo); border-top: 1px solid var(--linea); }
+.ia-guardar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; margin-top: 2rem; padding: 0.9rem 0; background: var(--fondo); border-top: 1px solid var(--linea); box-shadow: -0.25rem 0 var(--fondo), 0.25rem 0 var(--fondo); }
 .ia-estado { min-height: 1.4rem; color: var(--suave); font-size: 0.92rem; }
 
 .ia-form-clave { display: grid; gap: 1rem; }
@@ -42,4 +48,8 @@
 
 @media (max-width: 960px) {
   .ia-tarjetas, .ia-campos { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .ia-tarjetas.ia-tarjetas-dos { grid-template-columns: 1fr; }
 }

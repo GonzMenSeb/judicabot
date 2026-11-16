@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DecisionVistaRespuesta } from "../../api/contrato";
+import type { DecisionVistaRespuesta, EstadoServidor } from "../../api/contrato";
+import { estadoServidor } from "../../estado";
 import Decision from "./index";
 import type { PayloadDecision } from "./tipos";
 
@@ -30,6 +31,7 @@ interface Opciones {
   vista?: (cuerpo: any) => DecisionVistaRespuesta | Response | Promise<Response>;
   run?: () => Response;
   resumen?: () => Response | Promise<Response>;
+  proveedor?: string;
 }
 
 const json = (datos: unknown, estado = 200) =>
@@ -68,10 +70,12 @@ function servidor(opciones: Opciones = {}) {
       const cuerpo = typeof init.body === "string" ? JSON.parse(init.body) : null;
       llamadas.push({ url, metodo, cuerpo, signal: (init.signal as AbortSignal | undefined) ?? null });
       if (url.endsWith("/estado")) {
-        return json(opciones.estado ?? { ok: true, estado: "esperando_decision", payload, salidas: [], resumen: {}, error: null, job_activo: null });
+        return json(
+          opciones.estado ?? { ok: true, estado: "esperando_decision", payload, salidas: [], resumen: {}, error: null, job_activo: null, proveedor_llm: opciones.proveedor ?? "fake" },
+        );
       }
       if (url.endsWith("/config")) {
-        return json({ despacho: { juez: opciones.juez ?? "Juez Demo", cierre_fallo: "NOTIFÍQUESE Y CÚMPLASE" }, llm: { proveedor: "fake" } });
+        return json({ despacho: { juez: opciones.juez ?? "Juez Demo", cierre_fallo: "NOTIFÍQUESE Y CÚMPLASE" } });
       }
       if (url === `/api/casos/${CASO}/resumen`) {
         return opciones.resumen ? opciones.resumen() : json({ id: CASO, nombre: "Quintero c. EPS", radicado: "2026-00412", juzgado_a_quo: "Juzgado 9 Penal", etapa: 2 });
@@ -97,6 +101,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  estadoServidor.value = null;
 });
 
 async function montar() {
@@ -235,6 +240,76 @@ describe("Decisión: errores de la API", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
     expect(await screen.findByText("No se pudo enviar la decisión")).toBeTruthy();
     expect(location.hash).toBe("");
+  });
+});
+
+describe("Decisión: clave del proveedor activo", () => {
+  const servidorIa = (extra: Partial<EstadoServidor>): EstadoServidor => ({
+    proveedor: "anthropic",
+    api_key: true,
+    gemini_key: false,
+    jev_key: false,
+    modelo: "claude-sonnet-5-5",
+    modelos: [],
+    modelos_gemini: [],
+    ...extra,
+  });
+
+  async function intentarEnviar() {
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+  }
+
+  it("con Gemini activo y sin su clave no envía y enlaza a Inteligencia artificial", async () => {
+    const llamadas = servidor({ proveedor: "gemini" });
+    estadoServidor.value = servidorIa({ proveedor: "gemini", modelo: "gemini-4-argon" });
+    await intentarEnviar();
+    const aviso = (await screen.findByText(/Falta la clave de la API de Gemini/)).closest(".aviso") as HTMLElement;
+    expect(aviso.textContent).toContain("configúrela en Inteligencia artificial");
+    expect(within(aviso).getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/configuracion/ia");
+    expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("avisa la clave del proveedor que resuelve el caso aunque el servidor muestre otro", async () => {
+    const llamadas = servidor({ proveedor: "gemini" });
+    estadoServidor.value = servidorIa({ proveedor: "anthropic", api_key: true, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByText(/Falta la clave de la API de Gemini/)).toBeTruthy();
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("con la clave del proveedor del caso no exige la del proveedor que muestra el servidor", async () => {
+    servidor({ proveedor: "anthropic" });
+    estadoServidor.value = servidorIa({ proveedor: "gemini", api_key: true, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+    expect(screen.queryByText(/Falta la clave/)).toBeNull();
+  });
+
+  it("con el proveedor del caso en fake no pide ninguna clave", async () => {
+    servidor({ proveedor: "fake" });
+    estadoServidor.value = servidorIa({ api_key: false, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+  });
+
+  it("con Anthropic activo y sin su clave nombra a Anthropic", async () => {
+    servidor({ proveedor: "anthropic" });
+    estadoServidor.value = servidorIa({ api_key: false, gemini_key: true });
+    await intentarEnviar();
+    expect(await screen.findByText(/Falta la clave de la API de Anthropic/)).toBeTruthy();
+  });
+
+  it("con la clave del proveedor activo abre la confirmación", async () => {
+    servidor({ proveedor: "gemini" });
+    estadoServidor.value = servidorIa({ proveedor: "gemini", api_key: false, gemini_key: true });
+    await intentarEnviar();
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+    expect(screen.queryByText(/Falta la clave/)).toBeNull();
   });
 });
 
