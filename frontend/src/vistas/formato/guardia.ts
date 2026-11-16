@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { navegar, protegerSalida } from "../../rutas";
+import { navegarDirecto, protegerSalida } from "../../rutas";
 
 export interface GuardiaSalida {
   destino: string | null;
@@ -68,7 +68,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
       setDestino(null);
       libre.current = true;
       try {
-        navegar(adonde);
+        navegarDirecto(adonde);
       } finally {
         libre.current = false;
       }

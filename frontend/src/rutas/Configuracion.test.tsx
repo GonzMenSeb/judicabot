@@ -5,10 +5,11 @@ import { estadoServidor, toasts } from "../estado";
 import { CAMPOS_MOCK, DOCUMENTOS_MOCK, VALORES_MOCK } from "../vistas/formato/mock";
 import { mostrada, Rutas } from "./Rutas";
 import { Shell } from "./Shell";
-import { coincidir, configuracion, ruta } from "./router";
+import { coincidir, configuracion, navegar, ruta } from "./router";
 
 vi.mock("../vistas/inicio", () => ({ default: () => <div data-vista="inicio"><h1>Inicio</h1></div> }));
 vi.mock("../vistas/casos", () => ({ default: () => <div data-vista="casos"><h1>Casos</h1></div> }));
+vi.mock("../vistas/documentos", () => ({ default: () => <div data-vista="documentos"><h1>Documentos</h1></div> }));
 vi.mock("../vistas/ia", () => ({ default: () => <div data-vista="ia"><h2>Modelo</h2></div> }));
 
 const formato: FormatoRespuesta = { campos: CAMPOS_MOCK, valores: VALORES_MOCK, plantilla_gen: "B", documentos: DOCUMENTOS_MOCK };
@@ -143,6 +144,27 @@ describe("panel de configuración", () => {
     expect(location.hash).toBe("#/segunda");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "Casos" })).toBeTruthy();
+  });
+
+  it("una navegación de la página de fondo no cierra el panel ni dispara la guardia, y se aplica al cerrar", async () => {
+    await abrirSobreCasos();
+    fireEvent.input(within(panel()).getByLabelText("Ciudad"), { target: { value: "Cali" } });
+    await within(panel()).findByRole("region", { name: "Cambios sin guardar" });
+
+    await act(async () => {
+      navegar("#/segunda/c1/documentos");
+    });
+    expect(location.hash).toBe("#/configuracion/formato");
+    expect(within(panel()).queryByRole("dialog")).toBeNull();
+    expect((within(panel()).getByLabelText("Ciudad") as HTMLInputElement).value).toBe("Cali");
+    expect(await within(document.querySelector("main") as HTMLElement).findByRole("heading", { name: "Documentos" })).toBeTruthy();
+
+    fireEvent.click(within(panel()).getByRole("button", { name: "Cerrar configuración" }));
+    const guardia = await within(panel()).findByRole("dialog", { name: "Hay cambios sin guardar" });
+    await esperarHash(() => fireEvent.click(within(guardia).getByRole("button", { name: "Salir sin guardar" })));
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Documentos" })).toBeTruthy();
   });
 
   it("con cambios sin guardar en el formato, cambiar de sección pide confirmación", async () => {

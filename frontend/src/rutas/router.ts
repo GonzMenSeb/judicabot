@@ -118,9 +118,15 @@ export function protegerSalida(guardia: Guardia): () => void {
   };
 }
 
-export function navegar(destino: string): void {
+export function navegarDirecto(destino: string): void {
   for (const guardia of guardias) if (guardia(destino)) return;
   location.hash = destino;
+}
+
+export function navegar(destino: string): void {
+  const { configuracion: seccion, ...pagina } = coincidir(destino);
+  if (configuracion.value === null || seccion) navegarDirecto(destino);
+  else if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
 }
 
 export function sincronizar(): void {

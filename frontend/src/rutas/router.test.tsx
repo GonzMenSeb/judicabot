@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/preact";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Rutas } from "./Rutas";
-import { coincidir, configuracion, hashDe, navegar, protegerSalida, ruta, sincronizar } from "./router";
+import { coincidir, configuracion, hashDe, navegar, navegarDirecto, protegerSalida, ruta, sincronizar } from "./router";
 
 vi.mock("../vistas/inicio", () => ({ default: () => <div data-vista="inicio"><h1>Inicio</h1></div> }));
 vi.mock("../vistas/decision", () => ({ default: ({ caso }: { caso?: string }) => <div data-vista="decision"><h1>Decisión</h1><p>{caso}</p></div> }));
@@ -125,6 +125,38 @@ describe("configuración", () => {
     expect(location.hash).toBe(nueva);
     expect(configuracion.value).toBe(seccion);
     expect(history.length).toBe(antes + 1);
+  });
+
+  it("con la configuración abierta, navegar cambia la página de fondo sin cerrar el panel ni consultar las guardias", async () => {
+    await irA("#/segunda");
+    await irA("#/configuracion/ia");
+    const pedidos: string[] = [];
+    const soltar = protegerSalida((destino) => {
+      pedidos.push(destino);
+      return true;
+    });
+
+    navegar("#/segunda/c1/documentos");
+    expect(location.hash).toBe("#/configuracion/ia");
+    expect(configuracion.value).toBe("ia");
+    expect(ruta.value).toEqual({ vista: "documentos", params: { caso: "c1" } });
+    expect(pedidos).toEqual([]);
+
+    soltar();
+    const cambio = cambioDeHash();
+    navegarDirecto(hashDe(ruta.value));
+    await cambio;
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+    expect(configuracion.value).toBeNull();
+    expect(ruta.value).toEqual({ vista: "documentos", params: { caso: "c1" } });
+  });
+
+  it("con la configuración abierta, navegar a otra sección sí cambia el hash", async () => {
+    await irA("#/configuracion/ia");
+    const cambio = cambioDeHash();
+    navegar("#/configuracion/formato");
+    await cambio;
+    expect(configuracion.value).toBe("formato");
   });
 
   it("el botón Atrás cierra la configuración y vuelve a la página de fondo", async () => {

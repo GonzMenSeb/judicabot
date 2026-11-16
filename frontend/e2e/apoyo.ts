@@ -69,8 +69,15 @@ export async function capturar(page: Page, nombre: string): Promise<void> {
     const modal = await page.evaluate(() => document.querySelector("dialog:modal") !== null);
     await page.screenshot({ path: join(capturas, `${nombre}-${ancho}.png`), fullPage: !modal });
     if (ancho === 390) {
-      const desborde = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      expect.soft(desborde, `${nombre}: desborde horizontal a 390 px`).toBeLessThanOrEqual(1);
+      const desborde = await page.evaluate(() => {
+        const panel = document.querySelector(".panel-contenido");
+        return {
+          pagina: document.documentElement.scrollWidth - window.innerWidth,
+          panel: panel ? panel.scrollWidth - panel.clientWidth : 0,
+        };
+      });
+      expect.soft(desborde.pagina, `${nombre}: desborde horizontal a 390 px`).toBeLessThanOrEqual(1);
+      expect.soft(desborde.panel, `${nombre}: desborde horizontal del panel a 390 px`).toBeLessThanOrEqual(1);
     }
   }
   await page.setViewportSize({ width: 1440, height: 900 });
