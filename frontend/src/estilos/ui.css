@@ -129,7 +129,7 @@ dialog.panel:focus { outline: none; }
   .panel-caja { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-areas: "titulo" "nav" "encabezado" "contenido"; }
   .panel-titulo, .panel-nav { border-right: 0; }
   .panel-titulo { padding: 0.9rem 4rem 0.5rem 1rem; }
-  .panel-nav { padding: 0 1rem 0.7rem; overflow-x: auto; border-bottom: 1px solid var(--linea); }
+  .panel-nav { padding: 0.3rem 1rem 0.7rem; overflow-x: auto; border-bottom: 1px solid var(--linea); }
   .panel-nav ul { display: flex; gap: 0.4rem; width: max-content; }
   .panel-nav a { white-space: nowrap; padding: 0.4rem 0.75rem; }
   .panel-cerrar { top: 0.45rem; right: 0.5rem; }
