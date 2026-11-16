@@ -66,7 +66,8 @@ export async function capturar(page: Page, nombre: string): Promise<void> {
       window.scrollTo(0, 0);
       return new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     });
-    await page.screenshot({ path: join(capturas, `${nombre}-${ancho}.png`), fullPage: true });
+    const modal = await page.evaluate(() => document.querySelector("dialog:modal") !== null);
+    await page.screenshot({ path: join(capturas, `${nombre}-${ancho}.png`), fullPage: !modal });
     if (ancho === 390) {
       const desborde = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect.soft(desborde, `${nombre}: desborde horizontal a 390 px`).toBeLessThanOrEqual(1);

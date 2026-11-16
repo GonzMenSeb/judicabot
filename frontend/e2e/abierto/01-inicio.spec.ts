@@ -12,12 +12,58 @@ test("inicio: tres procesos inactivos y uno activo", async ({ page }) => {
   const segunda = page.getByRole("link", { name: "Fallo de tutela de segunda instancia" });
   await expect(segunda).toHaveCount(1);
   await expect(page.getByRole("region", { name: "Para continuar" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Formato de documentos" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Inteligencia artificial/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Configuración, falta la clave" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Formato de documentos" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Inteligencia artificial/ })).toHaveCount(0);
   await capturar(page, "01-inicio");
   await segunda.click();
   await expect(page).toHaveURL(/#\/segunda$/);
   await expect(page.getByRole("heading", { name: "Fallos de tutela de segunda instancia", level: 1 })).toBeVisible();
+});
+
+test("configuración: el engranaje abre el panel sobre la página y se cierra con la X, Escape y Atrás", async ({ page }) => {
+  await page.goto("/#/segunda");
+  const titulo = page.getByRole("heading", { name: "Fallos de tutela de segunda instancia", level: 1 });
+  await expect(titulo).toBeVisible();
+  const engranaje = page.getByRole("link", { name: /^Configuración/ });
+  await engranaje.click();
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
+  const panel = page.getByRole("dialog", { name: "Configuración" });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Formato de documentos", level: 1 })).toBeVisible();
+  const secciones = panel.getByRole("navigation", { name: "Secciones de configuración" });
+  const formato = secciones.getByRole("link", { name: "Formato de documentos" });
+  await expect(formato).toHaveAttribute("aria-current", "page");
+  await expect(formato).toBeFocused();
+  await expect(secciones.getByRole("link", { name: /Inteligencia artificial.*Sonnet 5\.5.*falta la clave/ })).toBeVisible();
+  await expect(panel.getByRole("textbox", { name: "Ciudad", exact: true })).toHaveValue("Medellín");
+  await expect(titulo).toBeAttached();
+  await expect(page).toHaveTitle("Formato de documentos · Configuración · Judicabot");
+  await capturar(page, "22-configuracion");
+
+  await panel.getByRole("button", { name: "Cerrar configuración" }).click();
+  await expect(panel).toBeHidden();
+  await expect(page).toHaveURL(/#\/segunda$/);
+  await expect(titulo).toBeVisible();
+  await expect(engranaje).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(page).toHaveURL(/#\/segunda$/);
+
+  await engranaje.click();
+  await secciones.getByRole("link", { name: /Inteligencia artificial/ }).click();
+  await expect(page).toHaveURL(/#\/configuracion\/ia$/);
+  await expect(panel.getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/configuracion\/formato$/);
+  await expect(panel.getByRole("heading", { name: "Formato de documentos", level: 1 })).toBeVisible();
+  await page.goBack();
+  await expect(panel).toBeHidden();
+  await expect(page).toHaveURL(/#\/segunda$/);
+  await expect(titulo).toBeVisible();
 });
 
 test("casos: lista vacía y selección de carpeta", async ({ page }) => {

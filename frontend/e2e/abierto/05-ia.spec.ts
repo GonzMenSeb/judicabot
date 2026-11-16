@@ -2,7 +2,12 @@ import { capturar, expect, test } from "../apoyo";
 
 test("ia: cambiar modelo, modo de Jev y avanzadas persiste tras recargar", async ({ page, request }) => {
   await page.goto("/#/ia");
-  await expect(page.getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/#\/configuracion\/ia$/);
+  const panel = page.getByRole("dialog", { name: "Configuración" });
+  await expect(panel.getByRole("heading", { name: "Inteligencia artificial", level: 1 })).toBeVisible();
+  const enlaceIa = panel.getByRole("navigation", { name: "Secciones de configuración" }).getByRole("link", { name: /Inteligencia artificial/ });
+  await expect(enlaceIa).toHaveAttribute("aria-current", "page");
+  await expect(enlaceIa).toContainText("Sonnet 5.5");
   await expect(page.getByRole("radio", { name: /^Sonnet 5.5/ })).toBeChecked();
   await expect(page.getByRole("radio", { name: /^Apagado/ })).toBeChecked();
   await expect(page.getByRole("region", { name: "Clave de Anthropic" }).getByRole("status")).toBeVisible();
@@ -30,7 +35,7 @@ test("ia: cambiar modelo, modo de Jev y avanzadas persiste tras recargar", async
   await page.getByText("Opciones avanzadas").click();
   await expect(page.getByRole("combobox", { name: "Esfuerzo de razonamiento" })).toHaveValue("medium");
   await expect(page.getByRole("spinbutton", { name: "Máximo de tokens de salida" })).toHaveValue("32000");
-  await expect(page.getByRole("link", { name: /Opus 5.5/ })).toBeVisible();
+  await expect(enlaceIa).toContainText("Opus 5.5");
   await capturar(page, "18-ia-guardada");
 
   await page.locator("label", { hasText: "Sonnet 5.5" }).click();
