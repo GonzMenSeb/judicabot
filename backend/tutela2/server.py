@@ -31,6 +31,7 @@ from tutela2 import config as cfgmod
 from tutela2.config import Config
 from tutela2.estaticos import SIN_GZIP, CabecerasEstaticas
 from tutela2.jev import clave_valida
+from tutela2.preferencias import Preferencias
 
 log = logging.getLogger("tutela2.server")
 
@@ -315,23 +316,39 @@ def _preferencias() -> Path:
     return casos_dir() / ".preferencias.json"
 
 
+def preferencias_efectivas() -> Preferencias:
+    from tutela2 import preferencias
+
+    return preferencias.efectivas(preferencias.leer(_preferencias()))
+
+
 def modelo_actual() -> str:
     from tutela2 import preferencias
 
-    return preferencias.modelo_activo(preferencias.leer(_preferencias()))
+    return preferencias.modelo_activo(preferencias_efectivas())
+
+
+def proveedor_del_caso(caso_dir: Path) -> str | None:
+    from tutela2 import preferencias
+
+    try:
+        cfg = cfgmod.cargar(caso_dir, entorno=False)
+    except (ValueError, OSError):
+        return None
+    return preferencias.superponer(cfg, preferencias_efectivas()).llm.proveedor
 
 
 @app.get("/api/estado-servidor", response_model=EstadoServidor)
 def estado_servidor() -> dict[str, Any]:
     from tutela2 import preferencias
 
-    guardadas = preferencias.leer(_preferencias())
+    efectivas = preferencias_efectivas()
     return {
-        "proveedor": preferencias.proveedor_activo(guardadas),
+        "proveedor": preferencias.proveedor_activo(efectivas),
         "api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "gemini_key": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
         "jev_key": bool(os.environ.get("JEV_API_KEY", "").strip()),
-        "modelo": preferencias.modelo_activo(guardadas),
+        "modelo": preferencias.modelo_activo(efectivas),
         "modelos": list(cfgmod.modelos_permitidos()),
         "modelos_gemini": list(cfgmod.modelos_permitidos("gemini")),
     }
@@ -409,6 +426,7 @@ def estado_caso(caso_id: str) -> dict[str, Any]:
         except Exception:
             log.exception("No se pudo leer la ingesta de %s", caso_id)
     resultado["job_activo"] = _job_activo(caso_id)
+    resultado["proveedor_llm"] = proveedor_del_caso(caso_dir)
     return resultado
 
 

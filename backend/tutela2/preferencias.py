@@ -220,6 +220,10 @@ def desde_entorno() -> Preferencias:
     return _depurar(bruto, "el entorno")
 
 
+def efectivas(guardadas: Preferencias) -> Preferencias:
+    return _depurar(_fusionar(_a_dict(desde_entorno()), _a_dict(guardadas)), "el entorno")
+
+
 def proveedor_activo(prefs: Preferencias) -> str:
     return prefs.proveedor or "anthropic"
 

@@ -113,7 +113,6 @@ describe("Inteligencia artificial", () => {
     await screen.findByText("Cambios guardados.");
     const put = llamadas.find((l) => l.clave === "PUT /api/ia");
     expect(put?.cuerpo).toEqual({
-      proveedor: "anthropic",
       modelo: "claude-opus-5-5",
       effort: "high",
       jev: { modo: "relleno", umbral: 0.8 },
@@ -398,6 +397,17 @@ describe("Proveedores", () => {
     expect(put).not.toHaveProperty("modelo");
     expect(put).not.toHaveProperty("effort");
     expect(put.jev).toEqual({ modo: "sombra", umbral: 0.9 });
+  });
+
+  it("no envía el proveedor si el usuario no lo cambió, para no pisar el del servidor", async () => {
+    const llamadas = await montar({ "PUT /api/ia": (cuerpo) => ({ cuerpo: { ...conGemini({ proveedor: "gemini" }), ...(cuerpo as object) } }) }, conGemini({ proveedor: "gemini" }));
+    expect((screen.getByRole("radio", { name: /^Gemini \(Google\)/ }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.input(screen.getByLabelText("Reintentos por llamada"), { target: { value: "3" } });
+    fireEvent.click(guardar());
+    await screen.findByText("Cambios guardados.");
+    const put = llamadas.find((l) => l.clave === "PUT /api/ia")?.cuerpo as Record<string, unknown>;
+    expect(put).not.toHaveProperty("proveedor");
+    expect(put.max_retries).toBe(3);
   });
 
   it("avisa que con una clave gratuita Google puede usar lo que se envía", async () => {

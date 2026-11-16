@@ -70,10 +70,12 @@ function servidor(opciones: Opciones = {}) {
       const cuerpo = typeof init.body === "string" ? JSON.parse(init.body) : null;
       llamadas.push({ url, metodo, cuerpo, signal: (init.signal as AbortSignal | undefined) ?? null });
       if (url.endsWith("/estado")) {
-        return json(opciones.estado ?? { ok: true, estado: "esperando_decision", payload, salidas: [], resumen: {}, error: null, job_activo: null });
+        return json(
+          opciones.estado ?? { ok: true, estado: "esperando_decision", payload, salidas: [], resumen: {}, error: null, job_activo: null, proveedor_llm: opciones.proveedor ?? "fake" },
+        );
       }
       if (url.endsWith("/config")) {
-        return json({ despacho: { juez: opciones.juez ?? "Juez Demo", cierre_fallo: "NOTIFÍQUESE Y CÚMPLASE" }, llm: { proveedor: opciones.proveedor ?? "fake" } });
+        return json({ despacho: { juez: opciones.juez ?? "Juez Demo", cierre_fallo: "NOTIFÍQUESE Y CÚMPLASE" } });
       }
       if (url === `/api/casos/${CASO}/resumen`) {
         return opciones.resumen ? opciones.resumen() : json({ id: CASO, nombre: "Quintero c. EPS", radicado: "2026-00412", juzgado_a_quo: "Juzgado 9 Penal", etapa: 2 });
@@ -262,7 +264,7 @@ describe("Decisión: clave del proveedor activo", () => {
   }
 
   it("con Gemini activo y sin su clave no envía y enlaza a Inteligencia artificial", async () => {
-    const llamadas = servidor({ proveedor: "anthropic" });
+    const llamadas = servidor({ proveedor: "gemini" });
     estadoServidor.value = servidorIa({ proveedor: "gemini", modelo: "gemini-4-argon" });
     await intentarEnviar();
     const aviso = (await screen.findByText(/Falta la clave de la API de Gemini/)).closest(".aviso") as HTMLElement;
@@ -270,6 +272,29 @@ describe("Decisión: clave del proveedor activo", () => {
     expect(within(aviso).getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/ia");
     expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
     expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("avisa la clave del proveedor que resuelve el caso aunque el servidor muestre otro", async () => {
+    const llamadas = servidor({ proveedor: "gemini" });
+    estadoServidor.value = servidorIa({ proveedor: "anthropic", api_key: true, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByText(/Falta la clave de la API de Gemini/)).toBeTruthy();
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("con la clave del proveedor del caso no exige la del proveedor que muestra el servidor", async () => {
+    servidor({ proveedor: "anthropic" });
+    estadoServidor.value = servidorIa({ proveedor: "gemini", api_key: true, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+    expect(screen.queryByText(/Falta la clave/)).toBeNull();
+  });
+
+  it("con el proveedor del caso en fake no pide ninguna clave", async () => {
+    servidor({ proveedor: "fake" });
+    estadoServidor.value = servidorIa({ api_key: false, gemini_key: false });
+    await intentarEnviar();
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
   });
 
   it("con Anthropic activo y sin su clave nombra a Anthropic", async () => {
@@ -280,7 +305,7 @@ describe("Decisión: clave del proveedor activo", () => {
   });
 
   it("con la clave del proveedor activo abre la confirmación", async () => {
-    servidor({ proveedor: "anthropic" });
+    servidor({ proveedor: "gemini" });
     estadoServidor.value = servidorIa({ proveedor: "gemini", api_key: false, gemini_key: true });
     await intentarEnviar();
     expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();

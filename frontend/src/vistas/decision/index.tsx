@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ErrorApi } from "../../api";
-import type { CasoResumen, JobInicio } from "../../api/contrato";
-import { claveActiva, DATOS_PROVEEDOR, estadoServidor, jobActual, useTitulo } from "../../estado";
+import type { CasoResumen, JobInicio, ProveedorCaso } from "../../api/contrato";
+import { DATOS_PROVEEDOR, estadoServidor, jobActual, proveedorSinClave, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Dialogo, Migas, Pasos, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
@@ -133,7 +133,7 @@ export default function Decision({ caso }: PropsVista) {
 function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: string }) {
   const { estado } = datos;
   if (estado.estado === "esperando_decision" && estado.payload) {
-    return <Editor caso={caso} payload={estado.payload} config={datos.config} bloqueado={Boolean(estado.job_activo)} base={base} />;
+    return <Editor caso={caso} payload={estado.payload} proveedor={estado.proveedor_llm ?? null} config={datos.config} bloqueado={Boolean(estado.job_activo)} base={base} />;
   }
   const terminado = estado.estado === "terminado";
   const enCurso = Boolean(estado.job_activo);
@@ -162,12 +162,13 @@ function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: st
 interface PropsEditor {
   caso: string;
   payload: PayloadDecision;
+  proveedor: ProveedorCaso | null;
   config: ConfigCaso | null;
   bloqueado: boolean;
   base: string;
 }
 
-function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
+function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEditor) {
   const [f, setF] = useState<Formulario>(
     () => leerBorrador(caso, payload) ?? formularioInicial(payload, config?.despacho?.juez ?? ""),
   );
@@ -223,9 +224,9 @@ function Editor({ caso, payload, config, bloqueado, base }: PropsEditor) {
       requestAnimationFrame(() => enfocar(primero ? idDeCampo(f, primero.campo) : "dec-resumen-errores"));
       return;
     }
-    const servidor = estadoServidor.value;
-    if (config?.llm?.proveedor && config.llm.proveedor !== "fake" && servidor && !claveActiva(servidor)) {
-      setErrorEnvio(`Falta la clave de la API de ${DATOS_PROVEEDOR[servidor.proveedor].corto}: configúrela en Inteligencia artificial antes de enviar la decisión.`);
+    const sinClave = proveedorSinClave(estadoServidor.value, proveedor);
+    if (sinClave) {
+      setErrorEnvio(`Falta la clave de la API de ${DATOS_PROVEEDOR[sinClave].corto}: configúrela en Inteligencia artificial antes de enviar la decisión.`);
       return;
     }
     setErrorEnvio(null);

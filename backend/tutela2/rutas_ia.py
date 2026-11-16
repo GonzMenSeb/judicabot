@@ -114,7 +114,7 @@ def _estado() -> IAEstado:
     llm, jev = cfgmod.LLMConfig(), cfgmod.JevConfig()
     claves = server.estado_servidor()
     return IAEstado(
-        proveedor=pref.proveedor_activo(guardadas),
+        proveedor=claves["proveedor"],
         modelo=_o(guardadas.modelo, llm.modelo),
         modelos=list(cfgmod.modelos_permitidos()),
         gemini=IAGemini(

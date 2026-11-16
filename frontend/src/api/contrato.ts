@@ -169,6 +169,7 @@ export interface DecisionVistaRespuesta {
 export type ModoJev = "apagado" | "sombra" | "relleno";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export type Proveedor = "anthropic" | "gemini";
+export type ProveedorCaso = Proveedor | "fake";
 export type RazonamientoGemini = "low" | "medium" | "high" | "xhigh";
 
 export interface PreferenciasGemini {
@@ -193,7 +194,7 @@ export interface PreferenciasIa {
 }
 
 export interface PreferenciasIaCuerpo {
-  proveedor: Proveedor;
+  proveedor?: Proveedor;
   modelo?: string;
   effort?: Effort;
   gemini?: PreferenciasGemini;

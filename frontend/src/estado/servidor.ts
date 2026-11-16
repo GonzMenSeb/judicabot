@@ -1,6 +1,6 @@
 import { signal } from "@preact/signals";
 import { api } from "../api/cliente";
-import type { EstadoServidor, Proveedor } from "../api/contrato";
+import type { EstadoServidor, Proveedor, ProveedorCaso } from "../api/contrato";
 
 export const DATOS_PROVEEDOR: Record<Proveedor, { nombre: string; corto: string; rutaClave: string }> = {
   anthropic: { nombre: "Anthropic", corto: "Anthropic", rutaClave: "/api/api-key" },
@@ -11,6 +11,15 @@ export const claveDe = (claves: Pick<EstadoServidor, "api_key" | "gemini_key">, 
   proveedor === "gemini" ? claves.gemini_key : claves.api_key;
 
 export const claveActiva = (servidor: EstadoServidor): boolean => claveDe(servidor, servidor.proveedor);
+
+export const proveedorDelCaso = (servidor: EstadoServidor, delCaso?: ProveedorCaso | null): Proveedor =>
+  delCaso && delCaso !== "fake" ? delCaso : servidor.proveedor;
+
+export function proveedorSinClave(servidor: EstadoServidor | null, delCaso?: ProveedorCaso | null): Proveedor | null {
+  if (!servidor || delCaso === "fake") return null;
+  const proveedor = proveedorDelCaso(servidor, delCaso);
+  return claveDe(servidor, proveedor) ? null : proveedor;
+}
 
 export const estadoServidor = signal<EstadoServidor | null>(null);
 export const errorEstadoServidor = signal(false);

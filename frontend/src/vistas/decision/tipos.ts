@@ -1,3 +1,5 @@
+import type { ProveedorCaso } from "../../api/contrato";
+
 export type Resultado = "CONFIRMAR" | "REVOCAR" | "MODIFICAR";
 export type SustitutivaApi =
   | "AMPARAR"
@@ -35,11 +37,11 @@ export interface RespuestaEstado {
   estado: string;
   payload: PayloadDecision | null;
   error: string | null;
+  proveedor_llm?: ProveedorCaso | null;
 }
 
 export interface ConfigCaso {
   despacho?: { juez?: string; cierre_fallo?: string };
-  llm?: { proveedor?: string };
 }
 
 export interface OrdenForm {

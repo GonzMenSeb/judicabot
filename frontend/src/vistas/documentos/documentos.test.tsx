@@ -122,7 +122,6 @@ function base(estado: EstadoCaso, extra: Record<string, Manejador> = {}) {
   return instalar({
     "GET /api/casos/c1/estado": () => ok(estado),
     "GET /api/casos/c1/resumen": () => ok(resumenCaso()),
-    "GET /api/casos/c1/config": () => ok({ llm: { proveedor: "anthropic" } }),
     "GET /api/estado-servidor": () => ok(servidor),
     ...extra,
   });
@@ -320,6 +319,39 @@ describe("Documentos", () => {
     const gemini: EstadoServidor = { ...servidor, proveedor: "gemini", api_key: false, gemini_key: true };
     base(estadoRevision(), { "GET /api/estado-servidor": () => ok(gemini), "POST /api/casos/c1/run": () => ok({ job_id: "j4" }) });
     estadoServidor.value = gemini;
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+  });
+
+  it("pide la clave del proveedor que resuelve el caso aunque el servidor muestre otro", async () => {
+    const llamadas = base({ ...estadoRevision(), proveedor_llm: "gemini" }, { "POST /api/casos/c1/run": () => ok({ job_id: "j5" }) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const campo = await screen.findByLabelText("Clave de la API");
+    expect((campo.closest("dialog") as HTMLElement).textContent).toContain("la clave de la API de Gemini");
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+  });
+
+  it("con la clave del proveedor del caso no pide la del proveedor del servidor", async () => {
+    const gemini: EstadoServidor = { ...servidor, proveedor: "gemini", gemini_key: false };
+    base({ ...estadoRevision(), proveedor_llm: "anthropic" }, { "GET /api/estado-servidor": () => ok(gemini), "POST /api/casos/c1/run": () => ok({ job_id: "j6" }) });
+    estadoServidor.value = gemini;
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+  });
+
+  it("con el proveedor del caso en fake no pide ninguna clave", async () => {
+    const sinClaves: EstadoServidor = { ...servidor, api_key: false };
+    base({ ...estadoRevision(), proveedor_llm: "fake" }, { "GET /api/estado-servidor": () => ok(sinClaves), "POST /api/casos/c1/run": () => ok({ job_id: "j7" }) });
+    estadoServidor.value = sinClaves;
     render(<Documentos caso="c1" />);
 
     await screen.findByLabelText("Rol de 001.pdf");

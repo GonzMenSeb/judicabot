@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cargarEstadoServidor, cerrarToast, claveActiva, claveDe, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, toasts } from "./index";
+import { cargarEstadoServidor, cerrarToast, claveActiva, claveDe, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, proveedorDelCaso, proveedorSinClave, toasts } from "./index";
 
 describe("fechaRelativa", () => {
   const ahora = Date.parse("2026-11-03T12:00:00Z");
@@ -112,6 +112,19 @@ describe("estadoServidor", () => {
     expect(claveActiva({ ...base, proveedor: "gemini" })).toBe(false);
     expect(claveActiva({ ...base, proveedor: "gemini", gemini_key: true, api_key: false })).toBe(true);
     expect(claveDe(base, "gemini")).toBe(false);
+  });
+
+  it("dentro de un caso manda el proveedor que resuelve la ejecución, no el del servidor", () => {
+    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+    expect(proveedorSinClave(base, "gemini")).toBe("gemini");
+    expect(proveedorSinClave(base, "anthropic")).toBeNull();
+    expect(proveedorSinClave(base, null)).toBeNull();
+    expect(proveedorSinClave({ ...base, api_key: false }, undefined)).toBe("anthropic");
+    expect(proveedorSinClave({ ...base, api_key: false }, "fake")).toBeNull();
+    expect(proveedorSinClave(null, "gemini")).toBeNull();
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, "anthropic")).toBe("anthropic");
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, "fake")).toBe("gemini");
+    expect(proveedorDelCaso({ ...base, proveedor: "gemini" }, null)).toBe("gemini");
   });
 
   it("marca error y permite reintentar", async () => {

@@ -76,7 +76,7 @@ export const editaGemini = (p: PreferenciasIa): boolean => p.gemini_key && p.mod
 
 export function aCuerpo(f: Formulario, p: PreferenciasIa): PreferenciasIaCuerpo {
   return {
-    proveedor: f.proveedor,
+    ...(f.proveedor !== p.proveedor ? { proveedor: f.proveedor } : {}),
     ...(editaAnthropic(p) ? { modelo: f.modelo, effort: f.effort } : {}),
     ...(editaGemini(p) ? { gemini: { modelo: f.modeloGemini, razonamiento: f.razonamiento } } : {}),
     jev: { modo: f.modo, umbral: Math.round(f.umbral) / 100 },

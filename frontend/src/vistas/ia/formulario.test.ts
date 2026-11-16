@@ -24,7 +24,6 @@ describe("formulario", () => {
     const f = aFormulario(prefs);
     expect(f.umbral).toBe(87);
     expect(aCuerpo(f, prefs)).toEqual({
-      proveedor: "anthropic",
       modelo: "claude-sonnet-5-5",
       effort: "high",
       gemini: { modelo: "gemini-4-hydrogen", razonamiento: "xhigh" },
@@ -47,11 +46,18 @@ describe("formulario", () => {
     expect(sinAnthropic).not.toHaveProperty("effort");
     expect(aCuerpo(f, { ...prefs, modelos_gemini: [] })).not.toHaveProperty("gemini");
     expect(aCuerpo(f, { ...prefs, api_key: false, gemini_key: false })).toEqual({
-      proveedor: "anthropic",
       jev: { modo: "sombra", umbral: 0.87 },
       max_tokens: 64000,
       max_retries: 1,
     });
+  });
+
+  it("solo envía el proveedor cuando el usuario lo cambió", () => {
+    const f = aFormulario(prefs);
+    expect(aCuerpo(f, prefs)).not.toHaveProperty("proveedor");
+    expect(aCuerpo({ ...f, proveedor: "gemini" }, prefs)).toMatchObject({ proveedor: "gemini" });
+    expect(aCuerpo({ ...f, proveedor: "gemini" }, { ...prefs, proveedor: "gemini" })).not.toHaveProperty("proveedor");
+    expect(aCuerpo({ ...f, proveedor: "anthropic" }, { ...prefs, proveedor: "gemini" })).toMatchObject({ proveedor: "anthropic" });
   });
 
   it("valida rangos, enteros y modelos desconocidos", () => {

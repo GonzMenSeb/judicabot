@@ -46,7 +46,8 @@ Importar siempre desde `../../ui` (barrel `src/ui/index.ts`), `../../estado` y `
 | Export | Uso |
 |---|---|
 | `estadoServidor` (signal `EstadoServidor\|null`), `cargarEstadoServidor(forzar?)`, `errorEstadoServidor` | `GET /api/estado-servidor`; el shell lo carga una vez. Tras guardar una clave: `await cargarEstadoServidor(true)` |
-| `claveActiva(servidor)`, `claveDe(claves, proveedor)`, `DATOS_PROVEEDOR` | Clave del proveedor activo (`anthropic` o `gemini`) o de uno dado; nombre ("Gemini (Google)"), nombre corto ("Gemini") y ruta de la clave de cada proveedor. Para avisar que falta la clave use siempre la del proveedor activo |
+| `claveActiva(servidor)`, `claveDe(claves, proveedor)`, `DATOS_PROVEEDOR` | Clave del proveedor activo (`anthropic` o `gemini`) o de uno dado; nombre ("Gemini (Google)"), nombre corto ("Gemini") y ruta de la clave de cada proveedor. `servidor.proveedor` ya sale de las preferencias guardadas y de `TUTELA2_PROVEEDOR_LLM`; es el de la barra superior |
+| `proveedorSinClave(servidor, delCaso)`, `proveedorDelCaso(servidor, delCaso)` | Dentro de un caso, avise que falta la clave con estas funciones y el `proveedor_llm` de `GET /api/casos/<id>/estado` (el que resuelven las preferencias, `TUTELA2_PROVEEDOR_LLM` y el `config.json` del caso, o `fake` si el caso lo fija): `proveedorSinClave` da el proveedor sin clave o `null` (con `fake` o sin servidor), `proveedorDelCaso` el que corresponde al diálogo de la clave |
 | `mostrarToast(texto, {tipo?, ms?}) => id` | `tipo` como `Aviso` (def. info); desaparece a los 3500 ms; `ms: 0` o `tipo: "error"` persiste hasta `cerrarToast(id)` |
 | `toasts`, `cerrarToast(id)` | lista reactiva |
 | `useTitulo(texto)` | título del documento de la vista |

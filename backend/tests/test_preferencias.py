@@ -567,3 +567,73 @@ def test_openapi_documenta_los_endpoints_de_ia(cliente):
     assert ruta["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/IAEstado")
     assert ruta["put"]["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/Preferencias")
     assert ruta["put"]["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith("/IAErrores")
+
+
+def _guardar_proveedor_del_caso(carpeta, proveedor: str) -> None:
+    cfgmod.guardar(carpeta, Config(llm=LLMConfig(proveedor=proveedor)))
+
+
+def _proveedor_del_caso(cliente, caso_id: str = "c1"):
+    return cliente.get(f"/api/casos/{caso_id}/estado").json()["proveedor_llm"]
+
+
+def test_el_proveedor_del_entorno_se_informa_en_estado_servidor_y_en_ia(cliente, monkeypatch):
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "gemini")
+    estado = cliente.get("/api/estado-servidor").json()
+    assert estado["proveedor"] == "gemini" and estado["modelo"] == "gemini-4-argon"
+    assert cliente.get("/api/ia").json()["proveedor"] == "gemini"
+    assert server.modelo_actual() == "gemini-4-argon"
+    monkeypatch.setenv("TUTELA2_GEMINI_MODELO", "gemini-4-hydrogen")
+    assert cliente.get("/api/estado-servidor").json()["modelo"] == "gemini-4-hydrogen"
+
+
+def test_la_preferencia_guardada_manda_sobre_el_proveedor_del_entorno(cliente, archivo, monkeypatch):
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "gemini")
+    archivo.parent.mkdir(parents=True)
+    archivo.write_text(json.dumps({"proveedor": "anthropic"}), encoding="utf-8")
+    assert cliente.get("/api/estado-servidor").json()["proveedor"] == "anthropic"
+    assert cliente.get("/api/ia").json()["proveedor"] == "anthropic"
+
+
+def test_el_proveedor_informado_es_el_que_resuelve_cargar(cliente, caso, archivo, monkeypatch):
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "gemini")
+    assert cfgmod.cargar(caso).llm.proveedor == cliente.get("/api/estado-servidor").json()["proveedor"] == "gemini"
+    cliente.put("/api/ia", json={"proveedor": "anthropic"})
+    assert cfgmod.cargar(caso).llm.proveedor == cliente.get("/api/estado-servidor").json()["proveedor"] == "anthropic"
+
+
+def test_estado_del_caso_informa_el_proveedor_de_su_config(cliente, caso, cfgs):
+    assert _proveedor_del_caso(cliente) == "anthropic"
+    _guardar_proveedor_del_caso(caso, "gemini")
+    assert cliente.get("/api/estado-servidor").json()["proveedor"] == "anthropic"
+    assert _proveedor_del_caso(cliente) == "gemini"
+
+
+def test_estado_del_caso_aplica_el_entorno_y_las_preferencias_como_la_ejecucion(cliente, caso, cfgs, monkeypatch):
+    _guardar_proveedor_del_caso(caso, "gemini")
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "anthropic")
+    assert _proveedor_del_caso(cliente) == "anthropic"
+    monkeypatch.delenv("TUTELA2_PROVEEDOR_LLM")
+    cliente.put("/api/ia", json={"proveedor": "anthropic"})
+    assert _proveedor_del_caso(cliente) == "anthropic"
+    server._comando("nuevo", caso, None)
+    assert cfgs[-1].llm.proveedor == "anthropic"
+
+
+def test_estado_del_caso_respeta_fake_y_config_ilegible(cliente, caso, cfgs):
+    _guardar_proveedor_del_caso(caso, "fake")
+    cliente.put("/api/ia", json=GEMINI)
+    assert _proveedor_del_caso(cliente) == "fake"
+    (caso / "config.json").write_text("{no es json", encoding="utf-8")
+    assert _proveedor_del_caso(cliente) is None
+    (caso / "config.json").write_text(json.dumps({"llm": {"proveedor": "otro"}}), encoding="utf-8")
+    assert _proveedor_del_caso(cliente) is None
+
+
+def test_un_put_sin_proveedor_no_cambia_el_proveedor_del_entorno(cliente, archivo, monkeypatch):
+    monkeypatch.setenv("TUTELA2_PROVEEDOR_LLM", "gemini")
+    r = cliente.put("/api/ia", json={"jev": {"umbral": 0.5}})
+    assert r.status_code == 200 and r.json()["proveedor"] == "gemini"
+    assert "proveedor" not in json.loads(archivo.read_text(encoding="utf-8"))
+    assert os.environ["TUTELA2_PROVEEDOR_LLM"] == "gemini"
+    assert cliente.get("/api/estado-servidor").json()["proveedor"] == "gemini"
