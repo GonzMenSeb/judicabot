@@ -272,7 +272,7 @@ export default function InteligenciaArtificial() {
           </Boton>
           <ol class="ia-pasos" aria-label="Pasos para instalar la extensión">
             <li>
-              Descomprima el archivo descargado. Adentro queda una carpeta llamada <code>judicabot-relatoria</code>.
+              Descomprima el archivo descargado y mueva la carpeta <code>judicabot-relatoria</code> que queda adentro a un lugar fijo, por ejemplo Documentos. No la borre: el navegador la usa mientras la extensión esté instalada.
             </li>
             <li>
               En Chrome abra <code>chrome://extensions</code>; en Edge, <code>edge://extensions</code>.
@@ -287,7 +287,7 @@ export default function InteligenciaArtificial() {
             <li>Deje ese navegador abierto. Si se cierra, las citas que el servidor no pueda verificar quedan para revisar.</li>
           </ol>
           <p class="sub ia-nota-ext">
-            Para actualizarla, descargue el archivo de nuevo, reemplace la carpeta y pulse el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
+            Para actualizarla, descargue el archivo de nuevo, descomprímalo y copie el contenido de su carpeta <code>judicabot-relatoria</code> sobre la carpeta que ya instaló, reemplazando los archivos; después pulse el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión. Si su equipo no deja activar el modo de desarrollador, pida ayuda a soporte técnico.
           </p>
         </section>
 

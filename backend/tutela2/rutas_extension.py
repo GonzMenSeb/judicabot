@@ -68,7 +68,14 @@ def consulta_relatoria(sentencia: str) -> dict:
     }
 
 
-@router.get("/api/extension/zip")
+@router.get(
+    "/api/extension/zip",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/zip": {}}, "description": "La extensión empaquetada"},
+        404: {"description": "La extensión no está disponible en este servidor."},
+    },
+)
 def descargar_extension() -> Response:
     try:
         nombre, contenido = extension.paquete()

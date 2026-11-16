@@ -2172,11 +2172,12 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
-              }
+              "application/zip": {}
             },
-            "description": "Successful Response"
+            "description": "La extensión empaquetada"
+          },
+          "404": {
+            "description": "La extensión no está disponible en este servidor."
           }
         },
         "summary": "Descargar Extension"

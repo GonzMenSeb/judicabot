@@ -14,17 +14,18 @@ El servidor de judicabot verifica cada cita de la Corte Constitucional contra el
 
 Chrome o Edge, versión 120 o más.
 
-1. Abrir `chrome://extensions` en Chrome o `edge://extensions` en Edge.
-2. Activar "Modo de desarrollador".
-3. Pulsar "Cargar extensión sin empaquetar" (según el idioma y el navegador puede decir "Cargar descomprimida" o "Cargar desempaquetado") y elegir la carpeta `judicabot-relatoria` (descargada desde **Inteligencia artificial** en judicabot) o esta carpeta (`extension/`).
-4. Abrir la ventana de la extensión desde su ícono en la barra del navegador.
-5. Revisar el servidor (por defecto `https://judicabot.web.vespiridion.org`), escribir la contraseña de judicabot y pulsar "Conectar". La ventana debe mostrar "Conectada".
+1. Descargar el `.zip` desde **Inteligencia artificial** en judicabot, descomprimirlo y mover la carpeta `judicabot-relatoria` a un lugar fijo, por ejemplo Documentos. No borrarla: el navegador la usa mientras la extensión esté instalada. (También se puede cargar esta carpeta, `extension/`.)
+2. Abrir `chrome://extensions` en Chrome o `edge://extensions` en Edge.
+3. Activar "Modo de desarrollador".
+4. Pulsar "Cargar extensión sin empaquetar" (según el idioma y el navegador puede decir "Cargar descomprimida" o "Cargar desempaquetado") y elegir esa carpeta `judicabot-relatoria`.
+5. Abrir la ventana de la extensión desde su ícono en la barra del navegador.
+6. Revisar el servidor (por defecto `https://judicabot.web.vespiridion.org`), escribir la contraseña de judicabot y pulsar "Conectar". La ventana debe mostrar "Conectada".
 
 El ícono muestra `!` mientras la extensión no esté conectada.
 
 ## Actualización
 
-Reemplazar la carpeta por la versión nueva y pulsar el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`.
+Descargar el .zip de nuevo desde **Inteligencia artificial**, descomprimirlo y copiar el contenido de su carpeta `judicabot-relatoria` sobre la carpeta ya instalada, reemplazando los archivos. Después pulsar el botón de volver a cargar (la flecha circular) en la tarjeta de la extensión, en `chrome://extensions` o `edge://extensions`. Si se carga otra carpeta, el navegador la instala como una extensión distinta, sin la conexión guardada.
 
 ## Descargarla desde judicabot
 

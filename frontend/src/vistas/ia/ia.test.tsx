@@ -308,6 +308,8 @@ describe("Claves", () => {
       "Jev, segunda opinión",
       "Extensión de la relatoría",
     ]);
+    const titulo = screen.getByRole("heading", { level: 2, name: "Extensión de la relatoría" });
+    expect(titulo.compareDocumentPosition(screen.getByText("Opciones avanzadas")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("los pasos de instalación muestran el servidor de esta instalación", async () => {
@@ -324,8 +326,12 @@ describe("Claves", () => {
     const llamadas = await montar();
     const barra = guardar().parentElement as HTMLElement;
     expect(within(barra).getByRole("status").textContent).toBe("");
+    const enlace = screen.getByRole("link", { name: "Descargar extensión (.zip)" });
+    enlace.addEventListener("click", (ev) => ev.preventDefault());
+    fireEvent.click(enlace);
+    expect(within(barra).getByRole("status").textContent).toBe("");
     fireEvent.click(guardar());
     await Promise.resolve();
-    expect(llamadas.some((l) => l.clave === "PUT /api/ia")).toBe(false);
+    expect(llamadas.some((l) => l.clave.includes("/api/extension") || l.clave === "PUT /api/ia")).toBe(false);
   });
 });
