@@ -49,7 +49,9 @@
  *                                    s.<clave>, o, g. Listas separadas por comas, cada valor codificado.
  *   deserializar(consulta, { defaults, casos? }): Filtros   lee y pasa por validar.
  *   validar(f, { defaults, casos? }) descarta valores desconocidos y fechas mal formadas; sin `casos` acepta
- *                                    cualquier valor en las facetas dinámicas (juzgado, entidad).
+ *                                    cualquier valor en las facetas dinámicas (juzgado, entidad). Descarta las
+ *                                    claves propias de otro proceso que el activo y, en un interruptor, toda
+ *                                    opción que no sea la que enciende.
  */
 import type { CasoResumen } from "../../api/contrato";
 import { diaIso, fechaCorta } from "../../estado/formato";
@@ -530,11 +532,16 @@ export function validar(f: Filtros, { defaults, casos }: Contexto): Filtros {
   let hasta = fecha === "rango" && diaValido(texto(f.hasta)) ? f.hasta : "";
   if (fecha === "rango" && !desde && !hasta) fecha = "todo";
   if (desde && hasta && desde > hasta) [desde, hasta] = [hasta, desde];
+  // Las claves propias solo valen para el proceso cuyo carril se ve (la misma regla que al cambiar de pestaña).
+  // Sin `casos` y en «Todos» no se sabe cuál es (undefined): se conservan.
+  const activo = casos ? procesoActivo({ ...f, proceso }, casos) : proceso === "todos" ? undefined : proceso;
   const sel: Record<string, string[]> = {};
   for (const [clave, ids] of Object.entries(f.sel ?? {})) {
     const faceta = facetaPorClave(clave, casos);
     if (!faceta || !Array.isArray(ids)) continue;
-    const validos = faceta.dinamica && !casos ? null : new Set(faceta.opciones.map((o) => o.id));
+    if (esPropia(clave) && activo !== undefined && clave.split(".")[0] !== activo) continue;
+    // Un interruptor solo enciende su opción; otra (s.alertas=sin) filtraría sin que el botón lo muestre.
+    const validos = faceta.tipo === "interruptor" ? new Set([faceta.activo]) : faceta.dinamica && !casos ? null : new Set(faceta.opciones.map((o) => o.id));
     const limpios = [...new Set(ids.map(texto))].filter((id) => id !== "" && (!validos || validos.has(id)));
     if (limpios.length) sel[clave] = limpios;
   }

@@ -12,7 +12,7 @@ export interface PropsFicha {
   /** Línea superior con el proceso del caso (Inicio con varios procesos a la vista). */
   mostrarProceso?: boolean;
   /** Datos propios del proceso; `eco` los resalta porque explican por qué el caso pasa los filtros. */
-  datos?: readonly (DatoFila & { eco?: boolean })[];
+  datos?: readonly Dato[];
 }
 
 const fechaLarga = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeStyle: "short" });
@@ -33,6 +33,19 @@ const Alertas = ({ n }: { n: number }) =>
       {plural(n, "alerta")}
     </Chip>
   ) : null;
+
+type Dato = DatoFila & { eco?: boolean };
+
+/** Los datos propios como chips; los que reflejan un filtro elegido van resaltados (.dato.eco). */
+const Datos = ({ datos }: { datos: readonly Dato[] }) => (
+  <>
+    {datos.map((d) => (
+      <Chip key={d.texto} tono={d.eco ? "neutro" : d.tono} title={d.texto} class={cx("dato", d.eco && "eco")}>
+        {d.texto}
+      </Chip>
+    ))}
+  </>
+);
 
 function Accion({ caso, clase }: { caso: CasoResumen; clase?: string }) {
   const accion = accionDe(caso.estado);
@@ -68,11 +81,7 @@ export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
         )}
         {datos && datos.length > 0 && (
           <div class="extras">
-            {datos.map((d) => (
-              <Chip key={d.texto} tono={d.eco ? "neutro" : d.tono} class={cx(d.eco && "eco")}>
-                {d.texto}
-              </Chip>
-            ))}
+            <Datos datos={datos} />
           </div>
         )}
       </div>
@@ -95,8 +104,11 @@ export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
   );
 }
 
-/** La misma ficha en una línea, para la vista Compacta. El enlace conserva el nombre accesible de la ficha. */
-export function FichaCompacta({ caso, nivel = 4, mostrarProceso }: Omit<PropsFicha, "datos">) {
+/**
+ * La misma ficha en una línea, para la vista Compacta. El enlace conserva el nombre accesible de la ficha. De los
+ * datos propios solo muestra el primero de los resaltados, para que la fila siga siendo una línea.
+ */
+export function FichaCompacta({ caso, nivel = 4, mostrarProceso, datos = [] }: PropsFicha) {
   const Titulo = `h${nivel}` as const;
   const estado = estadoDe(caso);
   const sub = [mostrarProceso && infoProceso(procesoDe(caso)).corto, caso.radicado && `Radicado ${caso.radicado}`, caso.juzgado_a_quo]
@@ -110,7 +122,8 @@ export function FichaCompacta({ caso, nivel = 4, mostrarProceso }: Omit<PropsFic
         {sub && <small title={sub}>{sub}</small>}
       </div>
       <p class="c-sig">{caso.siguiente_paso}</p>
-      <div>
+      <div class="c-marcas">
+        <Datos datos={datos.filter((d) => d.eco).slice(0, 1)} />
         <Alertas n={caso.n_alertas} />
       </div>
       <Cuando iso={caso.actualizado} clase="c-cuando" />

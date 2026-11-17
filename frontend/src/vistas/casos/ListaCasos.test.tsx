@@ -56,9 +56,93 @@ describe("ListaCasos", () => {
       expect(within(generales).getByRole("button", { name: nombre }).getAttribute("aria-expanded")).toBe("false");
     }
     expect(within(generales).getByRole("button", { name: "Con alertas" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.queryByRole("group", { name: /propios/ })).toBeNull();
     expect(screen.queryByRole("group", { name: "Proceso" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("el carril «Propios de 2ª instancia» trae los filtros de segunda, también en Inicio con un solo proceso", () => {
+    for (const proceso of ["segunda", undefined] as const) {
+      const { unmount } = render(<ListaCasos casos={CASOS} proceso={proceso} />);
+      const propio = screen.getByRole("group", { name: "Filtros propios de 2ª instancia" });
+      expect(propio.querySelector(".carril-cab")!.textContent).toBe("Propios de 2ª instancia");
+      expect(propio.querySelector(".carril-ico svg")).toBeTruthy();
+      for (const nombre of ["Decisión 1ª inst.", "Impugnó", "Sentido 2ª inst.", "Derecho", "Por revisar"]) {
+        expect(within(propio).getByRole("button", { name: nombre }).getAttribute("aria-expanded")).toBe("false");
+      }
+      expect(within(propio).getByRole("button", { name: "Con pruebas nuevas" }).getAttribute("aria-pressed")).toBe("false");
+      expect(screen.queryByRole("group", { name: "Proceso" })).toBeNull();
+      unmount();
+    }
+  });
+
+  it("las fichas muestran los datos de segunda y la Decisión 1ª inst. cuenta, filtra y resalta", () => {
+    render(<ListaCasos casos={CASOS} proceso="segunda" />);
+    const quintero = () => screen.getByRole("link", { name: "Decidir: Quintero Bedoya c. EPS Horizonte Salud" }).closest("article")!;
+    const datos = (a: Element, sel = ".dato") => [...a.querySelectorAll(sel)].map((d) => d.textContent);
+    expect(datos(quintero())).toEqual(["1ª inst.: Negó el amparo", "Impugna: accionante", "Pruebas nuevas en 2ª", "2 citas por revisar", "Jev discrepa"]);
+    expect(datos(quintero(), ".eco")).toEqual([]);
+
+    const propio = screen.getByRole("group", { name: "Filtros propios de 2ª instancia" });
+    expect(propio.querySelector(".cuantos")).toBeNull();
+    fireEvent.click(within(propio).getByRole("button", { name: "Decisión 1ª inst." }));
+    const dialogo = panel("Decisión de primera instancia");
+    const conteos = () => within(dialogo).getAllByRole("checkbox").map((o) => [o.closest("label")!.textContent, o.getAttribute("title")]);
+    const esperados = [
+      ["Amparó0", "0 casos"],
+      ["Negó el amparo1", "1 caso"],
+      ["Declaró improcedente0", "0 casos"],
+      ["Carencia actual de objeto1", "1 caso"],
+      ["Otra0", "0 casos"],
+      ["Sin dato2", "2 casos"],
+    ];
+    expect(conteos()).toEqual(esperados);
+
+    fireEvent.click(within(dialogo).getByRole("checkbox", { name: "Negó el amparo" }));
+    expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud"]);
+    expect(location.hash).toBe("#/?s.segunda.aquo=niega");
+    expect(conteos()).toEqual(esperados);
+    expect(datos(quintero(), ".dato.eco")).toEqual(["1ª inst.: Negó el amparo"]);
+    const cuantos = propio.querySelector(".cuantos")!;
+    expect([cuantos.textContent, cuantos.getAttribute("aria-hidden")]).toEqual(["1", "true"]);
+    expect(propio.querySelector(".carril-cab .solo-lectura")!.textContent).toBe("1 filtro propio aplicado");
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Listo · 1 caso" }));
+    expect(boton("Decisión 1ª inst.: Negó el amparo")).toBeTruthy();
+
+    fireEvent.click(boton("Compacta"));
+    expect(quintero().className).toContain("fila-c");
+    expect(datos(quintero())).toEqual(["1ª inst.: Negó el amparo"]);
+    expect(datos(quintero(), ".dato.eco")).toEqual(["1ª inst.: Negó el amparo"]);
+    fireEvent.click(boton("Con pruebas nuevas"));
+    expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud"]);
+    expect(datos(quintero())).toEqual(["1ª inst.: Negó el amparo"]);
+  });
+
+  it("en Inicio con varios procesos, la pestaña «Todos» no muestra carril ni datos propios", () => {
+    const primera = { ...CASOS[0]!, id: "primera-1", nombre: "Caso de primera", proceso: "primera" as never, segunda: null };
+    render(<ListaCasos casos={[...CASOS, primera]} />);
+    expect(boton(/^Todos/).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("group", { name: "Filtros propios de 2ª instancia" })).toBeNull();
+    expect(document.querySelector(".dato")).toBeNull();
+    fireEvent.click(boton(/^2ª instancia/));
+    expect(screen.getByRole("group", { name: "Filtros propios de 2ª instancia" })).toBeTruthy();
+    expect(document.querySelector(".dato")).toBeTruthy();
+  });
+
+  it("el interruptor Con pruebas nuevas filtra de un toque y resalta el dato", () => {
+    render(<ListaCasos casos={CASOS} proceso="segunda" />);
+    const pruebas = boton("Con pruebas nuevas");
+    expect(pruebas.getAttribute("title")).toBe("1 caso");
+    fireEvent.click(pruebas);
+    expect(pruebas.getAttribute("aria-pressed")).toBe("true");
+    expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud"]);
+    expect(location.hash).toBe("#/?s.segunda.pruebas=con");
+    expect([...document.querySelectorAll(".dato.eco")].map((d) => d.textContent)).toEqual(["Pruebas nuevas en 2ª"]);
+
+    fireEvent.click(boton("Terminados"));
+    expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud", "Duque Salazar c. EPS Ceiba Salud"]);
+    fireEvent.click(pruebas);
+    expect(nombres()).toHaveLength(6);
+    expect(document.querySelector(".dato.eco")).toBeNull();
   });
 
   it("un toque en la franja deja solo ese estado; «Ver todos los abiertos» vuelve al defecto", () => {

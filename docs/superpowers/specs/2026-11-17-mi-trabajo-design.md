@@ -61,7 +61,7 @@ La franja reemplaza a una pastilla de estado: sus tramos miden según su número
 Dos carriles, uno al lado del otro y nunca uno bajo el otro; en pantallas angostas se apilan.
 
 - **Generales** (todos los procesos): Trabajado, Juzgado, Entidad accionada y Con alertas. (Plazos, en el PR3, como baldosas.)
-- **Propios de <proceso>**: carril teñido, siempre visible cuando el proceso está fijo, con su icono y el número de filtros aplicados. Es el único lugar que cambia entre procesos (`PROPIAS` en `facetas.ts`); cada fila de la lista muestra además los datos que más pesan en ese proceso (`FILA`). En el PR1 este carril no se dibuja.
+- **Propios de <proceso>**: carril teñido, siempre visible cuando el proceso está fijo, con su icono y el número de filtros aplicados. Es el único lugar que cambia entre procesos (`PROPIAS` en `facetas.ts`); cada fila de la lista muestra además los datos que más pesan en ese proceso (`FILA`). En el PR1 este carril no se dibuja; desde el PR2 se dibuja el de segunda instancia, a la derecha de Generales y algo más ancho (pasa debajo a 960 px o menos), también en Inicio mientras todos los casos sean de segunda. Sin carril propio a la vista (Inicio con varios procesos, pestaña «Todos») las fichas tampoco muestran datos propios. El número de filtros aplicados se lee en voz alta como «N filtros propios aplicados».
 
 Cada filtro es una pastilla plegada que muestra su valor y su ✕; al tocarla abre un popover con el control que le corresponde:
 
@@ -92,6 +92,17 @@ Un filtro sin datos para los casos visibles se oculta.
 | Plazos | baldosas | `vence`, `dias_restantes` | PR3 (dato nuevo) |
 | Ordenar «Vence primero» y agrupar «Por plazo» | menús | `vence` | PR3 |
 
+Los propios de segunda leen `CasoResumen.segunda` (`DatosSegunda`); con `segunda` en `null` ningún filtro falla, solo no coincide (o cae en «Sin dato»/«Sin decidir»):
+
+| Pastilla (clave) | Opciones | Dato | Chip de la fila |
+|---|---|---|---|
+| Decisión 1ª inst. (`aquo`) | Amparó, Negó el amparo, Declaró improcedente, Carencia actual de objeto, Otra; «Sin dato» si algún caso no la trae | `decision_a_quo` | «1ª inst.: Negó el amparo» |
+| Impugnó (`impugna`) | Accionante, Accionada, Vinculada, Otro, Varios | `impugnante` | «Impugna: accionada» |
+| Sentido 2ª inst. (`sentido`) | Confirma, Revoca, Modifica; «Sin decidir» si algún caso no tiene fallo | `resultado` (y `sustitutiva` en el chip) | «Fallo: revoca y ampara» o «Fallo: revoca y declara hecho superado», solo con fallo |
+| Derecho (`derecho`, con buscador) | los de los casos, sin repetir variantes; basta con uno | `derechos` | — |
+| Por revisar (`revisar`) | Citas por revisar, Jev discrepa | `n_citas_revisar > 0`, `jev_discrepa` | «2 citas por revisar», «Jev discrepa» |
+| Con pruebas nuevas (`pruebas`, interruptor) | — | `pruebas_nuevas === true` | «Pruebas nuevas en 2ª» |
+
 «Trabajado» es la última actividad sobre los archivos, incluida la del sistema; el título del popover lo dice.
 
 ### Conteos facetados
@@ -102,14 +113,14 @@ Cada opción cuenta los casos que quedarían con los demás filtros aplicados, i
 |---|---|
 | Opciones de una pastilla | la clave de esa pastilla |
 | Franja de estados | estado |
-| Pestañas | proceso y todas las claves `ex:*` |
+| Pestañas | proceso y todas las claves propias (`<proceso>.<clave>`) |
 | Baldosas de plazo (PR3) | plazo |
 
 Las opciones en 0 se atenúan pero no desaparecen, para que la lista no salte. Los conteos de opciones se calculan solo mientras su popover está abierto. El popover de una pastilla muestra «Listo · N casos».
 
 ### Estado en la URL
 
-- Los filtros viven en la consulta del hash, por ejemplo `#/segunda?e=decidir,error&f=semana&s.juzgado=…&o=radicado`. Claves cortas: `q`, `p`, `e`, `f`/`d`/`h`, `s.<clave>`, `o`, `g`. Una clave o un valor desconocido se descarta (`validar`).
+- Los filtros viven en la consulta del hash, por ejemplo `#/segunda?e=decidir,error&f=semana&s.juzgado=…&o=radicado`. Claves cortas: `q`, `p`, `e`, `f`/`d`/`h`, `s.<clave>`, `o`, `g`; las propias llevan el proceso delante (`s.segunda.aquo=niega,sin_dato`). Una clave o un valor desconocido se descarta (`validar`), y también una clave propia de un proceso cuyo carril no se ve (la misma regla que al cambiar de pestaña) y, en un interruptor, cualquier valor que no sea el que enciende (`s.alertas=sin`).
 - Se escribe con `history.replaceState`: filtrar no añade entradas al historial, no dispara `hashchange`, no remonta ni desplaza la página. Atrás desde un caso restaura la vista; el enlace sirve de marcador.
 - `coincidir` interpreta solo el camino, así que `#/segunda?…` no cae en Inicio. El panel de Configuración, al cerrarse, vuelve a la ruta de fondo con su consulta.
 - Solo la densidad se guarda en `localStorage`, siempre dentro de `try/catch`.
@@ -119,7 +130,7 @@ Las opciones en 0 se atenúan pero no desaparecen, para que la lista no salte. L
 - Si ningún caso coincide, la lista dice «Ningún caso coincide…» y propone quitar el filtro que más casos devolvería: «Quitar «X» muestra N casos».
 - **Limpiar** vuelve a los valores por defecto y ofrece **Deshacer** hasta el siguiente cambio.
 - Si todos los casos están terminados: «No hay casos abiertos», con el botón «Ver los terminados (N)».
-- Chips resaltados en cada fila repiten los filtros activos (`eco`), desde el PR2.
+- Chips resaltados en cada fila repiten los filtros activos (`eco`), desde el PR2; la vista compacta muestra solo el primero de los resaltados, para seguir en una línea.
 
 ### Terminados, ocultos por defecto
 
