@@ -7,9 +7,39 @@ export type EstadoCasoApi =
   | "error"
   | "corriendo";
 
+export type ProcesoCaso = "segunda";
+
+export type SentidoAQuo = "ampara" | "niega" | "improcedente" | "carencia_actual_de_objeto" | "otro";
+export type ImpugnanteCaso = "accionante" | "accionada" | "vinculada" | "otro" | "varios";
+export type ResultadoCaso = "CONFIRMAR" | "REVOCAR" | "MODIFICAR";
+export type SustitutivaCaso =
+  | "AMPARAR"
+  | "NEGAR"
+  | "IMPROCEDENTE"
+  | "CARENCIA_HECHO_SUPERADO"
+  | "CARENCIA_DANO_CONSUMADO"
+  | "CARENCIA_SOBREVINIENTE";
+
+/**
+ * Datos propios de la segunda instancia para filtrar la lista. Todos pueden faltar (null, o [] en derechos).
+ * resultado y sustitutiva solo vienen si ya hay una decisión "decidir"; n_citas_revisar y jev_discrepa, solo
+ * mientras el caso espera la decisión.
+ */
+export interface DatosSegunda {
+  decision_a_quo: SentidoAQuo | null;
+  impugnante: ImpugnanteCaso | null;
+  resultado: ResultadoCaso | null;
+  sustitutiva: SustitutivaCaso | null;
+  derechos: string[];
+  pruebas_nuevas: boolean | null;
+  n_citas_revisar: number | null;
+  jev_discrepa: boolean | null;
+}
+
 export interface CasoResumen {
   id: string;
   nombre: string;
+  proceso: ProcesoCaso;
   radicado: string | null;
   accionante: string | null;
   accionadas: string[];
@@ -21,6 +51,8 @@ export interface CasoResumen {
   n_alertas: number;
   job_activo: string | null;
   actualizado: string;
+  /** null solo si el estado del caso no se pudo leer. */
+  segunda: DatosSegunda | null;
 }
 
 export interface CrearCasoRespuesta {

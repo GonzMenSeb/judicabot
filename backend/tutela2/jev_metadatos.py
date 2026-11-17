@@ -118,7 +118,7 @@ def _leer_respuestas(resp: RespuestaJev, preguntas: dict) -> tuple[dict[str, tup
     return leidas, alertas
 
 
-def _firme(lectura: tuple[str, float] | None, umbral: float) -> bool:
+def firme(lectura: tuple[str, float] | None, umbral: float) -> bool:
     return lectura is not None and lectura[1] >= umbral
 
 
@@ -142,7 +142,7 @@ def verificar_apertura(
 
     coincide_sentido = None
     fallo, clausula = leidas.get("sentido_fallo"), leidas.get("sentido_clausula")
-    if _firme(fallo, umbral) and _firme(clausula, umbral):
+    if firme(fallo, umbral) and firme(clausula, umbral):
         coincide_sentido = fallo[0] == clausula[0]
         if not coincide_sentido:
             alertas.append(
@@ -153,7 +153,7 @@ def verificar_apertura(
     coincide_rol = None
     rol = leidas.get("rol_impugnante")
     esperado = ap.metadatos.impugnante_rol or ing.metadatos.impugnante_rol
-    if esperado and _firme(rol, umbral):
+    if esperado and firme(rol, umbral):
         coincide_rol = rol[0] == esperado
         if not coincide_rol:
             alertas.append(

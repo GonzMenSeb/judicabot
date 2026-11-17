@@ -22,6 +22,16 @@ siguiente_paso: texto fijo por estado (SIGUIENTE_PASO).
 n_alertas: len(alertas) si es lista (ingesta) o la suma de los largos si es dict (grafo).
 radicado: cui_2a o, si falta, cui_1a de los metadatos. nombre: contenido de <caso>/.nombre o, si no
 existe, el id. actualizado: la mayor mtime de los archivos de la firma, en ISO 8601 UTC.
+
+proceso: tipo de proceso del caso; hoy siempre "segunda" (segunda instancia de tutela).
+segunda: datos propios de la segunda instancia para filtrar la lista (ver resumen_segunda.datos): decisión del
+a quo, impugnante, resultado y sustitutiva de la decisión, derechos, pruebas nuevas, citas por revisar y
+discrepancia con Jev. Es None solo si el estado no se pudo leer (respuesta ilegible o resumen_de_error); en
+cualquier otro caso trae todas las claves, con None o [] donde falta el dato. n_citas_revisar y jev_discrepa
+solo se informan mientras el caso espera la decisión; con_job (estado corriendo) los vuelve a poner en None.
+
+VERSION 2: el resumen cacheado trae proceso y segunda. Un caché de otra versión, o con otras claves, se descarta
+en _leer_cache y se reconstruye al leerlo o, al arrancar, en calentar.
 """
 
 from __future__ import annotations
@@ -36,11 +46,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from tutela2 import resumen_segunda
+
 log = logging.getLogger("tutela2.resumen_caso")
 
 ARCHIVO = ".resumen.json"
 NOMBRE = ".nombre"
-VERSION = 1
+VERSION = 2
+PROCESO = "segunda"
 RASTREADOS = ("caso.json", "hilo.sqlite", "hilo.sqlite-wal", "decision.json", "config.json", "salidas", "insumos")
 
 ESTADOS = ("sin_iniciar", "revision", "incompleto", "esperando_decision", "terminado", "error")
@@ -58,17 +71,17 @@ ETAPA_POR_ESTADO = {"sin_iniciar": 0, "incompleto": 0, "revision": 0, "esperando
 CLAVES = frozenset(
     {
         "nombre", "radicado", "accionante", "accionadas", "juzgado_a_quo", "estado", "etapa",
-        "siguiente_paso", "n_alertas", "n_insumos", "actualizado",
+        "siguiente_paso", "n_alertas", "n_insumos", "actualizado", "proceso", "segunda",
     }
 )
 
 
 def firma(caso_dir: Path) -> list[int | None]:
-    base = os.fspath(caso_dir)
+    prefijo = os.fspath(caso_dir) + os.sep
     resultado: list[int | None] = []
     for nombre in RASTREADOS:
         try:
-            resultado.append(os.stat(os.path.join(base, nombre)).st_mtime_ns)
+            resultado.append(os.stat(prefijo + nombre).st_mtime_ns)
         except OSError:
             resultado.append(None)
     return resultado
@@ -121,6 +134,7 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
             etapa, siguiente = 0, SIGUIENTE_PASO["error"]
     else:
         etapa, siguiente = ETAPA_POR_ESTADO[estado], SIGUIENTE_PASO[estado]
+    sin_datos = estado == "error" and not resumen
     return {
         "radicado": meta.get("cui_2a") or meta.get("cui_1a") or None,
         "accionante": meta.get("accionante") or None,
@@ -130,6 +144,8 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
         "etapa": etapa,
         "siguiente_paso": siguiente,
         "n_alertas": _n_alertas(resumen.get("alertas")),
+        "proceso": PROCESO,
+        "segunda": None if sin_datos else resumen_segunda.datos(estado, resumen),
     }
 
 
@@ -154,7 +170,8 @@ def construir(caso_dir: Path) -> tuple[list[int | None], dict[str, Any]]:
 
 def _leer_cache(caso_dir: Path) -> dict[str, Any] | None:
     try:
-        doc = json.loads((caso_dir / ARCHIVO).read_text(encoding="utf-8"))
+        with open(os.fspath(caso_dir) + os.sep + ARCHIVO, encoding="utf-8") as f:
+            doc = json.load(f)
         valido = doc["v"] == VERSION and isinstance(doc["firma"], list) and set(doc["datos"]) == CLAVES
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -207,9 +224,16 @@ def _etapa_corriendo(cmd: str, etapa_cache: int, caso_dir: Path) -> int:
     return etapa_cache
 
 
+def _sin_pendientes_de_decision(segunda: Any) -> Any:
+    if not isinstance(segunda, dict):
+        return segunda
+    return {**segunda, "n_citas_revisar": None, "jev_discrepa": None}
+
+
 def con_job(resumen: dict[str, Any], job_id: str, cmd: str, caso_dir: Path) -> dict[str, Any]:
     return {
         **resumen,
+        "segunda": _sin_pendientes_de_decision(resumen.get("segunda")),
         "estado": "corriendo",
         "etapa": _etapa_corriendo(cmd, resumen["etapa"], Path(caso_dir)),
         "siguiente_paso": SIGUIENTE_PASO["corriendo"],
@@ -224,6 +248,7 @@ def resumen_de_error(caso_dir: Path) -> dict[str, Any]:
         {
             "nombre": caso_dir.name,
             **campos_desde_estado(None),
+            "segunda": None,
             "n_insumos": 0,
             "actualizado": _actualizado([], caso_dir),
         },

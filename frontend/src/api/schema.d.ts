@@ -529,8 +529,14 @@ export interface components {
             n_insumos: number;
             /** Nombre */
             nombre: string;
+            /**
+             * Proceso
+             * @constant
+             */
+            proceso: "segunda";
             /** Radicado */
             radicado: string | null;
+            segunda: components["schemas"]["DatosSegunda"] | null;
             /** Siguiente Paso */
             siguiente_paso: string;
         };
@@ -553,6 +559,28 @@ export interface components {
             texto: string;
             /** Url */
             url?: string | null;
+        };
+        /**
+         * DatosSegunda
+         * @description Datos propios de la segunda instancia para filtrar la lista de casos (ver resumen_segunda).
+         */
+        DatosSegunda: {
+            /** Decision A Quo */
+            decision_a_quo: ("ampara" | "niega" | "improcedente" | "carencia_actual_de_objeto" | "otro") | null;
+            /** Derechos */
+            derechos: string[];
+            /** Impugnante */
+            impugnante: ("accionante" | "accionada" | "vinculada" | "otro" | "varios") | null;
+            /** Jev Discrepa */
+            jev_discrepa: boolean | null;
+            /** N Citas Revisar */
+            n_citas_revisar: number | null;
+            /** Pruebas Nuevas */
+            pruebas_nuevas: boolean | null;
+            /** Resultado */
+            resultado: ("CONFIRMAR" | "REVOCAR" | "MODIFICAR") | null;
+            /** Sustitutiva */
+            sustitutiva: ("AMPARAR" | "NEGAR" | "IMPROCEDENTE" | "CARENCIA_HECHO_SUPERADO" | "CARENCIA_DANO_CONSUMADO" | "CARENCIA_SOBREVINIENTE") | null;
         };
         /** DecisionVistaRespuesta */
         DecisionVistaRespuesta: {

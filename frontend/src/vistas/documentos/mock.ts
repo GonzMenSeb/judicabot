@@ -1,5 +1,5 @@
 import { ErrorApi } from "../../api/cliente";
-import type { CasoResumen } from "../../api/contrato";
+import type { CasoResumen, DatosSegunda } from "../../api/contrato";
 import type { MockRuta } from "../../api/mock";
 import { OBLIGATORIOS } from "./tipos";
 import type { DatosAuto, DocResumen, EstadoCaso, JobEstado, ResumenIngesta, RolDoc } from "./tipos";
@@ -99,10 +99,22 @@ interface CasoMock {
   job_activo?: string;
 }
 
+const SEGUNDA_VACIA: DatosSegunda = {
+  decision_a_quo: null,
+  impugnante: null,
+  resultado: null,
+  sustitutiva: null,
+  derechos: [],
+  pruebas_nuevas: null,
+  n_citas_revisar: null,
+  jev_discrepa: null,
+};
+
 function resumenCaso(id: string, nombre: string, estado: CasoResumen["estado"], etapa: CasoResumen["etapa"], extra: Partial<CasoResumen> = {}): CasoResumen {
   return {
     id,
     nombre,
+    proceso: "segunda",
     radicado: "05001408800920260041200",
     accionante: null,
     accionadas: [],
@@ -114,6 +126,7 @@ function resumenCaso(id: string, nombre: string, estado: CasoResumen["estado"], 
     n_alertas: 0,
     job_activo: null,
     actualizado: "2026-11-03T14:40:00Z",
+    segunda: SEGUNDA_VACIA,
     ...extra,
   };
 }
@@ -148,7 +161,9 @@ const casos: Record<string, CasoMock> = {
     salidas: ["trabajo/requerimiento.docx"],
   },
   "quintero-bedoya": {
-    resumen: resumenCaso("quintero-bedoya", "Quintero Bedoya c. EPS Horizonte Salud", "esperando_decision", 2),
+    resumen: resumenCaso("quintero-bedoya", "Quintero Bedoya c. EPS Horizonte Salud", "esperando_decision", 2, {
+      segunda: { ...SEGUNDA_VACIA, decision_a_quo: "niega", impugnante: "accionante", pruebas_nuevas: false, n_citas_revisar: 0, jev_discrepa: false },
+    }),
     ingesta: ingesta(documentosRevision()),
     salidas: [ACTA, AUTO_DOCX, "trabajo/previo.docx"],
   },

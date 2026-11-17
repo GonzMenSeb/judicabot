@@ -409,20 +409,22 @@ def _colapsado(item: Any, campo: str) -> Any:
     return item if nuevo == actual else item.model_copy(update={campo: nuevo})
 
 
+ResultadoDecision = Literal["CONFIRMAR", "REVOCAR", "MODIFICAR"]
+SustitutivaDecision = Literal[
+    "AMPARAR",
+    "NEGAR",
+    "IMPROCEDENTE",
+    "CARENCIA_HECHO_SUPERADO",
+    "CARENCIA_DANO_CONSUMADO",
+    "CARENCIA_SOBREVINIENTE",
+]
+
+
 class Decision(_SinControl):
     accion: Literal["decidir", "rehacer_apertura", "rehacer_consideraciones"]
     instruccion: str = ""
-    resultado: Optional[Literal["CONFIRMAR", "REVOCAR", "MODIFICAR"]] = None
-    sustitutiva: Optional[
-        Literal[
-            "AMPARAR",
-            "NEGAR",
-            "IMPROCEDENTE",
-            "CARENCIA_HECHO_SUPERADO",
-            "CARENCIA_DANO_CONSUMADO",
-            "CARENCIA_SOBREVINIENTE",
-        ]
-    ] = None
+    resultado: Optional[ResultadoDecision] = None
+    sustitutiva: Optional[SustitutivaDecision] = None
     causal: Optional[str] = None
     eje: str = ""
     por_reparo: list[DisposicionReparo] = []
