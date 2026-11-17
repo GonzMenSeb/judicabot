@@ -432,6 +432,7 @@ def test_un_resumen_completo_valida_como_caso_resumen():
         "id": "caso", "nombre": "Caso", "radicado": None, "accionante": None, "accionadas": [], "juzgado_a_quo": None,
         "estado": "esperando_decision", "etapa": 2, "siguiente_paso": "x", "n_insumos": 0, "n_alertas": 0,
         "job_activo": None, "actualizado": "2026-11-01T00:00:00+00:00", "proceso": "segunda", "segunda": segunda,
+        "creado": None, "termino": None, "vence": None, "dias_restantes": None,
     }
     assert CasoResumen.model_validate(fila).segunda == DatosSegunda(**segunda)
 

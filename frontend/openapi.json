@@ -202,6 +202,28 @@
             "title": "Actualizado",
             "type": "string"
           },
+          "creado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creado"
+          },
+          "dias_restantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Restantes"
+          },
           "estado": {
             "enum": [
               "sin_iniciar",
@@ -293,6 +315,27 @@
           "siguiente_paso": {
             "title": "Siguiente Paso",
             "type": "string"
+          },
+          "termino": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Termino"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vence"
           }
         },
         "required": [
@@ -310,7 +353,11 @@
           "n_alertas",
           "job_activo",
           "actualizado",
-          "segunda"
+          "segunda",
+          "creado",
+          "termino",
+          "vence",
+          "dias_restantes"
         ],
         "title": "CasoResumen",
         "type": "object"
@@ -881,6 +928,13 @@
             "title": "Api Key",
             "type": "boolean"
           },
+          "festivos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Festivos",
+            "type": "array"
+          },
           "gemini_key": {
             "title": "Gemini Key",
             "type": "boolean"
@@ -923,7 +977,8 @@
           "jev_key",
           "modelo",
           "modelos",
-          "modelos_gemini"
+          "modelos_gemini",
+          "festivos"
         ],
         "title": "EstadoServidor",
         "type": "object"
@@ -1693,6 +1748,97 @@
         "title": "Segmento",
         "type": "object"
       },
+      "Termino": {
+        "description": "Término para fallar de un caso: el despacho recibió el expediente el día `inicio` y cuenta con `dias`.\n\nLos días se cuentan desde el día siguiente a `inicio`, en días hábiles (sin fines de semana ni festivos\ncolombianos) o calendario (si vence en un día no hábil, pasa al siguiente hábil). Ver tutela2.termino.",
+        "properties": {
+          "dias": {
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Dias",
+            "type": "integer"
+          },
+          "inicio": {
+            "title": "Inicio",
+            "type": "string"
+          },
+          "unidad": {
+            "enum": [
+              "habiles",
+              "calendario"
+            ],
+            "title": "Unidad",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inicio",
+          "dias",
+          "unidad"
+        ],
+        "title": "Termino",
+        "type": "object"
+      },
+      "TerminoRespuesta": {
+        "description": "GET/PUT /api/casos/{id}/termino: el término vigente y su vencimiento calculado hoy.\n\ntermino es el guardado o, si no hay, el que se propone a partir de la fecha de reparto (por_defecto True).\nSin fecha de reparto ni término guardado, termino, vence y dias_restantes son None. vence y dias_restantes\ntambién son None si el caso ya terminó. dias_restantes: ver tutela2.termino.plazo.",
+        "properties": {
+          "dias_restantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Restantes"
+          },
+          "fecha_reparto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Reparto"
+          },
+          "por_defecto": {
+            "title": "Por Defecto",
+            "type": "boolean"
+          },
+          "termino": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Termino"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vence"
+          }
+        },
+        "required": [
+          "termino",
+          "por_defecto",
+          "fecha_reparto",
+          "vence",
+          "dias_restantes"
+        ],
+        "title": "TerminoRespuesta",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -2300,6 +2446,92 @@
           }
         },
         "summary": "Descargar Salida"
+      }
+    },
+    "/api/casos/{caso_id}/termino": {
+      "get": {
+        "operationId": "leer_termino_api_casos__caso_id__termino_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Termino"
+      },
+      "put": {
+        "operationId": "fijar_termino_api_casos__caso_id__termino_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Termino"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fijar Termino"
       }
     },
     "/api/casos/{caso_id}/vista/{tipo}": {

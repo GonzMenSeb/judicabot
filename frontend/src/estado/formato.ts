@@ -51,6 +51,17 @@ export function plural(n: number, singular: string, pluralForma?: string): strin
   return `${n} ${pluralizar(n, singular, pluralForma)}`;
 }
 
+/**
+ * Los días que faltan para un término, en su unidad, con el mismo texto en la lista y en Documentos: "Faltan 3 días
+ * hábiles", "Falta 1 día calendario", "Vence hoy" o "Venció hace 2 días hábiles". n es dias_restantes (0 = vence hoy).
+ */
+export function textoDiasRestantes(n: number, unidad: "habiles" | "calendario"): string {
+  const [uno, varios] = unidad === "calendario" ? ["día calendario", "días calendario"] : ["día hábil", "días hábiles"];
+  if (n === 0) return "Vence hoy";
+  if (n < 0) return `Venció hace ${plural(-n, uno, varios)}`;
+  return `${n === 1 ? "Falta" : "Faltan"} ${plural(n, uno, varios)}`;
+}
+
 export function porcentaje(fraccion: number | null | undefined, decimales = 0): string {
   if (fraccion === null || fraccion === undefined || !Number.isFinite(fraccion)) return "—";
   let formato = porcentajes.get(decimales);

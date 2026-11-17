@@ -33,7 +33,7 @@
 :is(.ficha .accion, .fila-c) small { color: var(--suave); font-size: 0.82rem; }
 
 .fichas.compacta { gap: 0; overflow: hidden; border: 1px solid var(--linea); border-radius: 12px; background: #fff; }
-.fila-c { display: grid; grid-template-columns: 0.55rem minmax(0, 2.3fr) minmax(0, 1.4fr) 11rem 6.5rem 10rem; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid #e3e8ea; }
+.fila-c { display: grid; grid-template-columns: 0.55rem minmax(0, 2fr) minmax(0, 1.2fr) 16rem 5.5rem 10rem; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid #e3e8ea; }
 .fila-c:first-child { border-top: 0; }
 .fila-c:hover { background: #f7f9fa; }
 .punto-estado { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--c, var(--acento)); }
@@ -41,7 +41,7 @@
 .fila-c :is(h3, h4), .fila-c small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fila-c :is(h3, h4) { margin: 0; font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
 .c-nombre small { display: block; }
-.c-marcas { display: flex; gap: 0.3rem; min-width: 0; }
+.c-marcas { display: flex; flex-wrap: wrap; gap: 0.25rem 0.3rem; min-width: 0; }
 .c-marcas .dato { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .c-cuando { text-align: right; }
 .fila-c .btn { justify-self: end; }

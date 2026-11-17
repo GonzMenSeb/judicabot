@@ -6,11 +6,11 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from tutela2 import resumen_caso
-from tutela2.esquemas import CasoCreado, CasoResumen
+from tutela2 import resumen_caso, termino
+from tutela2.esquemas import CasoCreado, CasoResumen, Termino, TerminoRespuesta
 
 log = logging.getLogger("tutela2.rutas_casos")
 
@@ -91,6 +91,7 @@ def crear_caso(nombre: str | None = Form(None), files: list[UploadFile] = File(.
                 raise HTTPException(400, f"La ruta {'/'.join(ruta)} choca con otra: un nombre no puede ser archivo y carpeta a la vez.") from exc
         (caso_dir / resumen_caso.NOMBRE).write_text(nombre, encoding="utf-8")
         formato_global.copiar_a_caso(caso_dir)
+        termino.crear(caso_dir)
     except BaseException:
         shutil.rmtree(caso_dir, ignore_errors=True)
         raise
@@ -100,3 +101,32 @@ def crear_caso(nombre: str | None = Form(None), files: list[UploadFile] = File(.
         log.warning("No se pudo escribir el resumen inicial de %s", caso_id, exc_info=True)
     log.info("Caso %s creado con %d archivos", caso_id, len(pares))
     return {"id": caso_id, "n_insumos": len(pares)}
+
+
+def _caso_dir(caso_id: str) -> Path:
+    from tutela2 import server
+
+    return server._dir_caso(caso_id)
+
+
+def _respuesta_termino(caso_dir: Path) -> dict[str, Any]:
+    return termino.describir(caso_dir, resumen_caso._leer_estado(caso_dir))
+
+
+@router.get("/api/casos/{caso_id}/termino", response_model=TerminoRespuesta)
+def leer_termino(caso_dir: Path = Depends(_caso_dir)) -> dict[str, Any]:
+    return _respuesta_termino(caso_dir)
+
+
+@router.put("/api/casos/{caso_id}/termino", response_model=TerminoRespuesta)
+def fijar_termino(cuerpo: Termino, caso_dir: Path = Depends(_caso_dir)) -> dict[str, Any]:
+    try:
+        termino.guardar_termino(caso_dir, cuerpo)
+    except OSError as exc:
+        log.exception("No se pudo guardar el término de %s", caso_dir.name)
+        raise HTTPException(500, f"No se pudo guardar el término: {exc}") from exc
+    try:
+        resumen_caso.actualizar(caso_dir)
+    except Exception:
+        log.warning("No se pudo actualizar el resumen de %s", caso_dir.name, exc_info=True)
+    return _respuesta_termino(caso_dir)

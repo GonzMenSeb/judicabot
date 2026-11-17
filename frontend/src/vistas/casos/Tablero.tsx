@@ -4,8 +4,8 @@ import type { CasoResumen } from "../../api/contrato";
 import { plural } from "../../estado";
 import { Boton, cx, Desplegable } from "../../ui";
 import { plano } from "./agrupar";
-import { ESTADOS, infoProceso, TRABAJADO, type Faceta, type TipoProceso } from "./facetas";
-import { alternar, conteoEstados, conteoOpciones, elegirEstado, fijar, quitarFiltro, textoFecha, type Filtros, type Predicado } from "./filtros";
+import { ESTADOS, infoProceso, PLAZO, PLAZOS, TRABAJADO, type Faceta, type TipoProceso } from "./facetas";
+import { alternar, conteoEstados, conteoOpciones, conteoPlazos, elegirEstado, fijar, pasa, quitarFiltro, textoFecha, type Filtros, type Predicado } from "./filtros";
 import { FiltroFecha } from "./FiltroFecha";
 import { IconoProceso } from "./iconos";
 
@@ -152,6 +152,10 @@ export function Tablero(props: PropsTablero) {
     visibles,
   });
   const n = conteoEstados(casos, preds);
+  // Las baldosas de plazo solo si algún caso del alcance (pestaña o página) tiene término.
+  const hayPlazos = casos.some((c) => c.vence != null && pasa(c, preds, (k) => k !== "proceso"));
+  const nPlazo = hayPlazos ? conteoPlazos(casos, preds) : null;
+  const plazosElegidos = filtros.sel[PLAZO.clave] ?? [];
 
   const pastilla = (f: Faceta) => {
     const elegidos = filtros.sel[f.clave] ?? [];
@@ -195,38 +199,65 @@ export function Tablero(props: PropsTablero) {
 
   return (
     <div class="tablero">
-      <div class="triage" role="group" aria-labelledby={`${id}-estado`}>
-        <p class="rotulo">
-          <span id={`${id}-estado`}>Estado</span>
-          {estadoCambiado ? (
-            <button type="button" class="enlace" onClick={() => cambiar(quitarFiltro(filtros, "estado", defaults))}>
-              Ver todos los abiertos
-            </button>
-          ) : (
-            <small>Toque uno para ver solo ese; luego sume otros.</small>
-          )}
-        </p>
-        <div class="franja">
-          {ESTADOS.map((e) => {
-            const on = filtros.estado.includes(e.id);
-            const oculto = e.id === "terminado" && !on;
-            return (
-              <button
-                key={e.id}
-                type="button"
-                class={`seg-estado e-${e.id}${n[e.id] === 0 ? " cero" : ""}`}
-                style={{ flexGrow: Math.max(n[e.id], 1) }}
-                aria-pressed={on}
-                aria-label={e.etiqueta}
-                title={`${plural(n[e.id], "caso")}${on ? "" : oculto ? ", ocultos" : ", no se muestran"}`}
-                onClick={() => cambiar(elegirEstado(filtros, e.id))}
-              >
-                <b>{n[e.id]}</b>
-                <span>{oculto ? `${e.etiqueta} · ocultos` : e.etiqueta}</span>
+      <div class="triage">
+        <div role="group" aria-labelledby={`${id}-estado`}>
+          <p class="rotulo">
+            <span id={`${id}-estado`}>Estado</span>
+            {estadoCambiado ? (
+              <button type="button" class="enlace" onClick={() => cambiar(quitarFiltro(filtros, "estado", defaults))}>
+                Ver todos los abiertos
               </button>
-            );
-          })}
+            ) : (
+              <small>Toque uno para ver solo ese; luego sume otros.</small>
+            )}
+          </p>
+          <div class="franja">
+            {ESTADOS.map((e) => {
+              const on = filtros.estado.includes(e.id);
+              const oculto = e.id === "terminado" && !on;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  class={`seg-estado e-${e.id}${n[e.id] === 0 ? " cero" : ""}`}
+                  style={{ flexGrow: Math.max(n[e.id], 1) }}
+                  aria-pressed={on}
+                  aria-label={e.etiqueta}
+                  title={`${plural(n[e.id], "caso")}${on ? "" : oculto ? ", ocultos" : ", no se muestran"}`}
+                  onClick={() => cambiar(elegirEstado(filtros, e.id))}
+                >
+                  <b>{n[e.id]}</b>
+                  <span>{oculto ? `${e.etiqueta} · ocultos` : e.etiqueta}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+        {nPlazo && (
+          <div role="group" aria-labelledby={`${id}-plazos`}>
+            <p class="rotulo">
+              <span id={`${id}-plazos`}>Plazos</span>
+            </p>
+            <div class="plazos">
+              {PLAZOS.slice(0, 3).map((p) => {
+                const on = plazosElegidos.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    class={cx("plazo", p.tono, nPlazo[p.id] === 0 && !on && "cero")}
+                    aria-pressed={on}
+                    aria-label={`${p.etiqueta}: ${plural(nPlazo[p.id], "caso")}`}
+                    onClick={() => cambiar(alternar(filtros, PLAZO.clave, p.id))}
+                  >
+                    <b>{nPlazo[p.id]}</b>
+                    <span>{p.etiqueta}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <div class="carriles">
         <div class="carril" role="group" aria-label="Filtros generales">

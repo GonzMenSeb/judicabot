@@ -36,6 +36,32 @@ export interface DatosSegunda {
   jev_discrepa: boolean | null;
 }
 
+export type UnidadTermino = "habiles" | "calendario";
+
+/**
+ * Término para fallar: el despacho recibió el expediente el día `inicio` (AAAA-MM-DD, "Recibido el") y cuenta con `dias`
+ * (1 a 365) desde el día siguiente, en días hábiles (sin fines de semana ni festivos) o calendario (si vence en un día no
+ * hábil, pasa al siguiente hábil).
+ */
+export interface Termino {
+  inicio: string;
+  dias: number;
+  unidad: UnidadTermino;
+}
+
+/**
+ * GET y PUT /api/casos/{id}/termino. termino es el guardado o, mientras no se guarde (por_defecto), el propuesto desde
+ * fecha_reparto: 20 días hábiles. Sin fecha de reparto ni término guardado no hay término. vence y dias_restantes
+ * (ver CasoResumen) son null si no hay término o el caso terminó.
+ */
+export interface TerminoRespuesta {
+  termino: Termino | null;
+  por_defecto: boolean;
+  fecha_reparto: string | null;
+  vence: string | null;
+  dias_restantes: number | null;
+}
+
 export interface CasoResumen {
   id: string;
   nombre: string;
@@ -53,6 +79,17 @@ export interface CasoResumen {
   actualizado: string;
   /** null solo si el estado del caso no se pudo leer. */
   segunda: DatosSegunda | null;
+  /** Instante de creación del caso (ISO 8601 con desfase); null en los casos anteriores a este dato. */
+  creado: string | null;
+  /** Término efectivo: el guardado o el propuesto desde la fecha de reparto; null si no hay ninguno. */
+  termino: Termino | null;
+  /** Día de vencimiento (AAAA-MM-DD), calculado por el servidor al día; null si no hay término o el caso terminó. */
+  vence: string | null;
+  /**
+   * 0 el día del vencimiento, positivo antes (días que faltan, en la unidad del término: hábiles después de hoy hasta
+   * vence, o corridos) y negativo después (atraso). null cuando vence es null.
+   */
+  dias_restantes: number | null;
 }
 
 export interface CrearCasoRespuesta {
@@ -244,6 +281,8 @@ export interface EstadoServidor {
   modelo: string;
   modelos: string[];
   modelos_gemini: string[];
+  /** Festivos (AAAA-MM-DD) del año anterior, el actual y el siguiente, en orden. */
+  festivos: string[];
 }
 
 export interface EstadoDataset {

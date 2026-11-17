@@ -160,6 +160,10 @@ const RESUMENES: CasoResumen[] = [
     n_alertas: 3,
     job_activo: null,
     actualizado: new Date().toISOString(),
+    creado: "2026-10-21T10:15:00-05:00",
+    termino: { inicio: "2026-10-21", dias: 20, unidad: "habiles" },
+    vence: null,
+    dias_restantes: null,
     segunda: {
       decision_a_quo: "niega",
       impugnante: "accionante",
@@ -186,6 +190,10 @@ const RESUMENES: CasoResumen[] = [
     n_alertas: 1,
     job_activo: null,
     actualizado: new Date().toISOString(),
+    creado: "2026-10-21T10:15:00-05:00",
+    termino: { inicio: "2026-10-21", dias: 20, unidad: "habiles" },
+    vence: "2026-11-20",
+    dias_restantes: 3,
     segunda: {
       decision_a_quo: "improcedente",
       impugnante: "accionada",

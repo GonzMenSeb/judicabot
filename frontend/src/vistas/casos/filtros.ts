@@ -5,20 +5,22 @@
  * Estado
  *   Filtros { q, proceso, estado[], fecha, desde, hasta, sel, orden, agrupar }
  *     fecha: "todo" | PresetFecha | "rango" (desde/hasta "AAAA-MM-DD", solo con "rango"; uno de los dos puede faltar).
- *     sel: { [claveFaceta]: ids elegidos }, nunca con listas vacías. Claves de facetas.ts ("juzgado", "segunda.aquo").
+ *     sel: { [claveFaceta]: ids elegidos }, nunca con listas vacías. Claves de facetas.ts ("juzgado", "segunda.aquo",
+ *          "plazo" con ids de PLAZOS).
  *   inicial(procesoFijo?)            valores por defecto: en la página de un proceso, proceso fijo y agrupar "estado";
  *                                    en Inicio, "todos" y "ninguno". Terminados fuera.
  *   FECHAS, ORDENES, AGRUPACIONES    { id, etiqueta }[] para los controles.
  *
  * Filtrar y contar (cada conteo ignora su propio filtro)
  *   predicados(f, hoy): Predicado[]  compílelos una vez por render; claves: "proceso", "estado", "fecha", "q" y
- *                                    cada clave de sel. (PR3 añade "plazo".)
+ *                                    cada clave de sel ("plazo" incluida).
  *   pasa(caso, preds, omitir?)       omitir: una clave, varias o una función clave => boolean.
  *   contar(casos, preds, omitir?, prueba?)
  *   conteoEstados(casos, preds)      franja de estados (ignora "estado").
  *   conteoPestanas(casos, preds)     pestañas (ignora "proceso" y las claves propias, OMITIR_PESTANAS).
  *   conteoOpciones(casos, preds, faceta)  Map id → n para un desplegable (ignora la clave de la faceta).
  *   conteoFechas(casos, preds, hoy)  n por preset de FECHAS (ignora "fecha").
+ *   conteoPlazos(casos, preds)       n por cubeta de PLAZOS, para las baldosas (ignora "plazo").
  *   actividad(casos, hoy, dias = 30) histograma por día local de `actualizado`; pásele los casos que ya pasan
  *                                    `pasa(c, preds, "fecha")`.
  *   procesoActivo(f, casos)          el proceso cuyos filtros propios se muestran: el elegido o, si todos los casos
@@ -39,13 +41,16 @@
  *   rangoPreset(id, hoy), rangoDe(f, hoy), textoFecha(f), enRango(caso, rango)
  *
  * Mostrar
- *   ordenarPor(casos, orden)         prioridad (PRIORIDAD y luego lo más reciente), reciente, antiguo, radicado.
- *   agruparPor(ordenados, agrupacion, limite?) → { id, titulo, casos, total }[]   `casos` son los primeros
+ *   ordenarPor(casos, orden)         prioridad (vencidos y los que vencen hoy, luego PRIORIDAD, el vencimiento más
+ *                                    cercano y lo más reciente), vence (vencimiento más cercano; sin término al
+ *                                    final), reciente, antiguo, radicado.
+ *   agruparPor(ordenados, agrupacion, limite?) → { id, titulo, casos, total }[]   por estado o por plazo (orden de
+ *                                    ESTADOS o de PLAZOS); `casos` son los primeros
  *                                    `limite` del total, repartidos; total = todos los del grupo; sin grupos vacíos.
  *   datosFila(caso, f)               FILA del proceso del caso con `eco` si su filtro está elegido.
  *
  * URL
- *   serializar(f, defaults): string  solo lo que difiere del defecto: q, p, e, f (preset), d/h (rango),
+ *   serializar(f, defaults): string  solo lo que difiere del defecto: q, p, e, f (preset), d/h (rango), pl (plazo),
  *                                    s.<clave>, o, g. Listas separadas por comas, cada valor codificado.
  *   deserializar(consulta, { defaults, casos? }): Filtros   lee y pasa por validar.
  *   validar(f, { defaults, casos? }) descarta valores desconocidos y fechas mal formadas; sin `casos` acepta
@@ -66,12 +71,17 @@ import {
   estadoDe,
   facetaPorClave,
   FILA,
+  PLAZO,
+  PLAZOS,
+  plazoDe,
   PRIORIDAD,
   PROCESOS,
   procesoDe,
+  urgente,
   type DatoFila,
   type EstadoUi,
   type Faceta,
+  type PlazoId,
   type ProcesoFiltro,
   type TipoProceso,
   type ValorFaceta,
@@ -79,8 +89,8 @@ import {
 
 export type PresetFecha = "hoy" | "ayer" | "semana" | "mes" | "mespasado";
 export type ModoFecha = "todo" | PresetFecha | "rango";
-export type Orden = "prioridad" | "reciente" | "antiguo" | "radicado";
-export type Agrupacion = "ninguno" | "estado";
+export type Orden = "prioridad" | "vence" | "reciente" | "antiguo" | "radicado";
+export type Agrupacion = "ninguno" | "estado" | "plazo";
 
 export interface Filtros {
   q: string;
@@ -105,6 +115,7 @@ export const FECHAS: readonly { id: "todo" | PresetFecha; etiqueta: string }[] =
 
 export const ORDENES: readonly { id: Orden; etiqueta: string }[] = [
   { id: "prioridad", etiqueta: "Lo que me toca primero" },
+  { id: "vence", etiqueta: "Vence primero" },
   { id: "reciente", etiqueta: "Trabajado más reciente" },
   { id: "antiguo", etiqueta: "Más tiempo sin movimiento" },
   { id: "radicado", etiqueta: "Radicado" },
@@ -113,6 +124,7 @@ export const ORDENES: readonly { id: Orden; etiqueta: string }[] = [
 export const AGRUPACIONES: readonly { id: Agrupacion; etiqueta: string }[] = [
   { id: "ninguno", etiqueta: "Sin agrupar" },
   { id: "estado", etiqueta: "Por estado" },
+  { id: "plazo", etiqueta: "Por plazo" },
 ];
 
 export function inicial(procesoFijo?: TipoProceso): Filtros {
@@ -244,7 +256,6 @@ export function predicados(f: Filtros, hoy: Date): Predicado[] {
   preds.push({ clave: "estado", pasa: (c) => estados.has(estadoDe(c)) });
   const rango = rangoDe(f, hoy);
   if (rango.desde || rango.hasta) preds.push({ clave: "fecha", pasa: (c) => enRango(c, rango) });
-  // PR3: { clave: "plazo", … } con la cubeta del término.
   for (const [clave, ids] of Object.entries(f.sel)) {
     const faceta = facetaPorClave(clave);
     if (!faceta || ids.length === 0) continue;
@@ -308,6 +319,12 @@ export function conteoFechas(casos: readonly CasoResumen[], preds: readonly Pred
     if (!pasa(c, preds, "fecha")) continue;
     for (const [id, rango] of rangos) if (enRango(c, rango)) n[id] += 1;
   }
+  return n;
+}
+
+export function conteoPlazos(casos: readonly CasoResumen[], preds: readonly Predicado[]): Record<PlazoId, number> {
+  const n = Object.fromEntries(PLAZOS.map((p) => [p.id, 0])) as Record<PlazoId, number>;
+  for (const c of casos) if (pasa(c, preds, PLAZO.clave)) n[plazoDe(c)] += 1;
   return n;
 }
 
@@ -406,10 +423,18 @@ const tiempo = (c: CasoResumen) => {
   return Number.isNaN(t) ? 0 : t;
 };
 const masReciente = (a: CasoResumen, b: CasoResumen) => tiempo(b) - tiempo(a);
+/** Vencimiento más cercano primero; sin vencimiento, al final. Las fechas "AAAA-MM-DD" se comparan como texto. */
+const venceAntes = (a: CasoResumen, b: CasoResumen) => {
+  const [x, y] = [plazoDe(a) === "sin" ? null : a.vence, plazoDe(b) === "sin" ? null : b.vence];
+  if (!x || !y) return (x ? 0 : 1) - (y ? 0 : 1);
+  return x < y ? -1 : x > y ? 1 : 0;
+};
+const urgencia = (c: CasoResumen) => (urgente(c) ? 0 : 1);
 
 const COMPARAR: Record<Orden, (a: CasoResumen, b: CasoResumen) => number> = {
-  // PR3: vencidos y los que vencen hoy primero.
-  prioridad: (a, b) => PRIORIDAD[estadoDe(a)] - PRIORIDAD[estadoDe(b)] || masReciente(a, b),
+  prioridad: (a, b) => urgencia(a) - urgencia(b) || PRIORIDAD[estadoDe(a)] - PRIORIDAD[estadoDe(b)] || venceAntes(a, b) || masReciente(a, b),
+  // Sin término, los abiertos antes que los terminados.
+  vence: (a, b) => venceAntes(a, b) || Number(estadoDe(a) === "terminado") - Number(estadoDe(b) === "terminado") || masReciente(a, b),
   reciente: masReciente,
   antiguo: (a, b) => -masReciente(a, b),
   radicado: (a, b) => {
@@ -433,12 +458,16 @@ export interface Grupo {
 export function agruparPor(ordenados: readonly CasoResumen[], agrupacion: Agrupacion, limite = Infinity): Grupo[] {
   const mostrados = ordenados.slice(0, limite);
   if (agrupacion === "ninguno") return mostrados.length ? [{ id: "todos", titulo: "", casos: mostrados, total: ordenados.length }] : [];
-  return ESTADOS.map((e) => ({
-    id: e.id,
-    titulo: e.etiqueta,
-    casos: mostrados.filter((c) => estadoDe(c) === e.id),
-    total: ordenados.filter((c) => estadoDe(c) === e.id).length,
-  })).filter((g) => g.casos.length > 0);
+  const grupos: readonly { id: string; etiqueta: string }[] = agrupacion === "plazo" ? PLAZOS : ESTADOS;
+  const de: (c: CasoResumen) => string = agrupacion === "plazo" ? plazoDe : estadoDe;
+  return grupos
+    .map((g) => ({
+      id: g.id,
+      titulo: g.etiqueta,
+      casos: mostrados.filter((c) => de(c) === g.id),
+      total: ordenados.filter((c) => de(c) === g.id).length,
+    }))
+    .filter((g) => g.casos.length > 0);
 }
 
 /** Los datos propios de la fila; `eco` si el filtro que reflejan tiene elegido su valor. */
@@ -471,9 +500,11 @@ export function serializar(f: Filtros, defaults: Filtros): string {
     if (f.desde) partes.push(`d=${f.desde}`);
     if (f.hasta) partes.push(`h=${f.hasta}`);
   } else if (f.fecha !== "todo") partes.push(`f=${f.fecha}`);
+  const plazos = f.sel[PLAZO.clave] ?? [];
+  if (plazos.length) partes.push(`pl=${PLAZOS.filter((p) => plazos.includes(p.id)).map((p) => p.id).join(",")}`);
   for (const clave of Object.keys(f.sel).sort()) {
     const ids = f.sel[clave] ?? [];
-    if (ids.length) partes.push(`s.${encodeURIComponent(clave)}=${valores([...ids].sort())}`);
+    if (ids.length && clave !== PLAZO.clave) partes.push(`s.${encodeURIComponent(clave)}=${valores([...ids].sort())}`);
   }
   if (f.orden !== defaults.orden) partes.push(`o=${f.orden}`);
   if (f.agrupar !== defaults.agrupar) partes.push(`g=${f.agrupar}`);
@@ -505,6 +536,7 @@ export function deserializar(consulta: string, contexto: Contexto): Filtros {
     else if (clave === "f") preset = decodificar(crudo);
     else if (clave === "d") desde = decodificar(crudo);
     else if (clave === "h") hasta = decodificar(crudo);
+    else if (clave === "pl") f.sel[PLAZO.clave] = ids;
     else if (clave === "o") f.orden = decodificar(crudo) as Orden;
     else if (clave === "g") f.agrupar = decodificar(crudo) as Agrupacion;
     else if (clave.startsWith("s.") && clave.length > 2) f.sel[clave.slice(2)] = ids;
