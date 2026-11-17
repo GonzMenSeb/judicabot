@@ -33,7 +33,7 @@ Faltan varios datos: el tipo de proceso, los campos propios de segunda en la lis
   - Los casos nuevos también empiezan a registrar `proceso` y `creado`.
   - Los casos creados antes de este cambio reciben valores por defecto: `proceso="segunda"`, `creado=null` y un término derivado de `fecha_reparto`.
   - Los días hábiles restantes se calculan en vivo en el servidor con `backend/tutela2/festivos.py`. Nunca se guardan en la caché indexada por mtime.
-- **Un solo proceso (el caso de hoy).** Inicio oculta las pestañas y se comporta como si «2ª instancia» estuviera elegida, de modo que el carril Propios es visible. Las pestañas aparecen cuando un segundo proceso tenga casos.
+- **Un solo proceso (el caso de hoy).** Inicio muestra igual las pestañas de todos los procesos, con «Todos» elegida; mientras todos los casos sean de 2ª instancia, «Todos» muestra el carril Propios de 2ª. Las pestañas de los procesos sin casos se pueden elegir y muestran «Todavía no hay casos de <proceso>.».
 - **Nombres accesibles estables** para limitar el cambio en las pruebas:
   - El buscador sigue siendo «Buscar casos».
   - Los enlaces de caso conservan el nombre `${accion}: ${nombre}`.

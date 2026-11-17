@@ -27,6 +27,7 @@
  *                                    son de un mismo proceso, ese (Inicio con un solo proceso).
  *
  * Cambiar el estado (devuelven un Filtros nuevo)
+ *   elegirProceso(f, proceso, casos) cambia de pestaña; conserva las claves propias solo si su carril se sigue viendo.
  *   elegirEstado(f, id)              desde el defecto, el primer toque deja solo ese estado; luego alterna;
  *                                    «terminado» se suma o se quita encima; vacío vuelve al defecto.
  *   alternar(f, clave, id), fijar(f, clave, ids)   selección de facetas (fijar con [] quita la pastilla).
@@ -336,6 +337,13 @@ export function procesoActivo(f: Filtros, casos: readonly CasoResumen[]): TipoPr
 
 /* ---------- Cambios ---------- */
 
+/** Cambia de pestaña. Las claves propias siguen solo si su carril se sigue viendo (p. ej. de «Todos» a «2ª instancia» con un solo proceso). */
+export function elegirProceso(f: Filtros, proceso: ProcesoFiltro, casos: readonly CasoResumen[]): Filtros {
+  const activo = procesoActivo({ ...f, proceso }, casos);
+  const sel = Object.fromEntries(Object.entries(f.sel).filter(([k]) => !esPropia(k) || k.split(".")[0] === activo));
+  return { ...f, proceso, sel };
+}
+
 export function elegirEstado(f: Filtros, id: EstadoUi): Filtros {
   const esDefecto = mismoConjunto(f.estado, ESTADOS_DEFECTO);
   let nuevo: EstadoUi[];
@@ -554,9 +562,8 @@ const diaValido = (texto: string) => {
 const texto = (x: unknown) => (typeof x === "string" ? x : "");
 
 export function validar(f: Filtros, { defaults, casos }: Contexto): Filtros {
-  // En Inicio, un proceso sin casos dejaría la lista vacía y sin pestañas para salir de él.
-  const conCasos = (p: ProcesoFiltro) => p === "todos" || !casos || casos.some((c) => procesoDe(c) === p);
-  const proceso = defaults.proceso !== "todos" ? defaults.proceso : esProceso(texto(f.proceso)) && conCasos(f.proceso) ? f.proceso : defaults.proceso;
+  // En Inicio vale cualquier proceso, aunque no tenga casos: sus pestañas siempre se ven.
+  const proceso = defaults.proceso !== "todos" ? defaults.proceso : esProceso(texto(f.proceso)) ? f.proceso : defaults.proceso;
   const pedidos = Array.isArray(f.estado) ? f.estado.filter((e) => esEstado(texto(e))) : [];
   const estado = pedidos.length ? ESTADOS.map((e) => e.id).filter((e) => pedidos.includes(e)) : defaults.estado;
   let fecha: ModoFecha = f.fecha === "rango" || FECHAS.some((p) => p.id === f.fecha) ? f.fecha : "todo";

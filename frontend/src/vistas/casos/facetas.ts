@@ -3,7 +3,7 @@
  * Lo único que cambia entre procesos son PROPIAS y FILA; el motor (filtros.ts) solo lee este registro.
  *
  * Procesos
- *   PROCESOS: { id, corto, largo }[]          pestañas en orden: todos, primera, segunda, desacato, penal.
+ *   PROCESOS: { id, corto, largo, proximamente? }[]  pestañas en orden: todos, primera, segunda, desacato, penal.
  *   infoProceso(id) / esProceso(x)            búsqueda y guarda de tipo.
  *   procesoDe(caso): TipoProceso              caso.proceso.
  *
@@ -55,14 +55,16 @@ export interface InfoProceso {
   id: ProcesoFiltro;
   corto: string;
   largo: string;
+  /** Aún no se puede trabajar en él (Inicio lo marca «Próximamente»); quítelo al implementarlo. */
+  proximamente?: true;
 }
 
 export const PROCESOS: readonly InfoProceso[] = [
   { id: "todos", corto: "Todos", largo: "Todos los procesos" },
-  { id: "primera", corto: "1ª instancia", largo: "Fallos de tutela de primera instancia" },
+  { id: "primera", corto: "1ª instancia", largo: "Fallos de tutela de primera instancia", proximamente: true },
   { id: "segunda", corto: "2ª instancia", largo: "Fallos de tutela de segunda instancia" },
-  { id: "desacato", corto: "Desacato", largo: "Incidentes de desacato" },
-  { id: "penal", corto: "Penal", largo: "Penal" },
+  { id: "desacato", corto: "Desacato", largo: "Incidentes de desacato", proximamente: true },
+  { id: "penal", corto: "Penal", largo: "Penal", proximamente: true },
 ];
 
 export const infoProceso = (id: ProcesoFiltro): InfoProceso => PROCESOS.find((p) => p.id === id) ?? PROCESOS[0]!;

@@ -77,9 +77,58 @@ describe("ListaCasos", () => {
         expect(within(propio).getByRole("button", { name: nombre }).getAttribute("aria-expanded")).toBe("false");
       }
       expect(within(propio).getByRole("button", { name: "Con pruebas nuevas" }).getAttribute("aria-pressed")).toBe("false");
-      expect(screen.queryByRole("group", { name: "Proceso" })).toBeNull();
+      expect(screen.queryByRole("group", { name: "Proceso" }) === null).toBe(proceso === "segunda");
       unmount();
     }
+  });
+
+  it("en Inicio siempre muestra las pestañas de todos los procesos, aunque solo uno tenga casos", () => {
+    const { unmount } = render(<ListaCasos casos={CASOS} />);
+    const pestanas = () => within(screen.getByRole("group", { name: "Proceso" })).getAllByRole("button");
+    const estado = () => pestanas().map((b) => [b.textContent, b.getAttribute("aria-pressed")]);
+    expect(estado()).toEqual([
+      ["Todos5", "true"],
+      ["1ª instancia0", "false"],
+      ["2ª instancia5", "false"],
+      ["Desacato0", "false"],
+      ["Penal0", "false"],
+    ]);
+    expect(screen.getByRole("group", { name: "Filtros propios de 2ª instancia" })).toBeTruthy();
+
+    fireEvent.click(boton("Con alertas"));
+    fireEvent.click(boton("Con pruebas nuevas"));
+    fireEvent.click(boton(/^Desacato/));
+    expect(pestanas()[3]!.getAttribute("aria-pressed")).toBe("true");
+    expect(location.hash).toBe("#/?p=desacato&s.alertas=con");
+    expect(screen.getByText("Todavía no hay casos de Desacato.")).toBeTruthy();
+    expect(screen.getByText("Este proceso llegará próximamente.")).toBeTruthy();
+    expect(screen.queryByText(/Ningún caso coincide/)).toBeNull();
+    expect(screen.queryByRole("group", { name: /Filtros propios/ })).toBeNull();
+    expect(nombres()).toEqual([]);
+    unmount();
+
+    // Al recargar, la pestaña elegida sigue elegida aunque no tenga casos.
+    consulta.value = "p=desacato";
+    render(<ListaCasos casos={CASOS} />);
+    expect(pestanas()[3]!.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Todavía no hay casos de Desacato.")).toBeTruthy();
+    fireEvent.click(boton(/^Todos/));
+    expect(location.hash).toBe("#/");
+    expect(nombres()).toHaveLength(5);
+    expect(screen.getByRole("group", { name: "Filtros propios de 2ª instancia" })).toBeTruthy();
+  });
+
+  it("de «Todos» a «2ª instancia» y de vuelta, con un solo proceso, conserva los filtros propios", () => {
+    render(<ListaCasos casos={CASOS} />);
+    fireEvent.click(boton("Con pruebas nuevas"));
+    expect(location.hash).toBe("#/?s.segunda.pruebas=con");
+    fireEvent.click(boton(/^2ª instancia/));
+    expect(location.hash).toBe("#/?p=segunda&s.segunda.pruebas=con");
+    expect(boton("Con pruebas nuevas").getAttribute("aria-pressed")).toBe("true");
+    expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud"]);
+    fireEvent.click(boton(/^Todos/));
+    expect(location.hash).toBe("#/?s.segunda.pruebas=con");
+    expect(boton("Con pruebas nuevas").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("las fichas muestran los datos de segunda y la Decisión 1ª inst. cuenta, filtra y resalta", () => {
