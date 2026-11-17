@@ -1,30 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CasoResumen } from "../../api/contrato";
-import { accionDe, agrupar, descripcionAvance, etapaDestino, filtrar, grupoDe, hrefCaso, partesDe, tonoDe, tramosDe, varianteDe } from "./agrupar";
-import { casosMock } from "./mock";
+import { accionDe, descripcionAvance, etapaDestino, hrefCaso, partesDe, tonoDe, tramosDe, varianteDe } from "./agrupar";
 
-const casos = casosMock as CasoResumen[];
-
-describe("agrupar", () => {
-  it("separa en atención, en redacción y terminados con el orden de la lista", () => {
-    const grupos = agrupar(casos);
-    expect(grupos.map((g) => [g.id, g.casos.map((c) => c.id)])).toEqual([
-      ["atencion", ["quintero-bedoya", "cardenas-ospina", "arango-londono"]],
-      ["trabajando", ["restrepo-gil"]],
-      ["terminados", ["mejia-rios", "duque-salazar"]],
-    ]);
-  });
-
-  it("omite los grupos vacíos", () => {
-    expect(agrupar(casos.filter((c) => c.estado === "terminado")).map((g) => g.id)).toEqual(["terminados"]);
-    expect(agrupar([])).toEqual([]);
-  });
-
-  it("mapea estados a grupos, tonos, acciones y variantes", () => {
-    expect(grupoDe("error")).toBe("atencion");
-    expect(grupoDe("sin_iniciar")).toBe("atencion");
-    expect(grupoDe("corriendo")).toBe("trabajando");
-    expect(grupoDe("terminado")).toBe("terminados");
+describe("ficha", () => {
+  it("mapea estados a tonos, acciones y variantes", () => {
     expect(tonoDe("esperando_decision")).toBe("sello");
     expect(tonoDe("error")).toBe("alerta");
     expect(tonoDe("revision")).toBe("");
@@ -64,28 +42,6 @@ describe("avance", () => {
   it("describe el avance en palabras", () => {
     expect(descripcionAvance(2)).toBe("Avance: paso 3 de 4, Decisión");
     expect(descripcionAvance(4)).toBe("Avance: completo");
-  });
-});
-
-describe("filtrar", () => {
-  it("busca sin tildes ni mayúsculas en nombre, partes, juzgado y radicado", () => {
-    expect(filtrar(casos, "CARDENAS").map((c) => c.id)).toEqual(["cardenas-ospina"]);
-    expect(filtrar(casos, "ceiba").map((c) => c.id)).toEqual(["arango-londono", "duque-salazar"]);
-    expect(filtrar(casos, "00412").map((c) => c.id)).toEqual(["quintero-bedoya"]);
-    expect(filtrar(casos, "juzgado 14").map((c) => c.id)).toEqual(["arango-londono"]);
-  });
-
-  it("ignora separadores en el radicado", () => {
-    const caso = { ...casos[0]!, radicado: "05001 40 88 009 2026 00412 00" };
-    expect(filtrar([caso], "2026-00412")).toHaveLength(1);
-    expect(filtrar([caso], "2026-00999")).toHaveLength(0);
-    expect(filtrar([caso], "2026 00412")).toHaveLength(1);
-    expect(filtrar([caso], "202600412")).toHaveLength(1);
-  });
-
-  it("devuelve todo con consulta vacía y nada si no coincide", () => {
-    expect(filtrar(casos, "  ")).toHaveLength(casos.length);
-    expect(filtrar(casos, "zzz")).toEqual([]);
   });
 });
 

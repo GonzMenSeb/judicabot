@@ -1,3 +1,4 @@
+import type { CasoResumen } from "../../api/contrato";
 import type { MockRuta } from "../../api/mock";
 
 const minutos = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
@@ -93,7 +94,7 @@ export const casosMock = [
     job_activo: null,
     actualizado: minutos(60 * 24 * 17),
   },
-];
+] satisfies CasoResumen[];
 
 export const mocks: MockRuta[] = [
   { metodo: "GET", ruta: "/api/casos", respuesta: casosMock },

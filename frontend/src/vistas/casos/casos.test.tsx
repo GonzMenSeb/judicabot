@@ -1,13 +1,16 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toasts } from "../../estado";
+import { consulta } from "../../rutas";
 import Casos from "./index";
 import { casosMock } from "./mock";
 import { useSoltarGlobal } from "./soltar";
 import { archivoDe, json, simularFetch, XhrFalso } from "./utilesPrueba";
 
 beforeEach(() => {
-  location.hash = "";
+  history.replaceState(null, "", "/");
+  consulta.value = "";
+  localStorage.clear();
   toasts.value = [];
 });
 
@@ -23,28 +26,37 @@ function elegirArchivos(contenedor: Element, rutas: string[]) {
 }
 
 describe("lista de casos", () => {
-  it("agrupa los casos, muestra avance, alertas, siguiente paso y enlaces a la etapa que corresponde", async () => {
+  it("agrupa los casos por estado, muestra avance, alertas, siguiente paso y enlaces a la etapa que corresponde", async () => {
     simularFetch({ "GET /api/casos": () => json(casosMock) });
     render(<Casos />);
-    expect(await screen.findByRole("heading", { level: 3, name: /Requieren su atención/ })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 3, name: /En redacción/ })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 3, name: /Terminados/ })).toBeTruthy();
+    await screen.findByRole("heading", { level: 3, name: /Por decidir/ });
+    const lista = screen.getByRole("region", { name: "Casos" });
+    const grupos = within(lista)
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => h.textContent);
+    expect(grupos).toEqual(["Por decidir 1", "Faltan documentos 1", "Por preparar 1", "En redacción 1"]);
+    expect(screen.queryByRole("heading", { level: 3, name: /Terminados/ })).toBeNull();
 
     const decidir = screen.getByRole("link", { name: "Decidir: Quintero Bedoya c. EPS Horizonte Salud" });
     expect(decidir.getAttribute("href")).toBe("#/segunda/quintero-bedoya/borrador");
     expect(screen.getByRole("link", { name: /Completar: Cárdenas/ }).getAttribute("href")).toBe("#/segunda/cardenas-ospina/documentos");
     expect(screen.getByRole("link", { name: /Ver avance: Restrepo/ }).getAttribute("href")).toBe("#/segunda/restrepo-gil/proceso");
-    expect(screen.getAllByRole("link", { name: /Ver fallo/ }).map((a) => a.getAttribute("href"))).toEqual([
-      "#/segunda/mejia-rios/fallo",
-      "#/segunda/duque-salazar/fallo",
-    ]);
+    expect(screen.queryByRole("link", { name: /Ver fallo/ })).toBeNull();
 
     const ficha = decidir.closest("article")!;
+    expect(within(ficha).getByRole("heading", { level: 4 }).textContent).toBe("Quintero Bedoya c. EPS Horizonte Salud");
     expect(within(ficha).getByText("Revisar el borrador y decidir")).toBeTruthy();
     expect(within(ficha).getByText("1 alerta")).toBeTruthy();
     expect(within(ficha).getByText("Radicado 2026-00412")).toBeTruthy();
     expect(within(ficha).getByRole("img", { name: "Avance: paso 3 de 4, Decisión" })).toBeTruthy();
     expect(Array.from(ficha.querySelectorAll(".seg4 i")).map((i) => i.className)).toEqual(["h", "h", "a", ""]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminados" }));
+    expect(screen.getByRole("heading", { level: 3, name: /Terminados/ })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /Ver fallo/ }).map((a) => a.getAttribute("href"))).toEqual([
+      "#/segunda/mejia-rios/fallo",
+      "#/segunda/duque-salazar/fallo",
+    ]);
   });
 
   it("filtra con la búsqueda y avisa cuando nada coincide", async () => {
@@ -55,11 +67,14 @@ describe("lista de casos", () => {
     fireEvent.input(buscar, { target: { value: "ceiba" } });
     await waitFor(() => expect(screen.queryByText("Quintero Bedoya c. EPS Horizonte Salud")).toBeNull());
     expect(screen.getByText("Arango Londoño c. EPS Ceiba Salud")).toBeTruthy();
-    expect(screen.getByText("Duque Salazar c. EPS Ceiba Salud")).toBeTruthy();
+    expect(screen.queryByText("Duque Salazar c. EPS Ceiba Salud")).toBeNull();
     expect(screen.queryByRole("heading", { level: 3, name: /En redacción/ })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "Terminados" }));
+    expect(screen.getByText("Duque Salazar c. EPS Ceiba Salud")).toBeTruthy();
+
     fireEvent.input(buscar, { target: { value: "zzz" } });
-    expect(await screen.findByText("Ningún caso coincide con «zzz».")).toBeTruthy();
+    expect(await screen.findByText(/^Ningún caso coincide/)).toBeTruthy();
   });
 
   it("muestra un estado vacío cuando no hay casos", async () => {
@@ -82,7 +97,7 @@ describe("lista de casos", () => {
     const alerta = await screen.findByRole("alert");
     expect(alerta.textContent).toMatch(/No se pudo conectar con el servidor/);
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    expect(await screen.findByRole("heading", { level: 3, name: /Requieren su atención/ })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 3, name: /Por decidir/ })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

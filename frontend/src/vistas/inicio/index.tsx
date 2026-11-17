@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { CasoResumen, Despacho } from "../../api/contrato";
 import { Aviso, Boton } from "../../ui";
-import { grupoDe, ordenar } from "../casos/agrupar";
-import { Ficha } from "../casos/Ficha";
 import { IconoProceso } from "../casos/iconos";
 import type { TipoProceso } from "../casos/iconos";
+import { ListaCasos } from "../casos/ListaCasos";
 import type { PropsVista } from "../tipos";
 import "./estilos.css";
 
@@ -59,14 +58,11 @@ export default function Inicio(_props: PropsVista) {
     return () => control.abort();
   }, [cargarCasos]);
 
-  const { esperan, abiertos, continuar } = useMemo(() => {
+  const { esperan, abiertos } = useMemo(() => {
     const lista = casos ?? [];
     return {
       esperan: lista.filter((c) => c.estado === "esperando_decision").length,
-      abiertos: lista.filter((c) => grupoDe(c.estado) !== "terminados").length,
-      continuar: ordenar(lista)
-        .filter((c) => grupoDe(c.estado) === "atencion")
-        .slice(0, 2),
+      abiertos: lista.filter((c) => c.estado !== "terminado").length,
     };
   }, [casos]);
 
@@ -112,16 +108,7 @@ export default function Inicio(_props: PropsVista) {
           No se pudo cargar el resumen de los casos.
         </Aviso>
       )}
-      {continuar.length > 0 && (
-        <section class="continuar" aria-labelledby="continuar-titulo">
-          <h2 id="continuar-titulo">Para continuar</h2>
-          <div class="fichas">
-            {continuar.map((caso) => (
-              <Ficha key={caso.id} caso={caso} nivel={3} />
-            ))}
-          </div>
-        </section>
-      )}
+      {casos && casos.length > 0 && <ListaCasos casos={casos} />}
     </div>
   );
 }

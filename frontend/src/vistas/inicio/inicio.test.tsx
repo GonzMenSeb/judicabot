@@ -1,8 +1,15 @@
 import { fireEvent, render, screen, within } from "@testing-library/preact";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { consulta } from "../../rutas";
 import { casosMock } from "../casos/mock";
 import { json, simularFetch } from "../casos/utilesPrueba";
 import Inicio from "./index";
+
+beforeEach(() => {
+  history.replaceState(null, "", "/");
+  consulta.value = "";
+  localStorage.clear();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -32,21 +39,31 @@ describe("Inicio", () => {
     expect(screen.getByText("4 casos abiertos")).toBeTruthy();
   });
 
-  it("muestra el despacho, la fecha y los dos casos que más requieren atención", async () => {
+  it("muestra el despacho, la fecha y «Mi trabajo» con los casos abiertos, lo primero que toca arriba", async () => {
     simularFetch({ "GET /api/casos": () => json(casosMock), "GET /api/formato": () => json(formato) });
     render(<Inicio />);
     expect(await screen.findByText(/^Juzgado Tercero Penal del Circuito, /)).toBeTruthy();
-    const seccion = (await screen.findByRole("heading", { name: "Para continuar" })).closest("section")!;
-    const titulos = Array.from(seccion.querySelectorAll("h3")).map((h) => h.textContent);
-    expect(titulos).toEqual(["Quintero Bedoya c. EPS Horizonte Salud", "Cárdenas Ospina c. Aseguradora Montaña Azul"]);
-    expect(within(seccion).getByRole("link", { name: /Decidir/ }).getAttribute("href")).toBe("#/segunda/quintero-bedoya/borrador");
+    const seccion = await screen.findByRole("region", { name: "Mi trabajo" });
+    const titulos = within(seccion)
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => h.textContent);
+    expect(titulos).toEqual([
+      "Quintero Bedoya c. EPS Horizonte Salud",
+      "Cárdenas Ospina c. Aseguradora Montaña Azul",
+      "Arango Londoño c. EPS Ceiba Salud",
+      "Restrepo Gil c. Fondo Pensional Altamira",
+    ]);
+    expect(within(seccion).getByRole("link", { name: /^Decidir:/ }).getAttribute("href")).toBe("#/segunda/quintero-bedoya/borrador");
+    expect(within(seccion).getByRole("searchbox", { name: "Buscar casos" })).toBeTruthy();
+    expect(within(seccion).getByRole("button", { name: /^Juzgado de 1ª inst\./ })).toBeTruthy();
+    expect(within(seccion).queryByRole("heading", { level: 3, name: /Por decidir/ })).toBeNull();
   });
 
   it("sigue funcionando sin el formato y sin casos", async () => {
     simularFetch({ "GET /api/casos": () => json([]), "GET /api/formato": () => json({ detail: "x" }, 500) });
     render(<Inicio />);
     expect(await screen.findByText("0 casos abiertos")).toBeTruthy();
-    expect(screen.queryByText("Para continuar")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Mi trabajo" })).toBeNull();
     expect(screen.queryByText(/su decisión/)).toBeNull();
   });
 

@@ -9,7 +9,7 @@ export const jobActual = signal<string | null>(null);
 export const preferencias = signal<Preferencias>({ modelo: null });
 
 export { sincronizarDataset } from "./dataset";
-export { fechaRelativa, nombreModelo, plural, pluralizar, porcentaje } from "./formato";
+export { diaIso, fechaCorta, fechaRelativa, nombreModelo, plural, pluralizar, porcentaje } from "./formato";
 export {
   cargarEstadoServidor,
   claveActiva,
