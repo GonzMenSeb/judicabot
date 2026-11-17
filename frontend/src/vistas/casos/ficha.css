@@ -1,5 +1,5 @@
 .fichas { display: grid; gap: 0.6rem; }
-.ficha { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 14rem 12rem; gap: 1.5rem; align-items: center; padding: 0.95rem 1.2rem 0.95rem 1.35rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; }
+.ficha { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 14rem 15rem; gap: 1.5rem; align-items: center; padding: 0.95rem 1.2rem 0.95rem 1.35rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; }
 .ficha::before { content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 4px; border-radius: 0 3px 3px 0; background: var(--acento); }
 .ficha.sello::before { background: var(--sello); }
 .ficha.alerta::before { background: #d19a2c; }
@@ -31,9 +31,15 @@
 .ficha .accion { display: grid; justify-items: end; gap: 0.25rem; min-width: 0; }
 .ficha .accion .btn { max-width: 100%; white-space: normal; text-align: center; }
 :is(.ficha .accion, .fila-c) small { color: var(--suave); font-size: 0.82rem; }
+.accion-fila, .fin { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+.fin { justify-content: flex-end; gap: 0.2rem; }
+.borrar, .hueco { flex: none; width: 36px; height: 36px; }
+.fila-c :is(.borrar, .hueco) { width: 32px; height: 32px; }
+.fichas .btn.borrar { padding: 0; color: var(--tenue); }
+.fichas .btn.borrar:hover:not(:disabled) { background: var(--mal-fondo); color: var(--mal); }
 
 .fichas.compacta { gap: 0; overflow: hidden; border: 1px solid var(--linea); border-radius: 12px; background: #fff; }
-.fila-c { display: grid; grid-template-columns: 0.55rem minmax(0, 2fr) minmax(0, 1.2fr) 16rem 5.5rem 10rem; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid #e3e8ea; }
+.fila-c { display: grid; grid-template-columns: 0.55rem minmax(0, 2fr) minmax(0, 1.2fr) 16rem 5.5rem 13rem; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid #e3e8ea; }
 .fila-c:first-child { border-top: 0; }
 .fila-c:hover { background: #f7f9fa; }
 .punto-estado { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--c, var(--acento)); }
@@ -44,7 +50,6 @@
 .c-marcas { display: flex; flex-wrap: wrap; gap: 0.25rem 0.3rem; min-width: 0; }
 .c-marcas .dato { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .c-cuando { text-align: right; }
-.fila-c .btn { justify-self: end; }
 .btn.chico { padding: 0.32rem 0.8rem; font-size: 0.86rem; }
 .e-decidir { --c: var(--sello); }
 .e-faltan { --c: #d19a2c; }
@@ -58,10 +63,10 @@
   .ficha .meta { flex-wrap: wrap; }
   .ficha .meta span, .ficha .partes { overflow: visible; white-space: normal; }
   .fila-c { grid-template-columns: 0.55rem minmax(0, 1fr) auto; row-gap: 0.3rem; }
-  .fila-c > :nth-child(n + 3):not(.btn) { grid-column: 2 / -1; }
+  .fila-c > :nth-child(n + 3):not(.fin) { grid-column: 2 / -1; }
   .fila-c > div:empty { display: none; }
   .fila-c .c-cuando { text-align: left; }
-  .fila-c .btn { grid-column: 3; grid-row: 1; }
+  .fila-c .fin { grid-column: 3; grid-row: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ficha.trabajando .seg4 i.a { animation: none; }

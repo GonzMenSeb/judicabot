@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { CasoResumen, Despacho } from "../../api/contrato";
+import { versionCasos } from "../../estado";
 import { Aviso, Boton } from "../../ui";
 import { IconoProceso } from "../casos/iconos";
 import type { TipoProceso } from "../casos/iconos";
 import { ListaCasos } from "../casos/ListaCasos";
+import { useQuitados } from "../casos/quitados";
 import type { PropsVista } from "../tipos";
 import "./estilos.css";
 
@@ -38,25 +40,42 @@ export default function Inicio(_props: PropsVista) {
   const [casos, setCasos] = useState<CasoResumen[] | null>(null);
   const [falloCasos, setFalloCasos] = useState(false);
   const [despacho, setDespacho] = useState<string | null>(null);
+  const quitados = useQuitados();
 
   const cargarCasos = useCallback(async (signal?: AbortSignal) => {
+    const carga = quitados.iniciar();
     setFalloCasos(false);
     try {
-      setCasos(await api.get<CasoResumen[]>("/api/casos", { signal }));
+      const lista = await api.get<CasoResumen[]>("/api/casos", { signal });
+      setCasos(quitados.filtrar(carga, lista));
     } catch (e) {
       if (!esAbortado(e)) setFalloCasos(true);
     }
-  }, []);
+  }, [quitados]);
 
+  const version = versionCasos.value;
   useEffect(() => {
     const control = new AbortController();
     void cargarCasos(control.signal);
+    return () => control.abort();
+  }, [cargarCasos, version]);
+
+  useEffect(() => {
+    const control = new AbortController();
     api
       .get<{ valores: Pick<Despacho, "nombre_cuerpo"> }>("/api/formato", { signal: control.signal })
       .then((formato) => setDespacho(formato.valores.nombre_cuerpo || null))
       .catch(() => undefined);
     return () => control.abort();
-  }, [cargarCasos]);
+  }, []);
+
+  const quitar = useCallback(
+    (id: string) => {
+      quitados.quitar(id);
+      setCasos((lista) => lista && lista.filter((c) => c.id !== id));
+    },
+    [quitados],
+  );
 
   const { esperan, abiertos } = useMemo(() => {
     const lista = casos ?? [];
@@ -108,7 +127,7 @@ export default function Inicio(_props: PropsVista) {
           No se pudo cargar el resumen de los casos.
         </Aviso>
       )}
-      {casos && casos.length > 0 && <ListaCasos casos={casos} />}
+      {casos && casos.length > 0 && <ListaCasos casos={casos} alEliminado={quitar} />}
     </div>
   );
 }

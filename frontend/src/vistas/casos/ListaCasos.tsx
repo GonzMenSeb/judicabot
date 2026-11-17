@@ -1,10 +1,11 @@
 import type { ComponentChildren } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
-import type { CasoResumen } from "../../api/contrato";
-import { plural, pluralizar } from "../../estado";
+import { api, ErrorApi, esCasoNoEncontrado } from "../../api";
+import type { CasoEliminado, CasoRestaurado, CasoResumen } from "../../api/contrato";
+import { mostrarToast, plural, pluralizar, versionCasos } from "../../estado";
 import { consulta, reemplazarConsulta, ruta } from "../../rutas";
-import { Boton, cx, Vacio } from "../../ui";
+import { Boton, cx, Dialogo, Vacio } from "../../ui";
 import { esPropia, estadoDe, generales, PROCESOS, procesoDe, propiasVisibles, type TipoProceso } from "./facetas";
 import { hrefCaso } from "./agrupar";
 import { Ficha, FichaCompacta } from "./Ficha";
@@ -33,6 +34,7 @@ import {
   type Orden,
 } from "./filtros";
 import { IconoLupa, IconoProceso } from "./iconos";
+import { mensajeError } from "./subida";
 import { Tablero } from "./Tablero";
 import "./lista.css";
 
@@ -44,10 +46,13 @@ export interface PropsListaCasos {
   aviso?: ComponentChildren;
   /** Se muestra si no hay ningún caso. */
   vacio?: ComponentChildren;
+  /** El padre quita el caso de su lista. Sin él las filas no ofrecen eliminar. Para recargar, el padre sigue `versionCasos`. */
+  alEliminado?: (id: string) => void;
 }
 
 const PAGINA = 10;
 const CLAVE_DENSIDAD = "judicabot:densidad";
+const MS_DESHACER = 10_000;
 
 function leerCompacta(): boolean {
   try {
@@ -65,25 +70,148 @@ function guardarCompacta(compacta: boolean): void {
   }
 }
 
-export function ListaCasos({ casos, proceso, aviso, vacio }: PropsListaCasos) {
+/** El aviso puede seguir abierto en otra vista: recarga la que se vea, no la que eliminó. */
+async function restaurar(caso: CasoResumen, entrada: string, titulo: string): Promise<void> {
+  try {
+    await api.post<CasoRestaurado>(`/api/papelera/${encodeURIComponent(entrada)}/restaurar`);
+  } catch (e) {
+    mostrarToast(`No se pudo restaurar el caso. ${mensajeError(e, "Intente de nuevo.")}`, { tipo: "error" });
+    return;
+  }
+  versionCasos.value += 1;
+  // Toasts dejó el foco en el contenido al quitar el aviso: vuelve al encabezado si la lista sigue ahí.
+  const foco = document.activeElement;
+  if (!foco || foco === document.body || foco.id === "contenido") document.getElementById(titulo)?.focus();
+  mostrarToast(`Se restauró «${caso.nombre}».`);
+}
+
+export function ListaCasos({ casos, proceso, aviso, vacio, alEliminado }: PropsListaCasos) {
   const id = useId();
+  const [pendiente, setPendiente] = useState<CasoResumen | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cuerpo = useRef<HTMLDivElement>(null);
+  /** El botón que abrió el diálogo ya no existe (o la recarga tras un 409 lo quitará): el foco pasa al encabezado de la lista. */
+  const enfocarTitulo = useRef(false);
+
+  useEffect(() => {
+    if (!enfocarTitulo.current) return;
+    enfocarTitulo.current = false;
+    document.getElementById(id)?.focus();
+  });
+
+  // En Inicio la lista desaparece con el último caso: el foco va al contenido, una vez cerrado el diálogo.
+  useEffect(
+    () => () => {
+      if (enfocarTitulo.current) setTimeout(() => document.getElementById("contenido")?.focus());
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const dialogo = cuerpo.current?.closest("dialog");
+    if (error && dialogo && !dialogo.contains(document.activeElement)) dialogo.querySelector<HTMLElement>(".btn.peligro")?.focus();
+  }, [error]);
+
+  const cerrar = () => {
+    setPendiente(null);
+    setEliminando(false);
+    setError(null);
+  };
+  const quitar = (caso: CasoResumen) => {
+    enfocarTitulo.current = true;
+    alEliminado?.(caso.id);
+  };
+
+  const eliminar = async () => {
+    const caso = pendiente;
+    if (!caso || eliminando) return;
+    setEliminando(true);
+    setError(null);
+    try {
+      const { papelera } = await api.delete<CasoEliminado>(`/api/casos/${encodeURIComponent(caso.id)}`);
+      cerrar();
+      quitar(caso);
+      mostrarToast(`Se eliminó «${caso.nombre}».`, {
+        ms: MS_DESHACER,
+        accion: { texto: "Deshacer", alHacer: () => void restaurar(caso, papelera, id) },
+      });
+    } catch (e) {
+      if (esCasoNoEncontrado(e)) {
+        cerrar();
+        quitar(caso);
+        mostrarToast("El caso ya no existía.");
+      } else if (e instanceof ErrorApi && e.estado === 409) {
+        cerrar();
+        enfocarTitulo.current = true;
+        mostrarToast(mensajeError(e, "El caso está ocupado."), { tipo: "alerta" });
+        versionCasos.value += 1;
+      } else {
+        setEliminando(false);
+        setError(mensajeError(e, "Intente de nuevo."));
+      }
+    }
+  };
+
   return (
     <section class="trabajo" aria-labelledby={id}>
       {aviso || casos.length === 0 ? (
         <>
           <div class="cabeza-trabajo">
-            <h2 id={id}>{proceso ? "Casos" : "Mi trabajo"}</h2>
+            <h2 id={id} tabIndex={-1}>
+              {proceso ? "Casos" : "Mi trabajo"}
+            </h2>
           </div>
           {aviso ?? vacio}
         </>
       ) : (
-        <Lista casos={casos} proceso={proceso} id={id} />
+        <Lista casos={casos} proceso={proceso} id={id} alEliminar={alEliminado && setPendiente} />
       )}
+      <Dialogo
+        abierto={pendiente !== null}
+        titulo="¿Eliminar este caso?"
+        onCerrar={() => {
+          if (!eliminando) cerrar();
+        }}
+        acciones={
+          <>
+            <Boton data-enfoque disabled={eliminando} onClick={cerrar}>
+              Cancelar
+            </Boton>
+            <Boton variante="peligro" cargando={eliminando} onClick={() => void eliminar()}>
+              {eliminando ? "Eliminando…" : "Eliminar caso"}
+            </Boton>
+          </>
+        }
+      >
+        {pendiente && (
+          <div ref={cuerpo}>
+            <div class="caso-eliminar">
+              <strong>{pendiente.nombre}</strong>
+              {pendiente.radicado && <span>Radicado {pendiente.radicado}</span>}
+            </div>
+            <p class="explica-eliminar">Se quitará de la lista con sus documentos, el borrador y el fallo. Podrá deshacerlo justo después.</p>
+            {error && (
+              <div class="error-eliminar" role="alert">
+                <strong>No se pudo eliminar el caso</strong>
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+      </Dialogo>
     </section>
   );
 }
 
-function Lista({ casos, proceso, id }: { casos: readonly CasoResumen[]; proceso?: TipoProceso; id: string }) {
+interface PropsLista {
+  casos: readonly CasoResumen[];
+  proceso?: TipoProceso;
+  id: string;
+  alEliminar?: (caso: CasoResumen) => void;
+}
+
+function Lista({ casos, proceso, id, alEliminar }: PropsLista) {
   const defaults = useMemo(() => inicial(proceso), [proceso]);
   const leer = (q: string) => deserializar(q, { defaults, casos });
   const [filtros, setFiltros] = useState(() => leer(consulta.peek()));
@@ -193,7 +321,9 @@ function Lista({ casos, proceso, id }: { casos: readonly CasoResumen[]; proceso?
   return (
     <>
       <div class="cabeza-trabajo">
-        <h2 id={id}>{proceso ? "Casos" : "Mi trabajo"}</h2>
+        <h2 id={id} tabIndex={-1}>
+          {proceso ? "Casos" : "Mi trabajo"}
+        </h2>
         <label class="buscar">
           <IconoLupa />
           <input
@@ -305,7 +435,9 @@ function Lista({ casos, proceso, id }: { casos: readonly CasoResumen[]; proceso?
           <div class={cx("fichas", compacta && "compacta")}>
             {g.casos.map((caso) => {
               const Fila = compacta ? FichaCompacta : Ficha;
-              return <Fila key={caso.id} caso={caso} nivel={nivel} mostrarProceso={!proc} datos={proc ? datosFila(caso, filtros) : undefined} />;
+              return (
+                <Fila key={caso.id} caso={caso} nivel={nivel} mostrarProceso={!proc} datos={proc ? datosFila(caso, filtros) : undefined} alEliminar={alEliminar} />
+              );
             })}
           </div>
         );

@@ -3,7 +3,7 @@ import { fechaRelativa, plural } from "../../estado";
 import { Boton, Chip, cx } from "../../ui";
 import { accionDe, descripcionAvance, hrefCaso, partesDe, tonoDe, tramosDe, varianteDe } from "./agrupar";
 import { estadoDe, infoEstado, infoProceso, procesoDe, textoPlazo, tituloPlazo, tonoPlazo, type DatoFila } from "./facetas";
-import { IconoProceso } from "./iconos";
+import { IconoPapelera, IconoProceso } from "./iconos";
 import "./ficha.css";
 
 export interface PropsFicha {
@@ -13,6 +13,8 @@ export interface PropsFicha {
   mostrarProceso?: boolean;
   /** Datos propios del proceso; `eco` los resalta porque explican por qué el caso pasa los filtros. */
   datos?: readonly Dato[];
+  /** Sin él la fila no ofrece eliminar. */
+  alEliminar?: (caso: CasoResumen) => void;
 }
 
 const fechaLarga = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeStyle: "short" });
@@ -66,7 +68,18 @@ function Accion({ caso, clase }: { caso: CasoResumen; clase?: string }) {
   );
 }
 
-export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
+/** La papelera de la fila; con un job en curso deja un hueco del mismo tamaño para que las acciones sigan alineadas. */
+function Eliminar({ caso, alEliminar, tam }: { caso: CasoResumen; alEliminar?: (caso: CasoResumen) => void; tam: number }) {
+  if (!alEliminar) return null;
+  if (caso.job_activo) return <span class="hueco" aria-hidden="true" />;
+  return (
+    <Boton variante="fantasma" class="borrar" aria-label={`Eliminar: ${caso.nombre}`} title="Eliminar caso" onClick={() => alEliminar(caso)}>
+      <IconoPapelera tam={tam} />
+    </Boton>
+  );
+}
+
+export function Ficha({ caso, nivel = 4, mostrarProceso, datos, alEliminar }: PropsFicha) {
   const Titulo = `h${nivel}` as const;
   const partes = partesDe(caso);
   const proceso = procesoDe(caso);
@@ -108,7 +121,10 @@ export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
         </div>
       </div>
       <div class="accion">
-        <Accion caso={caso} />
+        <div class="accion-fila">
+          <Accion caso={caso} />
+          <Eliminar caso={caso} alEliminar={alEliminar} tam={18} />
+        </div>
         <Cuando iso={caso.actualizado} />
       </div>
     </article>
@@ -119,7 +135,7 @@ export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
  * La misma ficha en una línea, para la vista Compacta. El enlace conserva el nombre accesible de la ficha. De los
  * datos propios solo muestra el primero de los resaltados, para que la fila siga siendo una línea.
  */
-export function FichaCompacta({ caso, nivel = 4, mostrarProceso, datos = [] }: PropsFicha) {
+export function FichaCompacta({ caso, nivel = 4, mostrarProceso, datos = [], alEliminar }: PropsFicha) {
   const Titulo = `h${nivel}` as const;
   const estado = estadoDe(caso);
   const sub = [mostrarProceso && infoProceso(procesoDe(caso)).corto, caso.radicado && `Radicado ${caso.radicado}`, caso.juzgado_a_quo]
@@ -139,7 +155,10 @@ export function FichaCompacta({ caso, nivel = 4, mostrarProceso, datos = [] }: P
         <Alertas n={caso.n_alertas} />
       </div>
       <Cuando iso={caso.actualizado} clase="c-cuando" />
-      <Accion caso={caso} clase="chico" />
+      <div class="fin">
+        <Accion caso={caso} clase="chico" />
+        <Eliminar caso={caso} alEliminar={alEliminar} tam={17} />
+      </div>
     </article>
   );
 }

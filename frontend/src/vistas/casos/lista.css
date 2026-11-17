@@ -1,5 +1,6 @@
 .cabeza-trabajo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem; margin-bottom: 0.85rem; }
-.cabeza-trabajo h2 { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
+.cabeza-trabajo h2 { font-size: 1.35rem; font-weight: 600; line-height: 1.25; border-radius: 4px; }
+.cabeza-trabajo h2:focus-visible { outline-offset: 4px; }
 .buscar { position: relative; width: min(21rem, 100%); }
 .buscar svg { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); color: var(--tenue-deco); pointer-events: none; }
 .buscar input { padding-left: 2.2rem; }
@@ -95,6 +96,12 @@
 .mas { display: flex; justify-content: center; margin-top: 0.4rem; }
 .sin-resultados { overflow-wrap: anywhere; }
 .sin-resultados .btn { max-width: 100%; white-space: normal; }
+.caso-eliminar { display: grid; gap: 0.1rem; margin: 0.8rem 0; padding: 0.7rem 0.9rem; border: 1px solid var(--linea); border-radius: 8px; background: #f7f9fa; overflow-wrap: anywhere; }
+.caso-eliminar strong { font-weight: 600; }
+.caso-eliminar span, .explica-eliminar { font-size: 0.88rem; color: var(--suave); }
+.explica-eliminar { font-size: 0.95rem; }
+.error-eliminar { margin-top: 0.8rem; padding: 0.6rem 0.8rem; border-radius: 8px; background: var(--mal-fondo); color: var(--mal); font-size: 0.88rem; }
+.error-eliminar strong { display: block; font-weight: 600; }
 
 @media (max-width: 960px) {
   .triage { grid-template-columns: minmax(0, 1fr); }

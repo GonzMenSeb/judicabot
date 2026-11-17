@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { act, fireEvent, render, screen, within } from "@testing-library/preact";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
+import { useState } from "preact/hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CasoResumen, EstadoServidor } from "../../api/contrato";
-import { estadoServidor } from "../../estado";
+import { estadoServidor, toasts, versionCasos } from "../../estado";
 import { consulta, ruta } from "../../rutas";
+import { Toasts } from "../../ui";
 import { ListaCasos } from "./ListaCasos";
 import { casosMock } from "./mock";
+import { json, simularFetch } from "./utilesPrueba";
 
 const CASOS: CasoResumen[] = casosMock;
 
@@ -502,6 +505,223 @@ describe("ListaCasos", () => {
     rerender(<ListaCasos casos={[]} proceso="segunda" vacio={<p>Aún no hay casos</p>} />);
     expect(screen.getByText("Aún no hay casos")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Casos" })).toBeTruthy();
+  });
+});
+
+describe("ListaCasos: eliminar un caso", () => {
+  const ARANGO = "Arango Londoño c. EPS Ceiba Salud";
+  const ENTRADA = "arango-londono@20261117T150000000000Z";
+  const BORRAR = "DELETE /api/casos/arango-londono";
+  const RESTAURAR = `POST /api/papelera/${encodeURIComponent(ENTRADA)}/restaurar`;
+
+  function Montaje({ proceso = "segunda" }: { proceso?: "segunda" }) {
+    const [casos, setCasos] = useState(CASOS);
+    return (
+      <>
+        <main id="contenido" tabIndex={-1}>
+          <ListaCasos casos={casos} proceso={proceso} alEliminado={(id) => setCasos((l) => l.filter((c) => c.id !== id))} />
+        </main>
+        <Toasts />
+      </>
+    );
+  }
+
+  const dialogo = () => screen.getByRole("dialog", { name: "¿Eliminar este caso?" });
+  const fila = (nombre: string) => screen.queryAllByRole("article").find((a) => a.querySelector("h3, h4")!.textContent === nombre) ?? null;
+  const aviso = () => document.querySelector(".toast");
+
+  beforeEach(() => {
+    toasts.value = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    toasts.value = [];
+  });
+
+  it("en fichas: confirma, quita la fila, enfoca el encabezado y Deshacer la restaura", async () => {
+    let responder: (r: Response) => void = () => {};
+    let restaurada: (r: Response) => void = () => {};
+    const llamadas = simularFetch({
+      [BORRAR]: () => new Promise<Response>((ok) => (responder = ok)),
+      [RESTAURAR]: () => new Promise<Response>((ok) => (restaurada = ok)),
+    });
+    const version = versionCasos.value;
+    render(<Montaje />);
+
+    const papelera = boton(`Eliminar: ${ARANGO}`);
+    expect(papelera.getAttribute("title")).toBe("Eliminar caso");
+    expect(papelera.className).toContain("fantasma");
+    expect(papelera.closest(".accion-fila")!.firstElementChild!.getAttribute("aria-label")).toBe(`Revisar documentos: ${ARANGO}`);
+    fireEvent.click(papelera);
+
+    const d = dialogo();
+    expect(d.querySelector(".caso-eliminar")!.textContent).toBe(`${ARANGO}Radicado 2026-00377`);
+    expect(within(d).getByText("Se quitará de la lista con sus documentos, el borrador y el fallo. Podrá deshacerlo justo después.")).toBeTruthy();
+    expect(document.activeElement).toBe(within(d).getByRole("button", { name: "Cancelar" }));
+
+    fireEvent.click(within(d).getByRole("button", { name: "Eliminar caso" }));
+    const ocupado = within(d).getByRole("button", { name: "Eliminando…" });
+    expect((ocupado as HTMLButtonElement).disabled).toBe(true);
+    expect(ocupado.getAttribute("aria-busy")).toBe("true");
+    expect((within(d).getByRole("button", { name: "Cancelar" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(ocupado, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => responder(json({ id: "arango-londono", papelera: ENTRADA })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" })));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(fila(ARANGO)).toBeNull();
+    expect(llamadas.map((l) => `${l.metodo} ${l.ruta}`)).toEqual([BORRAR]);
+    expect(aviso()!.textContent).toContain(`Se eliminó «${ARANGO}».`);
+
+    const deshacer = screen.getByRole("button", { name: "Deshacer" });
+    deshacer.focus();
+    fireEvent.click(deshacer);
+    expect(screen.queryByRole("button", { name: "Deshacer" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    await act(async () => restaurada(json({ id: "arango-londono" })));
+    await waitFor(() => expect(aviso()?.textContent).toContain(`Se restauró «${ARANGO}».`));
+    expect(versionCasos.value).toBe(version + 1);
+    expect(llamadas.map((l) => `${l.metodo} ${l.ruta}`)).toEqual([BORRAR, RESTAURAR]);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" }));
+  });
+
+  it("el aviso de Deshacer dura 10 s", async () => {
+    vi.useFakeTimers();
+    simularFetch({ [BORRAR]: () => json({ id: "arango-londono", papelera: ENTRADA }) });
+    render(<Montaje />);
+    fireEvent.click(boton(`Eliminar: ${ARANGO}`));
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+    expect(screen.getByRole("button", { name: "Deshacer" })).toBeTruthy();
+    await act(async () => void (await vi.advanceTimersByTimeAsync(9_900)));
+    expect(screen.getByRole("button", { name: "Deshacer" })).toBeTruthy();
+    await act(async () => void (await vi.advanceTimersByTimeAsync(100)));
+    expect(screen.queryByRole("button", { name: "Deshacer" })).toBeNull();
+  });
+
+  it("en compacta: la misma papelera, después de la acción, y sin radicado el recuadro solo lleva el nombre", async () => {
+    const zapata = "Zapata Henao c. EPS Sendero";
+    simularFetch({ "DELETE /api/casos/demo-sin-leer": () => json({ id: "demo-sin-leer", papelera: "demo-sin-leer@20261117T150000000000Z" }) });
+    render(<Montaje />);
+    fireEvent.click(boton("Compacta"));
+    const papelera = boton(`Eliminar: ${zapata}`);
+    expect(papelera.closest("article")!.className).toContain("fila-c");
+    expect(papelera.closest(".fin")!.firstElementChild!.getAttribute("aria-label")).toBe(`Procesar documentos: ${zapata}`);
+    fireEvent.click(papelera);
+    expect(dialogo().querySelector(".caso-eliminar")!.textContent).toBe(zapata);
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" })));
+    expect(fila(zapata)).toBeNull();
+    expect(screen.getByRole("link", { name: `Revisar documentos: ${ARANGO}` }).closest("article")!.className).toContain("fila-c");
+  });
+
+  it("Cancelar cierra sin llamar al servidor y devuelve el foco a la papelera", () => {
+    const llamadas = simularFetch({});
+    render(<Montaje />);
+    const papelera = boton(`Eliminar: ${ARANGO}`);
+    papelera.focus();
+    fireEvent.click(papelera);
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(llamadas).toEqual([]);
+    expect(fila(ARANGO)).toBeTruthy();
+    expect(document.activeElement).toBe(papelera);
+  });
+
+  it("409: cierra, avisa con el mensaje del servidor, pide recargar y enfoca el encabezado", async () => {
+    const mensaje = "Hay una ejecución en curso para este caso. Espere a que termine para eliminarlo.";
+    simularFetch({ [BORRAR]: () => json({ detail: mensaje }, 409) });
+    const version = versionCasos.value;
+    render(<Montaje />);
+    const papelera = boton(`Eliminar: ${ARANGO}`);
+    papelera.focus();
+    fireEvent.click(papelera);
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(aviso()!.className).toBe("toast alerta");
+    expect(aviso()!.textContent).toContain(mensaje);
+    expect(screen.queryByRole("button", { name: "Deshacer" })).toBeNull();
+    expect(versionCasos.value).toBe(version + 1);
+    expect(fila(ARANGO)).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" })));
+  });
+
+  it("404: el caso ya no estaba, sale de la lista igual", async () => {
+    simularFetch({ [BORRAR]: () => json({ detail: "Caso no encontrado." }, 404) });
+    const version = versionCasos.value;
+    render(<Montaje />);
+    fireEvent.click(boton(`Eliminar: ${ARANGO}`));
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(fila(ARANGO)).toBeNull();
+    expect(aviso()!.className).toBe("toast");
+    expect(aviso()!.textContent).toContain("El caso ya no existía.");
+    expect(screen.queryByRole("button", { name: "Deshacer" })).toBeNull();
+    expect(versionCasos.value).toBe(version);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" })));
+  });
+
+  it("sin conexión: el error se muestra dentro del diálogo y se puede reintentar", async () => {
+    let intento = 0;
+    simularFetch({
+      [BORRAR]: () => {
+        intento += 1;
+        if (intento === 1) throw new TypeError("Failed to fetch");
+        return json({ id: "arango-londono", papelera: ENTRADA });
+      },
+    });
+    render(<Montaje />);
+    fireEvent.click(boton(`Eliminar: ${ARANGO}`));
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    const alerta = await within(dialogo()).findByRole("alert");
+    expect(alerta.querySelector("strong")!.textContent).toBe("No se pudo eliminar el caso");
+    expect(alerta.textContent).toContain("No se pudo conectar con el servidor.");
+    expect(alerta.nextElementSibling).toBeNull();
+    expect(alerta.closest(".dialogo-cuerpo")!.querySelector(".acciones")!.previousElementSibling!.contains(alerta)).toBe(true);
+    expect(fila(ARANGO)).toBeTruthy();
+    expect(aviso()).toBeNull();
+    const reintentar = within(dialogo()).getByRole("button", { name: "Eliminar caso" }) as HTMLButtonElement;
+    expect(reintentar.disabled).toBe(false);
+    fireEvent.click(reintentar);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(fila(ARANGO)).toBeNull();
+    expect(aviso()!.textContent).toContain(`Se eliminó «${ARANGO}».`);
+  });
+
+  it("si Deshacer falla, avisa con un error que no se cierra solo", async () => {
+    simularFetch({
+      [BORRAR]: () => json({ id: "arango-londono", papelera: ENTRADA }),
+      [RESTAURAR]: () => json({ detail: "Ya hay otro caso con ese identificador." }, 409),
+    });
+    const version = versionCasos.value;
+    render(<Montaje />);
+    fireEvent.click(boton(`Eliminar: ${ARANGO}`));
+    fireEvent.click(within(dialogo()).getByRole("button", { name: "Eliminar caso" }));
+    const deshacer = await screen.findByRole("button", { name: "Deshacer" });
+    deshacer.focus();
+    fireEvent.click(deshacer);
+    await waitFor(() => expect(aviso()?.className).toBe("toast error"));
+    expect(aviso()!.textContent).toContain("No se pudo restaurar el caso. Ya hay otro caso con ese identificador.");
+    expect(versionCasos.value).toBe(version);
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  });
+
+  it("sin papelera con un job en curso (deja un hueco) ni sin alEliminado", () => {
+    const restrepo = "Restrepo Gil c. Fondo Pensional Altamira";
+    const { unmount } = render(<Montaje />);
+    expect(screen.queryByRole("button", { name: `Eliminar: ${restrepo}` })).toBeNull();
+    const hueco = fila(restrepo)!.querySelector(".hueco")!;
+    expect(hueco.getAttribute("aria-hidden")).toBe("true");
+    expect(hueco.previousElementSibling!.getAttribute("aria-label")).toBe(`Ver avance: ${restrepo}`);
+    expect(screen.getAllByRole("button", { name: /^Eliminar: / })).toHaveLength(4);
+    unmount();
+
+    render(<ListaCasos casos={CASOS} proceso="segunda" />);
+    expect(screen.queryAllByRole("button", { name: /^Eliminar: / })).toEqual([]);
+    expect(document.querySelector(".hueco")).toBeNull();
+    expect(document.querySelector("dialog")!.hasAttribute("open")).toBe(false);
   });
 });
 

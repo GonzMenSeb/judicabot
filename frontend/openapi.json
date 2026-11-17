@@ -479,6 +479,38 @@
         "title": "CasoCreado",
         "type": "object"
       },
+      "CasoEliminado": {
+        "description": "DELETE /api/casos/{id}: papelera es la entrada <id>@<sello> de CASOS_DIR/.papelera que sirve para restaurarlo.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "papelera": {
+            "title": "Papelera",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "papelera"
+        ],
+        "title": "CasoEliminado",
+        "type": "object"
+      },
+      "CasoRestaurado": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CasoRestaurado",
+        "type": "object"
+      },
       "CasoResumen": {
         "properties": {
           "accionadas": {
@@ -3157,6 +3189,51 @@
         "summary": "Crear Caso"
       }
     },
+    "/api/casos/{caso_id}": {
+      "delete": {
+        "operationId": "eliminar_caso_api_casos__caso_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasoEliminado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso no encontrado."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso para este caso."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Eliminar Caso"
+      }
+    },
     "/api/casos/{caso_id}/apoderados": {
       "get": {
         "operationId": "leer_apoderados_api_casos__caso_id__apoderados_get",
@@ -4934,6 +5011,51 @@
           }
         },
         "summary": "Elegir Modelo"
+      }
+    },
+    "/api/papelera/{entrada}/restaurar": {
+      "post": {
+        "operationId": "restaurar_caso_api_papelera__entrada__restaurar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entrada",
+            "required": true,
+            "schema": {
+              "title": "Entrada",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasoRestaurado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No se encontró el caso en la papelera."
+          },
+          "409": {
+            "description": "Ya hay otro caso con ese identificador."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restaurar Caso"
       }
     },
     "/api/prompts-default": {

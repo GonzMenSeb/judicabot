@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toasts } from "../../estado";
 import { consulta } from "../../rutas";
+import { Toasts } from "../../ui";
 import Casos from "./index";
 import { casosMock } from "./mock";
 import { useSoltarGlobal } from "./soltar";
@@ -99,6 +100,96 @@ describe("lista de casos", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByRole("heading", { level: 3, name: /Por decidir/ })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("eliminar quita el caso sin recargar y Deshacer recarga la lista", async () => {
+    const entrada = "arango-londono@20261117T150000000000Z";
+    const llamadas = simularFetch({
+      "GET /api/casos": () => json(casosMock),
+      "DELETE /api/casos/arango-londono": () => json({ id: "arango-londono", papelera: entrada }),
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => json({ id: "arango-londono" }),
+    });
+    render(
+      <>
+        <Casos />
+        <Toasts />
+      </>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Eliminar: Arango Londoño c. EPS Ceiba Salud" }));
+    const lista = screen.getByRole("region", { name: "Casos" });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(screen.queryByText("Arango Londoño c. EPS Ceiba Salud")).toBeNull());
+    expect(within(lista).getByRole("heading", { level: 3, name: /Por preparar/ }).textContent).toBe("Por preparar 1");
+    expect(llamadas.filter((l) => l.metodo === "GET")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    expect(await screen.findByText("Arango Londoño c. EPS Ceiba Salud")).toBeTruthy();
+    expect(llamadas.map((l) => `${l.metodo} ${l.ruta}`)).toEqual([
+      "GET /api/casos",
+      "DELETE /api/casos/arango-londono",
+      `POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`,
+      "GET /api/casos",
+    ]);
+  });
+
+  it("una recarga que salió antes de eliminar no devuelve el caso eliminado, y las siguientes mandan", async () => {
+    const arango = "Arango Londoño c. EPS Ceiba Salud";
+    const quintero = "Quintero Bedoya c. EPS Horizonte Salud";
+    const entrada = "arango-londono@20261117T150000000000Z";
+    let soltar: (r: Response) => void = () => undefined;
+    let cargas = 0;
+    simularFetch({
+      "GET /api/casos": () => (++cargas === 2 ? new Promise<Response>((ok) => (soltar = ok)) : json(casosMock)),
+      "DELETE /api/casos/arango-londono": () => json({ id: "arango-londono", papelera: entrada }),
+      "DELETE /api/casos/quintero-bedoya": () => json({ id: "quintero-bedoya", papelera: "quintero-bedoya@20261117T150001000000Z" }),
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => json({ id: "arango-londono" }),
+    });
+    render(
+      <>
+        <Casos />
+        <Toasts />
+      </>,
+    );
+    const lista = await screen.findByRole("region", { name: "Casos" });
+    const eliminar = async (nombre: string) => {
+      fireEvent.click(await within(lista).findByRole("button", { name: `Eliminar: ${nombre}` }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+      await waitFor(() => expect(within(lista).queryByText(nombre)).toBeNull());
+    };
+    await eliminar(arango);
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    await waitFor(() => expect(cargas).toBe(2));
+    await eliminar(quintero);
+
+    await act(async () => soltar(json(casosMock)));
+    expect(await within(lista).findByText(arango)).toBeTruthy();
+    expect(within(lista).queryByText(quintero)).toBeNull();
+  });
+
+  it("409 al eliminar: recarga, el caso en curso pierde la papelera y el foco queda en el encabezado", async () => {
+    const arango = "Arango Londoño c. EPS Ceiba Salud";
+    let corriendo = false;
+    const llamadas = simularFetch({
+      "GET /api/casos": () => json(casosMock.map((c) => (corriendo && c.id === "arango-londono" ? { ...c, estado: "corriendo" as const, job_activo: "job-arango" } : c))),
+      "DELETE /api/casos/arango-londono": () => {
+        corriendo = true;
+        return json({ detail: "Hay una ejecución en curso para este caso. Espere a que termine para eliminarlo." }, 409);
+      },
+    });
+    render(
+      <>
+        <Casos />
+        <Toasts />
+      </>,
+    );
+    const papelera = await screen.findByRole("button", { name: `Eliminar: ${arango}` });
+    papelera.focus();
+    fireEvent.click(papelera);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: `Eliminar: ${arango}` })).toBeNull());
+    expect(screen.getByRole("link", { name: `Ver avance: ${arango}` })).toBeTruthy();
+    expect(llamadas.filter((l) => l.metodo === "GET")).toHaveLength(2);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Casos" })));
   });
 
   it("muestra el detalle de un error HTTP", async () => {

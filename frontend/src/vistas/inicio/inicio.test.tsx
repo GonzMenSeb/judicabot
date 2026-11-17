@@ -1,6 +1,9 @@
-import { fireEvent, render, screen, within } from "@testing-library/preact";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toasts } from "../../estado";
 import { consulta } from "../../rutas";
+import { Toasts } from "../../ui";
+import Casos from "../casos";
 import { casosMock } from "../casos/mock";
 import { json, simularFetch } from "../casos/utilesPrueba";
 import Inicio from "./index";
@@ -13,6 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  toasts.value = [];
 });
 
 const formato = { campos: [], valores: { nombre_cuerpo: "Juzgado Tercero Penal del Circuito" }, plantilla_gen: "B", documentos: [] };
@@ -66,6 +70,128 @@ describe("Inicio", () => {
     expect(await screen.findByText("0 casos abiertos")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Mi trabajo" })).toBeNull();
     expect(screen.queryByText(/su decisión/)).toBeNull();
+  });
+
+  it("al eliminar el último caso «Mi trabajo» desaparece, el foco pasa al contenido y Deshacer lo trae de vuelta", async () => {
+    const quintero = casosMock.find((c) => c.id === "quintero-bedoya")!;
+    const entrada = "quintero-bedoya@20261117T150000000000Z";
+    let eliminado = false;
+    simularFetch({
+      "GET /api/casos": () => json(eliminado ? [] : [quintero]),
+      "GET /api/formato": () => json(formato),
+      "DELETE /api/casos/quintero-bedoya": () => {
+        eliminado = true;
+        return json({ id: "quintero-bedoya", papelera: entrada });
+      },
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => {
+        eliminado = false;
+        return json({ id: "quintero-bedoya" });
+      },
+    });
+    render(
+      <>
+        <main id="contenido" tabIndex={-1}>
+          <Inicio />
+        </main>
+        <Toasts />
+      </>,
+    );
+    const seccion = await screen.findByRole("region", { name: "Mi trabajo" });
+    expect(screen.getByText("1 espera su decisión")).toBeTruthy();
+    fireEvent.click(within(seccion).getByRole("button", { name: `Eliminar: ${quintero.nombre}` }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+    await waitFor(() => expect(document.activeElement?.id).toBe("contenido"));
+    expect(screen.queryByRole("region", { name: "Mi trabajo" })).toBeNull();
+    expect(screen.getByText("0 casos abiertos")).toBeTruthy();
+    expect(screen.queryByText(/su decisión/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    expect(await screen.findByRole("region", { name: "Mi trabajo" })).toBeTruthy();
+    expect(screen.getByText("1 espera su decisión")).toBeTruthy();
+    expect(screen.getByText(`Se restauró «${quintero.nombre}».`)).toBeTruthy();
+  });
+
+  it("Deshacer después de pasar a la página del proceso recarga esa lista, no la de Inicio", async () => {
+    const quintero = casosMock.find((c) => c.id === "quintero-bedoya")!;
+    const entrada = "quintero-bedoya@20261117T150000000000Z";
+    let eliminado = false;
+    const llamadas = simularFetch({
+      "GET /api/casos": () => json(eliminado ? casosMock.filter((c) => c !== quintero) : casosMock),
+      "GET /api/formato": () => json(formato),
+      "DELETE /api/casos/quintero-bedoya": () => {
+        eliminado = true;
+        return json({ id: "quintero-bedoya", papelera: entrada });
+      },
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => {
+        eliminado = false;
+        return json({ id: "quintero-bedoya" });
+      },
+    });
+    const { rerender } = render(
+      <>
+        <main id="contenido" tabIndex={-1}>
+          <Inicio />
+        </main>
+        <Toasts />
+      </>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: `Eliminar: ${quintero.nombre}` }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+    await screen.findByRole("button", { name: "Deshacer" });
+
+    rerender(
+      <>
+        <main id="contenido" tabIndex={-1}>
+          <Casos />
+        </main>
+        <Toasts />
+      </>,
+    );
+    const lista = await screen.findByRole("region", { name: "Casos" });
+    await within(lista).findByRole("link", { name: /Arango Londoño/ });
+    expect(within(lista).queryByText(quintero.nombre)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    expect(await within(lista).findByText(quintero.nombre)).toBeTruthy();
+    expect(screen.getByText(`Se restauró «${quintero.nombre}».`)).toBeTruthy();
+    expect(llamadas.filter((l) => l.ruta === "/api/casos")).toHaveLength(3);
+  });
+
+  it("una recarga que salió antes de eliminar no devuelve el caso eliminado a «Mi trabajo»", async () => {
+    const quintero = casosMock.find((c) => c.id === "quintero-bedoya")!;
+    const cardenas = casosMock.find((c) => c.id === "cardenas-ospina")!;
+    const entrada = "quintero-bedoya@20261117T150000000000Z";
+    let soltar: (r: Response) => void = () => undefined;
+    let cargas = 0;
+    simularFetch({
+      "GET /api/casos": () => (++cargas === 2 ? new Promise<Response>((ok) => (soltar = ok)) : json(casosMock)),
+      "GET /api/formato": () => json(formato),
+      "DELETE /api/casos/quintero-bedoya": () => json({ id: "quintero-bedoya", papelera: entrada }),
+      "DELETE /api/casos/cardenas-ospina": () => json({ id: "cardenas-ospina", papelera: "cardenas-ospina@20261117T150001000000Z" }),
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => json({ id: "quintero-bedoya" }),
+    });
+    render(
+      <>
+        <main id="contenido" tabIndex={-1}>
+          <Inicio />
+        </main>
+        <Toasts />
+      </>,
+    );
+    const seccion = await screen.findByRole("region", { name: "Mi trabajo" });
+    const eliminar = async (nombre: string) => {
+      fireEvent.click(await within(seccion).findByRole("button", { name: `Eliminar: ${nombre}` }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+      await waitFor(() => expect(within(seccion).queryByText(nombre)).toBeNull());
+    };
+    await eliminar(quintero.nombre);
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    await waitFor(() => expect(cargas).toBe(2));
+    await eliminar(cardenas.nombre);
+
+    await act(async () => soltar(json(casosMock)));
+    expect(await within(seccion).findByText(quintero.nombre)).toBeTruthy();
+    expect(within(seccion).queryByText(cardenas.nombre)).toBeNull();
   });
 
   it("avisa si no pudo cargar los casos y permite reintentar", async () => {

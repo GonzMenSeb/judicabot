@@ -43,6 +43,8 @@ def _correr(caso_id: str, fn: Callable[[Any], dict[str, Any]], fallo: str) -> di
     from tutela2 import server
 
     with server._LOCK:
+        if not (server.casos_dir().resolve() / caso_id).is_dir():
+            raise HTTPException(404, "Caso no encontrado.")
         if _job_corriendo(caso_id):
             raise HTTPException(409, MOTIVO_JOB)
         try:
