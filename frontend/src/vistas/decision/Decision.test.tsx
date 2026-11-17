@@ -252,6 +252,7 @@ describe("Decisión: clave del proveedor activo", () => {
     modelo: "claude-sonnet-5-5",
     modelos: [],
     modelos_gemini: [],
+    festivos: [],
     ...extra,
   });
 

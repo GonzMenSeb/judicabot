@@ -176,6 +176,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/casos/{caso_id}/termino": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Leer Termino */
+        get: operations["leer_termino_api_casos__caso_id__termino_get"];
+        /** Fijar Termino */
+        put: operations["fijar_termino_api_casos__caso_id__termino_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/casos/{caso_id}/vista/{tipo}": {
         parameters: {
             query?: never;
@@ -507,6 +525,10 @@ export interface components {
             accionante: string | null;
             /** Actualizado */
             actualizado: string;
+            /** Creado */
+            creado: string | null;
+            /** Dias Restantes */
+            dias_restantes: number | null;
             /**
              * Estado
              * @enum {string}
@@ -539,6 +561,9 @@ export interface components {
             segunda: components["schemas"]["DatosSegunda"] | null;
             /** Siguiente Paso */
             siguiente_paso: string;
+            termino: components["schemas"]["Termino"] | null;
+            /** Vence */
+            vence: string | null;
         };
         /** CitaVista */
         CitaVista: {
@@ -773,6 +798,8 @@ export interface components {
         EstadoServidor: {
             /** Api Key */
             api_key: boolean;
+            /** Festivos */
+            festivos: string[];
             /** Gemini Key */
             gemini_key: boolean;
             /** Jev Key */
@@ -1042,6 +1069,43 @@ export interface components {
             negrita?: boolean;
             /** Texto */
             texto: string;
+        };
+        /**
+         * Termino
+         * @description Término para fallar de un caso: el despacho recibió el expediente el día `inicio` y cuenta con `dias`.
+         *
+         *     Los días se cuentan desde el día siguiente a `inicio`, en días hábiles (sin fines de semana ni festivos
+         *     colombianos) o calendario (si vence en un día no hábil, pasa al siguiente hábil). Ver tutela2.termino.
+         */
+        Termino: {
+            /** Dias */
+            dias: number;
+            /** Inicio */
+            inicio: string;
+            /**
+             * Unidad
+             * @enum {string}
+             */
+            unidad: "habiles" | "calendario";
+        };
+        /**
+         * TerminoRespuesta
+         * @description GET/PUT /api/casos/{id}/termino: el término vigente y su vencimiento calculado hoy.
+         *
+         *     termino es el guardado o, si no hay, el que se propone a partir de la fecha de reparto (por_defecto True).
+         *     Sin fecha de reparto ni término guardado, termino, vence y dias_restantes son None. vence y dias_restantes
+         *     también son None si el caso ya terminó. dias_restantes: ver tutela2.termino.plazo.
+         */
+        TerminoRespuesta: {
+            /** Dias Restantes */
+            dias_restantes: number | null;
+            /** Fecha Reparto */
+            fecha_reparto: string | null;
+            /** Por Defecto */
+            por_defecto: boolean;
+            termino: components["schemas"]["Termino"] | null;
+            /** Vence */
+            vence: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1478,6 +1542,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leer_termino_api_casos__caso_id__termino_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminoRespuesta"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fijar_termino_api_casos__caso_id__termino_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Termino"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminoRespuesta"];
                 };
             };
             /** @description Validation Error */

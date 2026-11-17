@@ -15,8 +15,14 @@ CasoResumen {
   etapa: 0|1|2|3|4;      // 0 documentos, 1 proceso/borrador en curso, 2 decisión, 3 redacción final, 4 fallo listo
   siguiente_paso: str;   // texto para la UI, p. ej. "Revisar borrador"
   n_insumos: int; n_alertas: int; job_activo: str|null; actualizado: str;  // ISO 8601 UTC
-  segunda: DatosSegunda|null   // null solo si el estado del caso no se pudo leer (estado "error" sin datos)
+  segunda: DatosSegunda|null;  // null solo si el estado del caso no se pudo leer (estado "error" sin datos)
+  creado: str|null;            // instante de creación (ISO 8601 con desfase); null en los casos anteriores a .datos_caso.json
+  termino: Termino|null;       // término para fallar efectivo: el guardado o el propuesto desde la fecha de reparto
+  vence: str|null;             // AAAA-MM-DD; null si no hay término o el caso terminó
+  dias_restantes: int|null     // 0 el día del vencimiento, positivo antes, negativo (atraso) después; null si vence es null
 }
+
+Termino { inicio: str /* AAAA-MM-DD, "Recibido el" */; dias: int /* 1..365 */; unidad: "habiles"|"calendario" }
 
 DatosSegunda {             // datos propios de la segunda instancia; se muestran como filtros de la lista
   decision_a_quo: "ampara"|"niega"|"improcedente"|"carencia_actual_de_objeto"|"otro"|null;
@@ -38,7 +44,11 @@ Todos los campos de `DatosSegunda` son obligatorios en el JSON; lo que no se con
 - `pruebas_nuevas`: `true` si la apertura registra pruebas nuevas en segunda instancia, `false` si la apertura existe y no registra ninguna, `null` si aún no hay apertura (estados `sin_iniciar`, `incompleto`, `revision`).
 - `n_citas_revisar` (citas en estado `alerta` o `rechazada`) y `jev_discrepa` (alguna comparación de `jev_metadatos.coincide` es `false`): solo mientras el caso está en `esperando_decision` (`0` y `false` si no hay nada que señalar); en cualquier otro estado, incluido `corriendo`, son `null`.
 
-El valor de `proceso` y el de `segunda` forman parte del resumen cacheado (`VERSION = 2` del caché: un `.resumen.json` anterior se reconstruye solo).
+El valor de `proceso`, el de `segunda`, `creado` y `termino` forman parte del resumen cacheado (`VERSION = 3` del caché: un `.resumen.json` anterior se reconstruye solo). `vence` y `dias_restantes` dependen de la fecha y **nunca se cachean**: `resumen_caso._completo` los calcula en cada lectura con `termino.plazo` y la fecha de Colombia (UTC-5), de modo que la lista, `GET …/resumen`, `con_job` y `resumen_de_error` los traen siempre al día.
+
+**Término para fallar** (`termino.py`). Cada caso guarda en `<caso>/.datos_caso.json` (escritura atómica) `{proceso, creado, termino}`; `POST /api/casos` lo crea con `proceso: "segunda"`, `creado` y `termino: null`. Si falta o está corrupto se lee como `proceso: "segunda"`, `creado: null`, `termino: null`. El término efectivo es el guardado o, si no hay, el que se propone: `inicio` = fecha de reparto (`fecha_reparto` de `auto.json` si es una fecha válida; si no, la del acta de reparto de segunda en los metadatos), 20 días `habiles`; sin fecha de reparto no hay término. Los días se cuentan desde el día siguiente a `inicio`: `habiles` vence el n-ésimo día hábil posterior (sin fines de semana ni festivos colombianos, `festivos.py`); `calendario` vence en `inicio` + n días, y si ese día no es hábil pasa al siguiente hábil. `dias_restantes` cuenta en la unidad del término (hábiles posteriores a hoy hasta `vence`, o días corridos) y es negativo después del vencimiento; un vencimiento que cayó el viernes sigue siendo negativo (-1) el fin de semana. `vence` y `dias_restantes` son `null` si el caso está `terminado` o no hay término. `auto.json` y `.datos_caso.json` se rastrean en la firma del caché, así que editarlos reconstruye el resumen.
+
+`GET /api/casos/{caso_id}/termino` → `{termino: Termino|null, por_defecto: bool, fecha_reparto: str|null, vence: str|null, dias_restantes: int|null}`. `por_defecto` es `true` mientras el término sea la propuesta y no uno guardado. `PUT /api/casos/{caso_id}/termino` (cuerpo `Termino`) lo guarda en `.datos_caso.json` y devuelve lo mismo que el GET. 404 si el caso no existe (también con un cuerpo inválido); 422 si `inicio` no es una fecha real `AAAA-MM-DD` entre 2000 y 2100, `dias` no es un entero de 1 a 365 o `unidad` no es `habiles` ni `calendario`. `GET /api/estado-servidor` trae además `festivos: str[]`, las fechas ISO de los festivos del año anterior, el actual y el siguiente (hora de Colombia), en orden.
 
 `GET /api/casos/{caso_id}/resumen` → `CasoResumen` (la misma fila que `GET /api/casos` para ese caso: mismo cache, y con `estado: "corriendo"`, `etapa` y `job_activo` si hay un job activo). 404 `{"detail": "Caso no encontrado."}` si el caso no existe. Un caso ilegible devuelve 200 con `estado: "error"` y `segunda: null`, como en la lista.
 

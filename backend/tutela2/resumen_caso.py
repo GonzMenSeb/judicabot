@@ -30,8 +30,19 @@ discrepancia con Jev. Es None solo si el estado no se pudo leer (respuesta ilegi
 cualquier otro caso trae todas las claves, con None o [] donde falta el dato. n_citas_revisar y jev_discrepa
 solo se informan mientras el caso espera la decisión; con_job (estado corriendo) los vuelve a poner en None.
 
-VERSION 2: el resumen cacheado trae proceso y segunda. Un caché de otra versión, o con otras claves, se descarta
-en _leer_cache y se reconstruye al leerlo o, al arrancar, en calentar.
+creado, termino: de <caso>/.datos_caso.json (ver tutela2.termino). creado es el instante de creación del caso o
+None si es anterior a ese archivo. termino es el término para fallar efectivo, {inicio, dias, unidad}: el guardado
+o, si no lo hay, el propuesto desde la fecha de reparto (override de auto.json o acta de reparto) con 20 días
+hábiles; None si no hay término ni fecha de reparto. Los hechos cacheados dependen de caso.json, auto.json y
+.datos_caso.json, que por eso se rastrean.
+
+vence, dias_restantes: el plazo del término respecto de hoy (termino.plazo). Dependen de la fecha, así que nunca se
+cachean: _completo los calcula en cada lectura con termino.hoy(), y por ello todo resumen que sale de aquí
+(leer, actualizar, resumen_de_error y, a partir de ellos, con_job) los trae al día. Son None si el caso terminó o no
+hay término.
+
+VERSION 3: el resumen cacheado trae además creado y termino. Un caché de otra versión, o con otras claves, se
+descarta en _leer_cache y se reconstruye al leerlo o, al arrancar, en calentar.
 """
 
 from __future__ import annotations
@@ -47,14 +58,18 @@ from pathlib import Path
 from typing import Any, Callable
 
 from tutela2 import resumen_segunda
+from tutela2 import termino as plazos
 
 log = logging.getLogger("tutela2.resumen_caso")
 
 ARCHIVO = ".resumen.json"
 NOMBRE = ".nombre"
-VERSION = 2
+VERSION = 3
 PROCESO = "segunda"
-RASTREADOS = ("caso.json", "hilo.sqlite", "hilo.sqlite-wal", "decision.json", "config.json", "salidas", "insumos")
+RASTREADOS = (
+    "caso.json", "hilo.sqlite", "hilo.sqlite-wal", "decision.json", "config.json", "salidas", "insumos",
+    plazos.AUTO, plazos.ARCHIVO,
+)
 
 ESTADOS = ("sin_iniciar", "revision", "incompleto", "esperando_decision", "terminado", "error")
 SIGUIENTE_PASO = {
@@ -71,7 +86,7 @@ ETAPA_POR_ESTADO = {"sin_iniciar": 0, "incompleto": 0, "revision": 0, "esperando
 CLAVES = frozenset(
     {
         "nombre", "radicado", "accionante", "accionadas", "juzgado_a_quo", "estado", "etapa",
-        "siguiente_paso", "n_alertas", "n_insumos", "actualizado", "proceso", "segunda",
+        "siguiente_paso", "n_alertas", "n_insumos", "actualizado", "proceso", "segunda", "creado", "termino",
     }
 )
 
@@ -159,11 +174,14 @@ def _leer_estado(caso_dir: Path) -> dict[str, Any] | None:
 
 def construir(caso_dir: Path) -> tuple[list[int | None], dict[str, Any]]:
     sig = firma(caso_dir)
+    respuesta = _leer_estado(caso_dir)
     datos = {
         "nombre": _nombre(caso_dir),
-        **campos_desde_estado(_leer_estado(caso_dir)),
+        **campos_desde_estado(respuesta),
         "n_insumos": _contar_insumos(caso_dir),
         "actualizado": _actualizado(sig, caso_dir),
+        "creado": plazos.leer(caso_dir)["creado"],
+        "termino": plazos.efectivo(caso_dir, respuesta)[0],
     }
     return sig, datos
 
@@ -189,7 +207,8 @@ def _escribir(caso_dir: Path, documento: dict[str, Any]) -> None:
 
 
 def _completo(caso_dir: Path, datos: dict[str, Any]) -> dict[str, Any]:
-    return {"id": caso_dir.name, **datos, "job_activo": None}
+    plazo = plazos.plazo(datos.get("termino"), datos.get("estado"), plazos.hoy()) or {"vence": None, "dias_restantes": None}
+    return {"id": caso_dir.name, **datos, **plazo, "job_activo": None}
 
 
 def actualizar(caso_dir: Path) -> dict[str, Any]:
@@ -251,6 +270,8 @@ def resumen_de_error(caso_dir: Path) -> dict[str, Any]:
             "segunda": None,
             "n_insumos": 0,
             "actualizado": _actualizado([], caso_dir),
+            "creado": plazos.leer(caso_dir)["creado"],
+            "termino": plazos.efectivo(caso_dir, None)[0],
         },
     )
 

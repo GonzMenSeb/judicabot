@@ -50,3 +50,19 @@ def siguiente_habil(dia: date) -> date:
     while not es_habil(dia):
         dia += timedelta(days=1)
     return dia
+
+
+def sumar_habiles(dia: date, n: int) -> date:
+    """El n-ésimo día hábil estrictamente posterior a `dia` (n = 0 devuelve `dia`)."""
+    if n < 0:
+        raise ValueError("n no puede ser negativo.")
+    for _ in range(n):
+        dia = siguiente_habil(dia)
+    return dia
+
+
+def habiles_entre(a: date, b: date) -> int:
+    """Días hábiles en (a, b], es decir, sin contar `a` y contando `b`. Es negativo si b < a."""
+    if b < a:
+        return -habiles_entre(b, a)
+    return sum(1 for i in range(1, (b - a).days + 1) if es_habil(a + timedelta(days=i)))

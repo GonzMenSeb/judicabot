@@ -30,6 +30,10 @@ export const casosMock = [
     n_alertas: 1,
     job_activo: null,
     actualizado: minutos(25),
+    creado: "2026-10-21T16:40:00-05:00",
+    termino: { inicio: "2026-10-21", dias: 20, unidad: "habiles" },
+    vence: "2026-11-20",
+    dias_restantes: 3,
     segunda: {
       decision_a_quo: "niega",
       impugnante: "accionante",
@@ -56,6 +60,10 @@ export const casosMock = [
     n_alertas: 2,
     job_activo: null,
     actualizado: minutos(60 * 26),
+    creado: "2026-10-14T09:05:00-05:00",
+    termino: { inicio: "2026-10-14", dias: 20, unidad: "habiles" },
+    vence: "2026-11-12",
+    dias_restantes: -2,
     segunda: VACIA,
   },
   {
@@ -73,6 +81,10 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 27),
+    creado: "2026-10-16T11:30:00-05:00",
+    termino: { inicio: "2026-10-16", dias: 20, unidad: "habiles" },
+    vence: "2026-11-17",
+    dias_restantes: 0,
     segunda: VACIA,
   },
   {
@@ -90,6 +102,10 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: "job-restrepo",
     actualizado: minutos(3),
+    creado: "2026-11-03T08:20:00-05:00",
+    termino: { inicio: "2026-11-03", dias: 28, unidad: "calendario" },
+    vence: "2026-12-01",
+    dias_restantes: 14,
     segunda: {
       decision_a_quo: "carencia_actual_de_objeto",
       impugnante: "accionada",
@@ -116,6 +132,10 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 24 * 13),
+    creado: null,
+    termino: { inicio: "2026-09-30", dias: 20, unidad: "habiles" },
+    vence: null,
+    dias_restantes: null,
     segunda: {
       decision_a_quo: "improcedente",
       impugnante: "accionante",
@@ -142,6 +162,10 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 24 * 17),
+    creado: "2026-10-02T10:00:00-05:00",
+    termino: { inicio: "2026-10-01", dias: 20, unidad: "habiles" },
+    vence: null,
+    dias_restantes: null,
     segunda: {
       decision_a_quo: "ampara",
       impugnante: "varios",
@@ -155,8 +179,34 @@ export const casosMock = [
   },
 ] satisfies CasoResumen[];
 
+/**
+ * Caso sin fecha de reparto ni término, que no está en casosMock para no cambiar los conteos de las pruebas de la
+ * lista; solo la demostración (VITE_MOCK) lo suma. Su resumen lo sirve el mock de Documentos.
+ */
+export const casoSinFechaMock = {
+  id: "demo-sin-leer",
+  nombre: "Zapata Henao c. EPS Sendero",
+  proceso: "segunda",
+  radicado: null,
+  accionante: null,
+  accionadas: [],
+  juzgado_a_quo: null,
+  estado: "sin_iniciar",
+  etapa: 0,
+  siguiente_paso: "Procesar los documentos",
+  n_insumos: 6,
+  n_alertas: 0,
+  job_activo: null,
+  actualizado: minutos(60 * 5),
+  creado: "2026-11-16T17:10:00-05:00",
+  termino: null,
+  vence: null,
+  dias_restantes: null,
+  segunda: VACIA,
+} satisfies CasoResumen;
+
 export const mocks: MockRuta[] = [
-  { metodo: "GET", ruta: "/api/casos", respuesta: casosMock },
+  { metodo: "GET", ruta: "/api/casos", respuesta: [...casosMock, casoSinFechaMock] },
   ...casosMock.map((caso): MockRuta => ({ metodo: "GET", ruta: `/api/casos/${caso.id}/resumen`, respuesta: caso })),
   { metodo: "POST", ruta: "/api/casos", respuesta: () => ({ id: "nuevo-caso-demo", n_insumos: 9 }) },
   { metodo: "POST", ruta: "/api/casos/nuevo-caso-demo/run", respuesta: { job_id: "job-demo" } },

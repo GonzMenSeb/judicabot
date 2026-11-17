@@ -1,6 +1,10 @@
 import { CLAVES_AUTO } from "./tipos";
 import type { ClaveAuto, DatosAuto } from "./tipos";
+import type { TerminoRespuesta } from "../../api/contrato";
+import { FormTermino } from "./FormTermino";
+import type { CampoTermino } from "./FormTermino";
 import type { EdicionAuto } from "./revision";
+import type { EdicionTermino } from "./termino";
 
 const CAMPOS: Record<ClaveAuto, { etiqueta: string; tipo: "date" | "text" }> = {
   fecha: { etiqueta: "Fecha del auto", tipo: "date" },
@@ -18,9 +22,17 @@ export interface PropsFormAuto {
   edicion: EdicionAuto;
   editable: boolean;
   onCambio: (clave: ClaveAuto, valor: string) => void;
+  /** El término para fallar; null si no se pudo leer (entonces no se muestra el grupo). */
+  termino?: TerminoRespuesta | null;
+  edicionTermino?: EdicionTermino;
+  onCambioTermino?: (campo: CampoTermino, valor: string) => void;
+  /** El término se puede editar aunque el resto del formulario no (caso ya redactado, salvo terminado o en curso). */
+  terminoEditable?: boolean;
+  onGuardarTermino?: () => void;
+  guardandoTermino?: boolean;
 }
 
-export function FormAuto({ base, edicion, editable, onCambio }: PropsFormAuto) {
+export function FormAuto({ base, edicion, editable, onCambio, termino = null, edicionTermino = {}, onCambioTermino = () => {}, terminoEditable = editable, onGuardarTermino, guardandoTermino }: PropsFormAuto) {
   return (
     <section class="docs-bloque" aria-labelledby="docs-auto-t">
       <h2 id="docs-auto-t">Datos del auto que asume el conocimiento</h2>
@@ -42,6 +54,16 @@ export function FormAuto({ base, edicion, editable, onCambio }: PropsFormAuto) {
           );
         })}
       </div>
+      {termino && (
+        <FormTermino
+          respuesta={termino}
+          edicion={edicionTermino}
+          editable={terminoEditable}
+          onCambio={onCambioTermino}
+          onGuardar={editable ? undefined : onGuardarTermino}
+          guardando={guardandoTermino}
+        />
+      )}
       {editable && (
         <>
           <p class="docs-ayuda">

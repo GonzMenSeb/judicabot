@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EstadoServidor, Evento } from "../../api/contrato";
+import type { EstadoServidor, Evento, TerminoRespuesta } from "../../api/contrato";
 import { estadoServidor } from "../../estado";
 import Documentos from "./index";
 import { Progreso } from "./Progreso";
+import { diasDe, fechaLarga, textoRestantes } from "./termino";
 import type { DocResumen, EstadoCaso, ResumenIngesta } from "./tipos";
 
 interface Llamada {
@@ -116,6 +117,7 @@ const servidor: EstadoServidor = {
   modelo: "claude-sonnet-5-5",
   modelos: ["claude-sonnet-5-5"],
   modelos_gemini: ["gemini-4-argon"],
+  festivos: [],
 };
 
 function base(estado: EstadoCaso, extra: Record<string, Manejador> = {}) {
@@ -648,6 +650,417 @@ describe("Datos del auto: firma", () => {
 
     expect(((await screen.findByLabelText("Firmante")) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByLabelText("Cargo del firmante") as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+const TERMINO_PROPUESTO: TerminoRespuesta = {
+  termino: { inicio: "2026-10-21", dias: 20, unidad: "habiles" },
+  por_defecto: true,
+  fecha_reparto: "2026-10-21",
+  vence: "2026-11-20",
+  dias_restantes: 3,
+};
+
+const SIN_TERMINO: TerminoRespuesta = { termino: null, por_defecto: false, fecha_reparto: null, vence: null, dias_restantes: null };
+
+function conTermino(respuesta: TerminoRespuesta, extra: Record<string, Manejador> = {}, estado: EstadoCaso = estadoRevision()) {
+  return base(estado, { "GET /api/casos/c1/termino": () => ok(respuesta), ...extra });
+}
+
+const campo = (nombre: string) => screen.getByLabelText(nombre) as HTMLInputElement;
+const grupoTermino = () => screen.findByRole("group", { name: /Término para fallar/ });
+
+describe("Documentos: término para fallar", () => {
+  it("propone el término desde la fecha de reparto, lo marca por defecto y muestra el vencimiento", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO);
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(within(grupo).getByText("por defecto")).toBeTruthy();
+    expect(campo("Recibido el").value).toBe("2026-10-21");
+    expect(campo("Plazo (días)").value).toBe("20");
+    expect(campo("Se cuentan en días").value).toBe("habiles");
+    expect(within(grupo).getByText("Vence el viernes 20 de noviembre de 2026")).toBeTruthy();
+    expect(grupo.textContent).toContain("faltan 3 días hábiles");
+    expect(within(grupo).getByText(/Propuesto desde la fecha de reparto/)).toBeTruthy();
+    expect(screen.queryByText("Sin fecha de reparto no se puede calcular el plazo.")).toBeNull();
+    expect(llamadas.filter((l) => l.ruta === "/api/casos/c1/termino")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+  });
+
+  it("un término guardado no se marca por defecto", async () => {
+    conTermino({ ...TERMINO_PROPUESTO, termino: { inicio: "2026-10-26", dias: 30, unidad: "calendario" }, por_defecto: false, vence: "2026-11-25", dias_restantes: 8 });
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(within(grupo).queryByText("por defecto")).toBeNull();
+    expect(campo("Recibido el").value).toBe("2026-10-26");
+    expect(campo("Se cuentan en días").value).toBe("calendario");
+    expect(grupo.textContent).toContain("Vence el miércoles 25 de noviembre de 2026 · faltan 8 días corridos");
+  });
+
+  it("sin fecha de reparto avisa que no se puede calcular el plazo", async () => {
+    conTermino(SIN_TERMINO);
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(within(grupo).getByText("Sin fecha de reparto no se puede calcular el plazo.")).toBeTruthy();
+    expect(campo("Recibido el").value).toBe("");
+    expect(campo("Plazo (días)").value).toBe("20");
+    expect(grupo.textContent).not.toContain("Vence el");
+    expect(within(grupo).queryByText("por defecto")).toBeNull();
+  });
+
+  it("si el término no se puede leer no muestra el grupo y el resto sigue funcionando", async () => {
+    base(estadoRevision());
+    render(<Documentos caso="c1" />);
+
+    expect(await screen.findByLabelText("Fecha de reparto")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /Término para fallar/ })).toBeNull();
+    expect(screen.queryByLabelText("Recibido el")).toBeNull();
+  });
+
+  it("en el vencimiento muestra vence hoy y los días de atraso", async () => {
+    conTermino({ ...TERMINO_PROPUESTO, vence: "2026-11-17", dias_restantes: 0 });
+    const { unmount } = render(<Documentos caso="c1" />);
+    expect((await grupoTermino()).textContent).toContain("Vence el martes 17 de noviembre de 2026 · vence hoy");
+    unmount();
+    cleanup();
+    conTermino({ ...TERMINO_PROPUESTO, vence: "2026-11-12", dias_restantes: -2 });
+    render(<Documentos caso="c1" />);
+    expect((await grupoTermino()).textContent).toContain("Vence el jueves 12 de noviembre de 2026 · vencido hace 2 días hábiles");
+  });
+
+  it("un caso terminado no muestra vencimiento pero sí el término", async () => {
+    conTermino({ ...TERMINO_PROPUESTO, vence: null, dias_restantes: null, por_defecto: false });
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(campo("Recibido el").value).toBe("2026-10-21");
+    expect(grupo.textContent).not.toContain("Vence el");
+    expect(within(grupo).queryByText("Sin fecha de reparto no se puede calcular el plazo.")).toBeNull();
+  });
+
+  it("al editarlo ofrece guardar, deja de mostrar el vencimiento viejo y lo guarda con PUT sin tocar la revisión", async () => {
+    const guardado: TerminoRespuesta = {
+      termino: { inicio: "2026-10-21", dias: 15, unidad: "calendario" },
+      por_defecto: false,
+      fecha_reparto: "2026-10-21",
+      vence: "2026-11-05",
+      dias_restantes: -8,
+    };
+    const llamadas = conTermino(TERMINO_PROPUESTO, { "PUT /api/casos/c1/termino": () => ok(guardado) });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "15" } });
+    fireEvent.change(campo("Se cuentan en días"), { target: { value: "calendario" } });
+    expect(screen.getByText(/término editado/)).toBeTruthy();
+    expect(screen.queryByText(/Vence el/)).toBeNull();
+    expect(screen.queryByText("por defecto")).toBeNull();
+    expect(screen.getByText("El vencimiento se calcula al guardar.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    expect(await screen.findByText(/Vence el jueves 5 de noviembre de 2026/)).toBeTruthy();
+    const puts = llamadas.filter((l) => l.metodo === "PUT");
+    expect(puts).toHaveLength(1);
+    expect(puts[0]).toMatchObject({ ruta: "/api/casos/c1/termino", cuerpo: { inicio: "2026-10-21", dias: 15, unidad: "calendario" } });
+    expect(screen.queryByText("por defecto")).toBeNull();
+    expect(campo("Plazo (días)").value).toBe("15");
+    expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+    expect(screen.getByText(/vencido hace 8 días corridos/)).toBeTruthy();
+  });
+
+  it("volver al valor original deja de contar como cambio", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO);
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "21" } });
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeTruthy();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "20" } });
+    expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+    expect(screen.getByText(/Vence el viernes 20 de noviembre/)).toBeTruthy();
+    expect(llamadas.some((l) => l.metodo === "PUT")).toBe(false);
+  });
+
+  it("junto con otros cambios guarda primero la revisión y después el término, y solo entonces inicia", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "PUT /api/casos/c1/revision": () => ok(estadoRevision()),
+      "PUT /api/casos/c1/termino": () => ok({ ...TERMINO_PROPUESTO, termino: { inicio: "2026-10-22", dias: 20, unidad: "habiles" }, por_defecto: false }),
+      "POST /api/casos/c1/run": () => ok({ job_id: "j1" }),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Accionante"), { target: { value: "ANA PÉREZ" } });
+    fireEvent.input(campo("Recibido el"), { target: { value: "2026-10-22" } });
+    expect(screen.getByText(/datos del auto editados y término editado/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    const orden = llamadas.filter((l) => l.metodo !== "GET").map((l) => `${l.metodo} ${l.ruta}`);
+    expect(orden).toEqual(["PUT /api/casos/c1/revision", "PUT /api/casos/c1/termino", "POST /api/casos/c1/run"]);
+    expect(llamadas.find((l) => l.ruta.endsWith("/revision"))?.cuerpo).toEqual({ auto: { accionante: "ANA PÉREZ" } });
+    expect(llamadas.find((l) => l.ruta.endsWith("/termino") && l.metodo === "PUT")?.cuerpo).toEqual({ inicio: "2026-10-22", dias: 20, unidad: "habiles" });
+  });
+
+  it("si el término es inválido no guarda nada ni inicia y dice qué falta", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO, { "PUT /api/casos/c1/revision": () => ok(estadoRevision()), "POST /api/casos/c1/run": () => ok({ job_id: "j1" }) });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Accionante"), { target: { value: "ANA PÉREZ" } });
+    for (const malo of ["0", "366", "1.5", "", "diez"]) {
+      fireEvent.input(campo("Plazo (días)"), { target: { value: malo } });
+      expect(screen.getByText("El plazo debe ser un número entero de 1 a 365 días.")).toBeTruthy();
+    }
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "10" } });
+    fireEvent.input(campo("Recibido el"), { target: { value: "" } });
+    expect(screen.getAllByText("Indique el día en que se recibió el expediente.")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    await waitFor(() => expect(screen.getAllByText("Indique el día en que se recibió el expediente.")).toHaveLength(2));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(screen.getAllByText("Indique el día en que se recibió el expediente.")).toHaveLength(2));
+    expect(llamadas.filter((l) => l.metodo !== "GET")).toEqual([]);
+    expect(campo("Accionante").value).toBe("ANA PÉREZ");
+  });
+
+  it("si el servidor rechaza el término conserva lo editado, avisa y no inicia", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "PUT /api/casos/c1/termino": () => ({ estado: 422, cuerpo: { detail: [{ loc: ["body", "dias"], msg: "mal" }] } }),
+      "POST /api/casos/c1/run": () => ok({ job_id: "j1" }),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    expect((await screen.findByText(/El término no es válido/)).textContent).toMatch(/1 a 365 días/);
+    expect(campo("Plazo (días)").value).toBe("30");
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+  });
+
+  it("si el servidor falla al guardar el término muestra su mensaje y deja reintentar", async () => {
+    let intento = 0;
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "PUT /api/casos/c1/termino": () => (++intento === 1 ? fallo(500, "No se pudo guardar el término: disco lleno") : ok({ ...TERMINO_PROPUESTO, por_defecto: false })),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("No se pudo guardar el término: disco lleno");
+    expect(campo("Plazo (días)").value).toBe("25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull());
+    expect(llamadas.filter((l) => l.metodo === "PUT")).toHaveLength(2);
+  });
+
+  it("al cambiar la fecha de reparto vuelve a pedir el término propuesto", async () => {
+    let pedidos = 0;
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "GET /api/casos/c1/termino": () =>
+        ok(++pedidos === 1 ? TERMINO_PROPUESTO : { ...TERMINO_PROPUESTO, termino: { inicio: "2026-10-28", dias: 20, unidad: "habiles" }, fecha_reparto: "2026-10-28", vence: "2026-11-30" }),
+      "PUT /api/casos/c1/revision": () => ok(estadoRevision()),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Fecha de reparto"), { target: { value: "2026-10-28" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(campo("Recibido el").value).toBe("2026-10-28");
+    expect(await screen.findByText(/Vence el lunes 30 de noviembre de 2026/)).toBeTruthy();
+    expect(llamadas.some((l) => l.metodo === "PUT" && l.ruta.endsWith("/termino"))).toBe(false);
+    expect(screen.getByText("por defecto")).toBeTruthy();
+  });
+
+  it("mientras es el propuesto, «Recibido el» sigue a la fecha de reparto editada y no muestra el vencimiento viejo", async () => {
+    conTermino(TERMINO_PROPUESTO);
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Fecha de reparto"), { target: { value: "2026-10-28" } });
+    expect(campo("Recibido el").value).toBe("2026-10-28");
+    expect(screen.queryByText(/Vence el/)).toBeNull();
+    expect(screen.getByText("por defecto")).toBeTruthy();
+    fireEvent.input(campo("Fecha de reparto"), { target: { value: "2026-10-21" } });
+    expect(campo("Recibido el").value).toBe("2026-10-21");
+    expect(screen.getByText(/Vence el viernes 20 de noviembre/)).toBeTruthy();
+  });
+
+  it("si cambia la fecha de reparto y el plazo en un mismo guardado, el término se guarda desde la fecha nueva", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "PUT /api/casos/c1/revision": () => ok(estadoRevision()),
+      "PUT /api/casos/c1/termino": () => ok({ ...TERMINO_PROPUESTO, termino: { inicio: "2026-11-10", dias: 30, unidad: "habiles" }, por_defecto: false }),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Fecha de reparto"), { target: { value: "2026-11-10" } });
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(screen.queryByText("por defecto")).toBeNull());
+    expect(llamadas.find((l) => l.ruta.endsWith("/revision"))?.cuerpo).toEqual({ auto: { fecha_reparto: "2026-11-10" } });
+    expect(llamadas.find((l) => l.ruta.endsWith("/termino") && l.metodo === "PUT")?.cuerpo).toEqual({ inicio: "2026-11-10", dias: 30, unidad: "habiles" });
+  });
+
+  it("tras cambiar el rol de un documento vuelve a pedir el término propuesto", async () => {
+    let pedidos = 0;
+    const llamadas = conTermino(SIN_TERMINO, {
+      "GET /api/casos/c1/termino": () => ok(++pedidos === 1 ? SIN_TERMINO : TERMINO_PROPUESTO),
+      "PUT /api/casos/c1/revision": () => ok(estadoRevision()),
+    });
+    render(<Documentos caso="c1" />);
+
+    expect(await screen.findByText("Sin fecha de reparto no se puede calcular el plazo.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Rol de 003.pdf"), { target: { value: "anexo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(campo("Recibido el").value).toBe("2026-10-21"));
+    expect(screen.queryByText("Sin fecha de reparto no se puede calcular el plazo.")).toBeNull();
+    expect(llamadas.some((l) => l.metodo === "PUT" && l.ruta.endsWith("/termino"))).toBe(false);
+  });
+
+  it("al iniciar la redacción confirma el término propuesto aunque no se haya tocado", async () => {
+    const llamadas = conTermino(TERMINO_PROPUESTO, {
+      "PUT /api/casos/c1/termino": () => ok({ ...TERMINO_PROPUESTO, por_defecto: false }),
+      "POST /api/casos/c1/run": () => ok({ job_id: "j1" }),
+    });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(llamadas.filter((l) => l.metodo !== "GET").map((l) => `${l.metodo} ${l.ruta}`)).toEqual(["PUT /api/casos/c1/termino", "POST /api/casos/c1/run"]);
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ inicio: "2026-10-21", dias: 20, unidad: "habiles" });
+  });
+
+  it("al iniciar no vuelve a guardar un término que ya estaba guardado", async () => {
+    const llamadas = conTermino({ ...TERMINO_PROPUESTO, por_defecto: false }, { "POST /api/casos/c1/run": () => ok({ job_id: "j1" }) });
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(llamadas.some((l) => l.metodo === "PUT")).toBe(false);
+  });
+
+  it("con la redacción ya hecha el término se puede corregir y se guarda con su propio botón", async () => {
+    const guardado: TerminoRespuesta = { ...TERMINO_PROPUESTO, termino: { inicio: "2026-10-21", dias: 25, unidad: "habiles" }, por_defecto: false, vence: "2026-11-27" };
+    const llamadas = conTermino(TERMINO_PROPUESTO, { "PUT /api/casos/c1/termino": () => ok(guardado) }, {
+      ...estadoRevision(),
+      estado: "esperando_decision",
+      ingesta: ingesta(DOCS),
+      resumen: { alertas: [] } as EstadoCaso["resumen"],
+    });
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(campo("Plazo (días)").disabled).toBe(false);
+    expect(campo("Recibido el").disabled).toBe(false);
+    expect(campo("Se cuentan en días").disabled).toBe(false);
+    expect(campo("Accionante").disabled).toBe(true);
+    expect(within(grupo).queryByRole("button", { name: "Guardar término" })).toBeNull();
+
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "25" } });
+    fireEvent.click(within(grupo).getByRole("button", { name: "Guardar término" }));
+
+    expect(await screen.findByText(/Vence el viernes 27 de noviembre de 2026/)).toBeTruthy();
+    expect(llamadas.filter((l) => l.metodo === "PUT")).toHaveLength(1);
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ inicio: "2026-10-21", dias: 25, unidad: "habiles" });
+    expect(screen.queryByRole("button", { name: "Guardar término" })).toBeNull();
+  });
+
+  it("en un caso terminado o en curso el término es solo lectura pero se ve el vencimiento", async () => {
+    conTermino({ ...TERMINO_PROPUESTO, por_defecto: false }, {}, { ...estadoRevision(), estado: "terminado", ingesta: ingesta(DOCS), resumen: { alertas: [] } as EstadoCaso["resumen"] });
+    render(<Documentos caso="c1" />);
+
+    const grupo = await grupoTermino();
+    expect(campo("Recibido el").disabled).toBe(true);
+    expect(campo("Plazo (días)").disabled).toBe(true);
+    expect(campo("Se cuentan en días").disabled).toBe(true);
+    expect(grupo.textContent).toContain("Vence el viernes 20 de noviembre de 2026");
+    expect(within(grupo).queryByText(/Propuesto desde/)).toBeNull();
+  });
+
+  it("el mensaje de validación queda ligado al campo inválido", async () => {
+    conTermino(TERMINO_PROPUESTO);
+    render(<Documentos caso="c1" />);
+
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "" } });
+    const mensaje = screen.getByText("El plazo debe ser un número entero de 1 a 365 días.");
+    expect(mensaje.getAttribute("role")).toBeNull();
+    expect(campo("Plazo (días)").getAttribute("aria-invalid")).toBe("true");
+    expect(campo("Plazo (días)").getAttribute("aria-describedby")).toBe(mensaje.id);
+    expect(campo("Recibido el").getAttribute("aria-invalid")).toBeNull();
+
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "10" } });
+    fireEvent.input(campo("Recibido el"), { target: { value: "" } });
+    expect(campo("Recibido el").getAttribute("aria-invalid")).toBe("true");
+    expect(campo("Recibido el").getAttribute("aria-describedby")).toBe(screen.getByText("Indique el día en que se recibió el expediente.").id);
+    expect(campo("Plazo (días)").getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("no mezcla el término de un caso con el de otro al cambiar de caso", async () => {
+    conTermino(TERMINO_PROPUESTO);
+    const { rerender } = render(<Documentos caso="c1" />);
+    await grupoTermino();
+    fireEvent.input(campo("Plazo (días)"), { target: { value: "99" } });
+
+    instalar({
+      "GET /api/casos/c2/estado": () => ok(estadoRevision()),
+      "GET /api/casos/c2/resumen": () => ok({ ...resumenCaso(), id: "c2" }),
+      "GET /api/casos/c2/termino": () => ok({ ...TERMINO_PROPUESTO, termino: { inicio: "2026-11-02", dias: 12, unidad: "habiles" }, por_defecto: false }),
+      "GET /api/estado-servidor": () => ok(servidor),
+    });
+    rerender(<Documentos caso="c2" />);
+    await waitFor(() => expect(campo("Recibido el").value).toBe("2026-11-02"));
+    expect(campo("Plazo (días)").value).toBe("12");
+    expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+  });
+});
+
+describe("término: funciones", () => {
+  it("fechaLarga arma el día de calendario sin correrlo por la zona horaria", () => {
+    expect(fechaLarga("2026-11-20")).toBe("viernes 20 de noviembre de 2026");
+    expect(fechaLarga("2026-01-01")).toBe("jueves 1 de enero de 2026");
+    expect(fechaLarga("2026-12-31")).toBe("jueves 31 de diciembre de 2026");
+    expect(fechaLarga("20-11-2026")).toBeNull();
+    expect(fechaLarga("")).toBeNull();
+  });
+
+  it("diasDe acepta solo enteros de 1 a 365", () => {
+    expect([diasDe("1"), diasDe(" 365 "), diasDe("20")]).toEqual([1, 365, 20]);
+    for (const malo of ["0", "366", "-3", "1.5", "1e2", "", " ", "veinte", "0020"]) expect(diasDe(malo)).toBeNull();
+  });
+
+  it("textoRestantes usa la unidad del término y concuerda en número", () => {
+    const t = (dias_restantes: number | null, unidad: "habiles" | "calendario" = "habiles"): TerminoRespuesta => ({
+      termino: { inicio: "2026-10-21", dias: 20, unidad },
+      por_defecto: false,
+      fecha_reparto: null,
+      vence: "2026-11-20",
+      dias_restantes,
+    });
+    expect(textoRestantes(t(0))).toBe("vence hoy");
+    expect(textoRestantes(t(1))).toBe("falta 1 día hábil");
+    expect(textoRestantes(t(3))).toBe("faltan 3 días hábiles");
+    expect(textoRestantes(t(2, "calendario"))).toBe("faltan 2 días corridos");
+    expect(textoRestantes(t(-1))).toBe("vencido hace 1 día hábil");
+    expect(textoRestantes(t(-4, "calendario"))).toBe("vencido hace 4 días corridos");
+    expect(textoRestantes(t(null))).toBeNull();
+    expect(textoRestantes({ ...t(2), termino: null })).toBeNull();
   });
 });
 
