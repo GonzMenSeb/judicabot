@@ -31,7 +31,8 @@
 .carril { min-width: 0; }
 .carril.propio { padding: 0.55rem 0.65rem 0.65rem; border: 1px solid #b9d3dc; border-radius: 10px; background: #eef5f7; }
 .carril.propio .carril-cab { color: var(--acento-2); }
-.cuantos { min-width: 1.2rem; padding: 0 0.3rem; border-radius: 999px; background: var(--acento); color: #fff; font-size: 0.7rem; text-align: center; }
+.carril-ico { display: grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 6px; background: #fff; color: var(--acento); }
+.cuantos { display: inline-grid; place-items: center; min-width: 1.2rem; height: 1.2rem; padding: 0 0.3rem; border-radius: 999px; background: var(--acento); color: #fff; font-size: 0.7rem; }
 .pastillas { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .pastilla, .interruptor { display: inline-flex; align-items: center; max-width: 100%; border: 1px dashed var(--tenue-deco); border-radius: 999px; background: #fff; font-size: 0.86rem; }
 .pastilla:hover, .pastilla:has([aria-expanded=true]), .interruptor:hover { border-color: var(--acento); }
@@ -86,6 +87,9 @@
 .sin-resultados { overflow-wrap: anywhere; }
 .sin-resultados .btn { max-width: 100%; white-space: normal; }
 
+@media (min-width: 961px) {
+  .carriles:has(.propio) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+}
 @media (max-width: 640px) {
   .seg-estado { flex-basis: 40%; }
 }

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CasoResumen, EstadoCasoApi } from "../../api/contrato";
+import { describe, expect, it } from "vitest";
+import type { CasoResumen, DatosSegunda, EstadoCasoApi } from "../../api/contrato";
 import { diaIso, fechaCorta } from "../../estado/formato";
 import { coincideBusqueda } from "./agrupar";
 import {
@@ -10,15 +10,12 @@ import {
   FILA,
   generales,
   infoProceso,
-  opciones,
   procesoDe,
   PROCESOS,
   PROPIAS,
   propias,
-  type DatoFila,
+  propiasVisibles,
   type EstadoUi,
-  type Faceta,
-  type TipoProceso,
 } from "./facetas";
 import { casosMock } from "./mock";
 import {
@@ -68,6 +65,8 @@ function caso(id: string, estado: EstadoCasoApi, actualizado: string, extra: Par
   return {
     id,
     nombre: `Caso ${id}`,
+    proceso: "segunda",
+    segunda: null,
     radicado: null,
     accionante: null,
     accionadas: [],
@@ -83,21 +82,63 @@ function caso(id: string, estado: EstadoCasoApi, actualizado: string, extra: Par
   };
 }
 
+/** Datos de segunda instancia; lo que no se pase queda vacío, como lo manda el servidor sin datos. */
+const conSegunda = (d: Partial<DatosSegunda>): DatosSegunda => ({
+  decision_a_quo: null,
+  impugnante: null,
+  resultado: null,
+  sustitutiva: null,
+  derechos: [],
+  pruebas_nuevas: null,
+  n_citas_revisar: null,
+  jev_discrepa: null,
+  ...d,
+});
+
+// cardenas y nuevo traen segunda null (estado ilegible); arango, todos los datos vacíos.
 const CASOS: CasoResumen[] = [
-  caso("quintero", "esperando_decision", en(11, 17, 14, 35), { radicado: "2026-00412", juzgado_a_quo: J9, accionadas: [HORIZONTE], n_alertas: 1 }),
+  caso("quintero", "esperando_decision", en(11, 17, 14, 35), {
+    radicado: "2026-00412",
+    juzgado_a_quo: J9,
+    accionadas: [HORIZONTE],
+    n_alertas: 1,
+    segunda: conSegunda({ decision_a_quo: "niega", impugnante: "accionante", derechos: ["Salud", "Vida digna"], pruebas_nuevas: false, n_citas_revisar: 2, jev_discrepa: false }),
+  }),
   caso("zuluaga", "esperando_decision", en(11, 13, 17, 20), {
     radicado: "2026-00398",
     juzgado_a_quo: "Juzgado 3 Civil Municipal de Oralidad",
     accionadas: ["Secretaría de Salud de San Rafael", "EPS Ceiba Salud"],
     n_alertas: 3,
+    segunda: conSegunda({ decision_a_quo: "ampara", impugnante: "accionada", derechos: ["salud"], pruebas_nuevas: true, n_citas_revisar: 0, jev_discrepa: true }),
   }),
-  caso("restrepo", "corriendo", en(11, 17, 14, 57), { radicado: "2026-00390", juzgado_a_quo: "Juzgado 5 Penal", accionadas: [ALTAMIRA] }),
+  caso("restrepo", "corriendo", en(11, 17, 14, 57), {
+    radicado: "2026-00390",
+    juzgado_a_quo: "Juzgado 5 Penal",
+    accionadas: [ALTAMIRA],
+    segunda: conSegunda({ decision_a_quo: "improcedente", impugnante: "accionante", derechos: ["Seguridad social", "Mínimo vital"], pruebas_nuevas: false }),
+  }),
   caso("cardenas", "incompleto", en(11, 12, 9, 10), { radicado: "2026-00374", juzgado_a_quo: J2, accionadas: ["Aseguradora Montaña Azul"], n_alertas: 2 }),
-  caso("arango", "revision", en(11, 16, 8, 40), { radicado: "2026-00377", juzgado_a_quo: J14, accionadas: ["eps  ceiba salud"] }),
-  caso("gaviria", "error", en(11, 10, 11, 2), { radicado: "2026-00212", juzgado_a_quo: "Juzgado 1 Promiscuo", accionadas: ["Municipio de San Rafael"], n_alertas: 1 }),
+  caso("arango", "revision", en(11, 16, 8, 40), { radicado: "2026-00377", juzgado_a_quo: J14, accionadas: ["eps  ceiba salud"], segunda: conSegunda({}) }),
+  caso("gaviria", "error", en(11, 10, 11, 2), {
+    radicado: "2026-00212",
+    juzgado_a_quo: "Juzgado 1 Promiscuo",
+    accionadas: ["Municipio de San Rafael"],
+    n_alertas: 1,
+    segunda: conSegunda({ decision_a_quo: "carencia_actual_de_objeto", impugnante: "varios", derechos: ["Petición"] }),
+  }),
   caso("nuevo", "sin_iniciar", en(10, 20)),
-  caso("mejia", "terminado", en(11, 4, 16, 20), { radicado: "2026-00301", juzgado_a_quo: J9, accionadas: [ALTAMIRA] }),
-  caso("ocampo", "terminado", en(10, 28, 10, 15), { radicado: "2026-00286", juzgado_a_quo: J14, accionadas: [HORIZONTE] }),
+  caso("mejia", "terminado", en(11, 4, 16, 20), {
+    radicado: "2026-00301",
+    juzgado_a_quo: J9,
+    accionadas: [ALTAMIRA],
+    segunda: conSegunda({ decision_a_quo: "niega", impugnante: "accionante", resultado: "REVOCAR", sustitutiva: "AMPARAR", derechos: ["Seguridad social", "Mínimo vital"], pruebas_nuevas: false }),
+  }),
+  caso("ocampo", "terminado", en(10, 28, 10, 15), {
+    radicado: "2026-00286",
+    juzgado_a_quo: J14,
+    accionadas: [HORIZONTE],
+    segunda: conSegunda({ decision_a_quo: "ampara", impugnante: "accionada", resultado: "CONFIRMAR", derechos: ["Salud"], pruebas_nuevas: true }),
+  }),
 ];
 
 const TODOS_ESTADOS = ESTADOS.map((e) => e.id);
@@ -172,13 +213,18 @@ describe("registro de facetas", () => {
     expect(ESTADOS_DEFECTO).toEqual(["decidir", "faltan", "error", "preparar", "redaccion"]);
   });
 
-  it("procesos para las pestañas; hoy todo caso es de segunda", () => {
+  it("procesos para las pestañas; el proceso sale del caso y solo segunda tiene facetas propias", () => {
     expect(PROCESOS.map((p) => p.id)).toEqual(["todos", "primera", "segunda", "desacato", "penal"]);
     expect(infoProceso("segunda").corto).toBe("2ª instancia");
     expect(procesoDe(CASOS[0]!)).toBe("segunda");
-    expect(Object.values(PROPIAS).every((p) => p.length === 0)).toBe(true);
-    expect(propias("segunda")).toEqual([]);
-    expect(FILA.segunda(CASOS[0]!)).toEqual([]);
+    expect(procesoDe({ ...CASOS[0]!, proceso: "primera" as never })).toBe("primera");
+    for (const p of ["primera", "desacato", "penal"] as const) {
+      expect(PROCESOS.some((x) => x.id === p)).toBe(true);
+      expect(PROPIAS[p](CASOS)).toEqual([]);
+      expect(propias(p, CASOS)).toEqual([]);
+      expect(FILA[p](CASOS[0]!)).toEqual([]);
+    }
+    expect(propias(null, CASOS)).toEqual([]);
   });
 
   it("generales: juzgado según el proceso, entidades agrupando variantes y alertas", () => {
@@ -211,7 +257,9 @@ describe("registro de facetas", () => {
     expect(facetaPorClave("alertas")?.tipo).toBe("interruptor");
     expect(facetaPorClave("juzgado")?.opciones).toEqual([]);
     expect(facetaPorClave("nada")).toBeUndefined();
-    expect(facetaPorClave("segunda.aquo")).toBeUndefined();
+    expect(facetaPorClave("segunda.aquo")?.corto).toBe("Decisión 1ª inst.");
+    expect(facetaPorClave("segunda.nada")).toBeUndefined();
+    expect(facetaPorClave("primera.aquo")).toBeUndefined();
     expect(facetaPorClave("todos.aquo")).toBeUndefined();
   });
 });
@@ -539,45 +587,175 @@ describe("URL", () => {
   });
 });
 
-describe("facetas propias (como las llenará PR2)", () => {
-  const original = { propias: PROPIAS.segunda, fila: FILA.segunda };
-  const aquo: Faceta = {
-    clave: "aquo",
-    etiqueta: "Decisión de primera instancia",
-    corto: "Decisión 1ª inst.",
-    tipo: "varias",
-    opciones: opciones("Amparó", "Negó el amparo"),
-    valor: (c) => (c.n_alertas > 0 ? "Amparó" : "Negó el amparo"),
-  };
-  const mutable = PROPIAS as Record<TipoProceso, readonly Faceta[]>;
-  const filas = FILA as Record<TipoProceso, (c: CasoResumen) => readonly (DatoFila | null)[]>;
+describe("facetas propias de segunda instancia", () => {
+  const ABIERTOS: Filtros = inicial();
+  const TODOS: Filtros = { ...inicial(), estado: TODOS_ESTADOS };
+  const faceta = (clave: string, casos: readonly CasoResumen[] = CASOS) => facetaPorClave(`segunda.${clave}`, casos)!;
+  const etiquetas = (clave: string, casos?: readonly CasoResumen[]) => faceta(clave, casos).opciones.map((o) => o.etiqueta);
+  const elegir = (f: Filtros, clave: string, ...ids: string[]) => fijar(f, `segunda.${clave}`, ids);
+  const textos = (c: CasoResumen, f = ABIERTOS) => datosFila(c, f).map((d) => d.texto);
+  const porId = (id: string) => CASOS.find((c) => c.id === id)!;
 
-  beforeEach(() => {
-    mutable.segunda = [aquo];
-    filas.segunda = (c) => [{ texto: `1ª inst.: ${aquo.valor(c) as string}`, clave: "aquo", valor: aquo.valor(c) as string }, null];
-  });
-  afterEach(() => {
-    mutable.segunda = original.propias;
-    filas.segunda = original.fila;
-  });
-
-  it("prefija la clave con el proceso y filtra con ella", () => {
-    expect(propias("segunda").map((f) => f.clave)).toEqual(["segunda.aquo"]);
-    expect(facetaPorClave("segunda.aquo")?.corto).toBe("Decisión 1ª inst.");
-    const f = alternar(inicial(), "segunda.aquo", "Amparó");
-    expect(visibles(f)).toEqual(["quintero", "zuluaga", "cardenas", "gaviria"]);
-    expect(conteoPestanas(CASOS, predicados(f, HOY)).segunda).toBe(7);
+  it("van en orden, con la clave prefijada (s.segunda.<clave> en la URL)", () => {
+    expect(propias("segunda", CASOS).map((f) => [f.clave, f.corto, f.tipo])).toEqual([
+      ["segunda.aquo", "Decisión 1ª inst.", "varias"],
+      ["segunda.impugna", "Impugnó", "varias"],
+      ["segunda.sentido", "Sentido 2ª inst.", "varias"],
+      ["segunda.derecho", "Derecho", "buscable"],
+      ["segunda.revisar", "Por revisar", "varias"],
+      ["segunda.pruebas", "Con pruebas nuevas", "interruptor"],
+    ]);
+    expect(faceta("pruebas").activo).toBe("con");
   });
 
-  it("valida sus valores en la URL", () => {
-    const leido = deserializar("s.segunda.aquo=Ampar%C3%B3,Otro", { defaults: inicial() });
-    expect(leido.sel).toEqual({ "segunda.aquo": ["Amparó"] });
-    expect(serializar(leido, inicial())).toBe("s.segunda.aquo=Ampar%C3%B3");
+  it("Decisión 1ª inst.: «Sin dato» solo si algún caso no la trae", () => {
+    expect(etiquetas("aquo")).toEqual(["Amparó", "Negó el amparo", "Declaró improcedente", "Carencia actual de objeto", "Otra", "Sin dato"]);
+    expect(etiquetas("aquo", CASOS.slice(0, 2))).toEqual(["Amparó", "Negó el amparo", "Declaró improcedente", "Carencia actual de objeto", "Otra"]);
+    expect(visibles(elegir(ABIERTOS, "aquo", "niega"))).toEqual(["quintero"]);
+    expect(visibles(elegir(TODOS, "aquo", "niega"))).toEqual(["quintero", "mejia"]);
+    expect(visibles(elegir(ABIERTOS, "aquo", "sin_dato"))).toEqual(["cardenas", "arango", "nuevo"]);
+    expect(visibles(elegir(ABIERTOS, "aquo", "carencia_actual_de_objeto", "improcedente"))).toEqual(["restrepo", "gaviria"]);
   });
 
-  it("datosFila resalta el dato cuyo filtro está elegido", () => {
-    const f = alternar(inicial(), "segunda.aquo", "Amparó");
-    expect(datosFila(CASOS[0]!, f)).toEqual([{ texto: "1ª inst.: Amparó", clave: "aquo", valor: "Amparó", eco: true }]);
-    expect(datosFila(CASOS[2]!, f)[0]!.eco).toBe(false);
+  it("Impugnó", () => {
+    expect(etiquetas("impugna")).toEqual(["Accionante", "Accionada", "Vinculada", "Otro", "Varios"]);
+    expect(visibles(elegir(ABIERTOS, "impugna", "accionada"))).toEqual(["zuluaga"]);
+    expect(visibles(elegir(TODOS, "impugna", "accionada"))).toEqual(["zuluaga", "ocampo"]);
+    expect(visibles(elegir(ABIERTOS, "impugna", "varios"))).toEqual(["gaviria"]);
+  });
+
+  it("Sentido 2ª inst.: el resultado del fallo; los demás, sin decidir", () => {
+    expect(etiquetas("sentido")).toEqual(["Confirma", "Revoca", "Modifica", "Sin decidir"]);
+    expect(etiquetas("sentido", [porId("mejia"), porId("ocampo")])).toEqual(["Confirma", "Revoca", "Modifica"]);
+    expect(visibles(elegir(TODOS, "sentido", "revoca"))).toEqual(["mejia"]);
+    expect(visibles(elegir(TODOS, "sentido", "confirma", "modifica"))).toEqual(["ocampo"]);
+    expect(visibles(elegir(ABIERTOS, "sentido", "sin_decidir"))).toHaveLength(7);
+  });
+
+  it("Derecho: opciones de los casos (variantes juntas) y basta con uno de los elegidos", () => {
+    expect(faceta("derecho").opciones).toEqual([
+      { id: "salud", etiqueta: "Salud" },
+      { id: "minimo vital", etiqueta: "Mínimo vital" },
+      { id: "seguridad social", etiqueta: "Seguridad social" },
+      { id: "peticion", etiqueta: "Petición" },
+      { id: "vida digna", etiqueta: "Vida digna" },
+    ]);
+    expect(visibles(elegir(ABIERTOS, "derecho", "salud", "peticion"))).toEqual(["quintero", "zuluaga", "gaviria"]);
+    expect(propiasVisibles("segunda", [porId("cardenas")]).map((f) => f.clave)).not.toContain("segunda.derecho");
+    expect(propiasVisibles("segunda", CASOS).map((f) => f.clave)).toContain("segunda.derecho");
+  });
+
+  it("Por revisar: citas por revisar y discrepancias de Jev", () => {
+    expect(etiquetas("revisar")).toEqual(["Citas por revisar", "Jev discrepa"]);
+    expect(visibles(elegir(ABIERTOS, "revisar", "citas"))).toEqual(["quintero"]);
+    expect(visibles(elegir(ABIERTOS, "revisar", "jev"))).toEqual(["zuluaga"]);
+    expect(visibles(elegir(ABIERTOS, "revisar", "citas", "jev"))).toEqual(["quintero", "zuluaga"]);
+  });
+
+  it("Con pruebas nuevas: solo pruebas_nuevas === true", () => {
+    expect(visibles(elegir(ABIERTOS, "pruebas", "con"))).toEqual(["zuluaga"]);
+    expect(visibles(elegir(TODOS, "pruebas", "con"))).toEqual(["zuluaga", "ocampo"]);
+    expect(conteoOpciones(CASOS, predicados(ABIERTOS, HOY), faceta("pruebas")).get("con")).toBe(1);
+  });
+
+  it("segunda null o ausente nunca rompe un predicado, un conteo ni la fila", () => {
+    const antiguo = { ...porId("cardenas"), id: "antiguo", segunda: undefined as unknown as null };
+    const casos = [...CASOS, antiguo];
+    const todas = propias("segunda", casos);
+    let f = TODOS;
+    for (const fac of todas) f = fijar(f, fac.clave, fac.opciones.map((o) => o.id));
+    expect(() => casos.map((c) => todas.map((fac) => fac.valor(c)))).not.toThrow();
+    expect(visibles(f, [porId("cardenas"), antiguo])).toEqual([]);
+    for (const fac of todas) expect(() => conteoOpciones(casos, predicados(f, HOY), fac)).not.toThrow();
+    expect(visibles(elegir(TODOS, "aquo", "sin_dato"), [antiguo])).toEqual(["antiguo"]);
+    expect(FILA.segunda(antiguo)).toEqual([]);
+    expect(datosFila(porId("nuevo"), f)).toEqual([]);
+  });
+
+  it("cada conteo ignora su propia clave; las pestañas, todas las propias", () => {
+    const f = elegir(elegir(ABIERTOS, "pruebas", "con"), "aquo", "niega");
+    const preds = predicados(f, HOY);
+    expect(visibles(f)).toEqual([]);
+    expect([...conteoOpciones(CASOS, preds, faceta("aquo"))]).toEqual([["ampara", 1]]);
+    expect([...conteoOpciones(CASOS, preds, faceta("pruebas"))]).toEqual([["sin", 1]]);
+    expect(conteoPestanas(CASOS, preds)).toMatchObject({ todos: 7, segunda: 7 });
+    const soloPruebas = predicados(elegir(ABIERTOS, "pruebas", "con"), HOY);
+    expect(conteoEstados(CASOS, soloPruebas)).toMatchObject({ decidir: 1, terminado: 1, faltan: 0 });
+    expect([...conteoOpciones(CASOS, predicados(ABIERTOS, HOY), faceta("aquo"))].sort()).toEqual([
+      ["ampara", 1],
+      ["carencia_actual_de_objeto", 1],
+      ["improcedente", 1],
+      ["niega", 1],
+      ["sin_dato", 3],
+    ]);
+  });
+
+  it("los filtros aplicados se nombran con la etiqueta de la faceta y de sus opciones", () => {
+    const f = elegir(elegir(ABIERTOS, "aquo", "niega", "sin_dato"), "pruebas", "con");
+    expect(activos(f, ABIERTOS, propias("segunda", CASOS))).toEqual([
+      { clave: "segunda.aquo", texto: "Decisión de primera instancia: Negó el amparo, Sin dato" },
+      { clave: "segunda.pruebas", texto: "Pruebas nuevas en segunda instancia: Con pruebas nuevas" },
+    ]);
+  });
+
+  it("ida y vuelta por la URL, descartando valores y claves desconocidos", () => {
+    const sel = {
+      "segunda.aquo": ["niega", "sin_dato"],
+      "segunda.derecho": ["minimo vital"],
+      "segunda.impugna": ["accionada"],
+      "segunda.pruebas": ["con"],
+      "segunda.revisar": ["citas", "jev"],
+      "segunda.sentido": ["revoca"],
+    };
+    const texto = serializar({ ...ABIERTOS, sel }, ABIERTOS);
+    expect(texto).toBe(
+      "s.segunda.aquo=niega,sin_dato&s.segunda.derecho=minimo%20vital&s.segunda.impugna=accionada" +
+        "&s.segunda.pruebas=con&s.segunda.revisar=citas,jev&s.segunda.sentido=revoca",
+    );
+    expect(deserializar(texto, { defaults: ABIERTOS, casos: CASOS }).sel).toEqual(sel);
+    expect(deserializar(texto, { defaults: ABIERTOS }).sel).toEqual(sel);
+
+    const sucio = "s.segunda.aquo=niega,xx&s.segunda.zz=1&s.primera.aquo=niega&s.segunda.derecho=nada&s.segunda.pruebas=si,sin&s.alertas=sin";
+    expect(deserializar(sucio, { defaults: ABIERTOS, casos: CASOS }).sel).toEqual({ "segunda.aquo": ["niega"] });
+    expect(deserializar(sucio, { defaults: ABIERTOS }).sel).toEqual({ "segunda.aquo": ["niega"], "segunda.derecho": ["nada"] });
+    expect(deserializar("s.segunda.aquo=sin_dato,niega", { defaults: ABIERTOS, casos: [porId("quintero")] }).sel).toEqual({ "segunda.aquo": ["niega"] });
+  });
+
+  it("los filtros propios solo valen con su carril a la vista, por la URL igual que al cambiar de pestaña", () => {
+    const mezclados = [...CASOS, { ...porId("quintero"), id: "primera-1", proceso: "primera" as never, segunda: null }];
+    const url = "s.segunda.aquo=niega&s.alertas=con";
+    // Inicio con varios procesos y la pestaña «Todos»: no hay carril propio que muestre el filtro.
+    expect(deserializar(url, { defaults: ABIERTOS, casos: mezclados }).sel).toEqual({ alertas: ["con"] });
+    expect(deserializar(`${url}&p=segunda`, { defaults: ABIERTOS, casos: mezclados }).sel).toEqual({ alertas: ["con"], "segunda.aquo": ["niega"] });
+    expect(deserializar(url, { defaults: inicial("segunda"), casos: mezclados }).sel).toEqual({ alertas: ["con"], "segunda.aquo": ["niega"] });
+    // Inicio con un solo proceso: su carril se ve, y sin casos no se sabe cuál es, así que se conserva.
+    expect(deserializar(url, { defaults: ABIERTOS, casos: CASOS }).sel).toEqual({ alertas: ["con"], "segunda.aquo": ["niega"] });
+    expect(deserializar(url, { defaults: ABIERTOS }).sel).toEqual({ alertas: ["con"], "segunda.aquo": ["niega"] });
+    expect(deserializar(`${url}&p=penal`, { defaults: ABIERTOS }).sel).toEqual({ alertas: ["con"] });
+  });
+
+  it("la fila muestra sus datos cortos y resalta los que reflejan un filtro elegido", () => {
+    expect(datosFila(porId("quintero"), ABIERTOS)).toEqual([
+      { texto: "1ª inst.: Negó el amparo", clave: "aquo", valor: "niega", eco: false },
+      { texto: "Impugna: accionante", clave: "impugna", valor: "accionante", eco: false },
+      { texto: "2 citas por revisar", tono: "alerta", clave: "revisar", valor: "citas", eco: false },
+    ]);
+    expect(textos(porId("zuluaga"))).toEqual(["1ª inst.: Amparó", "Impugna: accionada", "Pruebas nuevas en 2ª", "Jev discrepa"]);
+    expect(textos(porId("mejia"))).toEqual(["1ª inst.: Negó el amparo", "Impugna: accionante", "Fallo: revoca y ampara"]);
+    expect(datosFila(porId("mejia"), ABIERTOS)[2]).toMatchObject({ tono: "ok", clave: "sentido", valor: "revoca" });
+    expect(textos(porId("ocampo"))).toEqual(["1ª inst.: Amparó", "Impugna: accionada", "Fallo: confirma", "Pruebas nuevas en 2ª"]);
+    expect(textos(porId("gaviria"))).toEqual(["1ª inst.: Carencia actual de objeto", "Impugna: varios"]);
+    expect(textos(porId("arango"))).toEqual([]);
+    expect(textos(porId("cardenas"))).toEqual([]);
+
+    const con = (d: Partial<DatosSegunda>) => ({ ...porId("arango"), segunda: conSegunda(d) });
+    expect(textos(con({ n_citas_revisar: 1 }))).toEqual(["1 cita por revisar"]);
+    expect(textos(con({ resultado: "CONFIRMAR", sustitutiva: "AMPARAR" }))).toEqual(["Fallo: confirma"]);
+    expect(textos(con({ resultado: "MODIFICAR", sustitutiva: "CARENCIA_HECHO_SUPERADO" }))).toEqual(["Fallo: modifica y declara hecho superado"]);
+    expect(textos(con({ resultado: "REVOCAR", sustitutiva: "NEGAR", pruebas_nuevas: false }))).toEqual(["Fallo: revoca y niega"]);
+
+    const f = elegir(elegir(ABIERTOS, "revisar", "jev"), "pruebas", "con");
+    expect(datosFila(porId("zuluaga"), f).filter((d) => d.eco).map((d) => d.texto)).toEqual(["Pruebas nuevas en 2ª", "Jev discrepa"]);
+    expect(datosFila(porId("quintero"), f).some((d) => d.eco)).toBe(false);
   });
 });

@@ -14,7 +14,7 @@
 .ficha .meta .radicado { flex: none; }
 .ficha .partes { margin-top: 0.1rem; overflow: hidden; font-size: 0.88rem; color: var(--suave); text-overflow: ellipsis; white-space: nowrap; }
 .extras { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
-.chip.eco { background: #e2f0f4; color: var(--acento-2); box-shadow: inset 0 0 0 1px var(--acento); font-weight: 600; }
+.dato.eco { background: #e2f0f4; color: var(--acento-2); box-shadow: inset 0 0 0 1px var(--acento); font-weight: 600; }
 .ficha .avance { display: grid; gap: 0.35rem; }
 .seg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
 .seg4 i { height: 5px; border-radius: 3px; background: var(--fondo-2); }
@@ -41,6 +41,8 @@
 .fila-c :is(h3, h4), .fila-c small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fila-c :is(h3, h4) { margin: 0; font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
 .c-nombre small { display: block; }
+.c-marcas { display: flex; gap: 0.3rem; min-width: 0; }
+.c-marcas .dato { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .c-cuando { text-align: right; }
 .fila-c .btn { justify-self: end; }
 .btn.chico { padding: 0.32rem 0.8rem; font-size: 0.86rem; }

@@ -5,7 +5,7 @@ import type { CasoResumen } from "../../api/contrato";
 import { plural, pluralizar } from "../../estado";
 import { consulta, reemplazarConsulta, ruta } from "../../rutas";
 import { Boton, cx, Vacio } from "../../ui";
-import { esPropia, estadoDe, generales, PROCESOS, procesoDe, propias as propiasDe, type TipoProceso } from "./facetas";
+import { esPropia, estadoDe, generales, PROCESOS, procesoDe, propiasVisibles, type TipoProceso } from "./facetas";
 import { hrefCaso } from "./agrupar";
 import { Ficha, FichaCompacta } from "./Ficha";
 import {
@@ -147,7 +147,7 @@ function Lista({ casos, proceso, id }: { casos: readonly CasoResumen[]; proceso?
   const proc = procesoActivo(filtros, casos);
   const alcance = useMemo(() => (filtros.proceso === "todos" ? casos : casos.filter((c) => procesoDe(c) === filtros.proceso)), [casos, filtros.proceso]);
   const facetas = useMemo(() => generales(proc, alcance), [proc, alcance]);
-  const propias = propiasDe(proc);
+  const propias = useMemo(() => propiasVisibles(proc, alcance), [proc, alcance]);
   const todas = [...facetas, ...propias];
   const preds = predicados(filtros, hoy);
   const visibles = casos.filter((c) => pasa(c, preds));
@@ -303,13 +303,10 @@ function Lista({ casos, proceso, id }: { casos: readonly CasoResumen[]; proceso?
       {grupos.map((g) => {
         const fichas = (
           <div class={cx("fichas", compacta && "compacta")}>
-            {g.casos.map((caso) =>
-              compacta ? (
-                <FichaCompacta key={caso.id} caso={caso} nivel={nivel} mostrarProceso={!proc} />
-              ) : (
-                <Ficha key={caso.id} caso={caso} nivel={nivel} mostrarProceso={!proc} datos={datosFila(caso, filtros)} />
-              ),
-            )}
+            {g.casos.map((caso) => {
+              const Fila = compacta ? FichaCompacta : Ficha;
+              return <Fila key={caso.id} caso={caso} nivel={nivel} mostrarProceso={!proc} datos={proc ? datosFila(caso, filtros) : undefined} />;
+            })}
           </div>
         );
         return agrupado ? (

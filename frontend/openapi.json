@@ -264,6 +264,11 @@
             "title": "Nombre",
             "type": "string"
           },
+          "proceso": {
+            "const": "segunda",
+            "title": "Proceso",
+            "type": "string"
+          },
           "radicado": {
             "anyOf": [
               {
@@ -275,6 +280,16 @@
             ],
             "title": "Radicado"
           },
+          "segunda": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatosSegunda"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "siguiente_paso": {
             "title": "Siguiente Paso",
             "type": "string"
@@ -283,6 +298,7 @@
         "required": [
           "id",
           "nombre",
+          "proceso",
           "radicado",
           "accionante",
           "accionadas",
@@ -293,7 +309,8 @@
           "n_insumos",
           "n_alertas",
           "job_activo",
-          "actualizado"
+          "actualizado",
+          "segunda"
         ],
         "title": "CasoResumen",
         "type": "object"
@@ -364,6 +381,134 @@
           "detalle"
         ],
         "title": "CitaVista",
+        "type": "object"
+      },
+      "DatosSegunda": {
+        "description": "Datos propios de la segunda instancia para filtrar la lista de casos (ver resumen_segunda).",
+        "properties": {
+          "decision_a_quo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ampara",
+                  "niega",
+                  "improcedente",
+                  "carencia_actual_de_objeto",
+                  "otro"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision A Quo"
+          },
+          "derechos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Derechos",
+            "type": "array"
+          },
+          "impugnante": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accionante",
+                  "accionada",
+                  "vinculada",
+                  "otro",
+                  "varios"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impugnante"
+          },
+          "jev_discrepa": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Discrepa"
+          },
+          "n_citas_revisar": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Citas Revisar"
+          },
+          "pruebas_nuevas": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pruebas Nuevas"
+          },
+          "resultado": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CONFIRMAR",
+                  "REVOCAR",
+                  "MODIFICAR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultado"
+          },
+          "sustitutiva": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AMPARAR",
+                  "NEGAR",
+                  "IMPROCEDENTE",
+                  "CARENCIA_HECHO_SUPERADO",
+                  "CARENCIA_DANO_CONSUMADO",
+                  "CARENCIA_SOBREVINIENTE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sustitutiva"
+          }
+        },
+        "required": [
+          "decision_a_quo",
+          "impugnante",
+          "resultado",
+          "sustitutiva",
+          "derechos",
+          "pruebas_nuevas",
+          "n_citas_revisar",
+          "jev_discrepa"
+        ],
+        "title": "DatosSegunda",
         "type": "object"
       },
       "DecisionVistaRespuesta": {

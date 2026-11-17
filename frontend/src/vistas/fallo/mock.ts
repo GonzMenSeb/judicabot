@@ -148,6 +148,7 @@ const RESUMENES: CasoResumen[] = [
   {
     id: CASO,
     nombre: "Quintero c. EPS Horizonte",
+    proceso: "segunda",
     radicado: "05001408800920260041201",
     accionante: "Marta Inés Quintero Bedoya",
     accionadas: ["EPS Horizonte Salud S.A.S."],
@@ -159,10 +160,21 @@ const RESUMENES: CasoResumen[] = [
     n_alertas: 3,
     job_activo: null,
     actualizado: new Date().toISOString(),
+    segunda: {
+      decision_a_quo: "niega",
+      impugnante: "accionante",
+      resultado: "REVOCAR",
+      sustitutiva: "AMPARAR",
+      derechos: ["salud", "mínimo vital"],
+      pruebas_nuevas: true,
+      n_citas_revisar: null,
+      jev_discrepa: null,
+    },
   },
   {
     id: SIN_FALLO,
     nombre: "Duque c. EPS Ceiba Salud",
+    proceso: "segunda",
     radicado: "05001408800920260028801",
     accionante: "Luis Duque Salazar",
     accionadas: ["EPS Ceiba Salud"],
@@ -174,6 +186,16 @@ const RESUMENES: CasoResumen[] = [
     n_alertas: 1,
     job_activo: null,
     actualizado: new Date().toISOString(),
+    segunda: {
+      decision_a_quo: "improcedente",
+      impugnante: "accionada",
+      resultado: null,
+      sustitutiva: null,
+      derechos: ["petición"],
+      pruebas_nuevas: false,
+      n_citas_revisar: 1,
+      jev_discrepa: false,
+    },
   },
 ];
 

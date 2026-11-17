@@ -241,12 +241,17 @@ export function Tablero(props: PropsTablero) {
         {proceso && propias.length > 0 && (
           <div class="carril propio" role="group" aria-label={`Filtros propios de ${infoProceso(proceso).corto}`}>
             <p class="carril-cab">
-              <IconoProceso tipo={proceso} />
+              <span class="carril-ico" aria-hidden="true">
+                <IconoProceso tipo={proceso} />
+              </span>
               Propios de {infoProceso(proceso).corto}
               {nPropios > 0 && (
-                <span class="cuantos" title={plural(nPropios, "filtro propio aplicado", "filtros propios aplicados")}>
-                  {nPropios}
-                </span>
+                <>
+                  <span class="cuantos" aria-hidden="true" title={plural(nPropios, "filtro propio aplicado", "filtros propios aplicados")}>
+                    {nPropios}
+                  </span>
+                  <span class="solo-lectura">{plural(nPropios, "filtro propio aplicado", "filtros propios aplicados")}</span>
+                </>
               )}
             </p>
             <div class="pastillas">{propias.map(pastilla)}</div>

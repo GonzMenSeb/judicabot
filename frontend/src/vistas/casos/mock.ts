@@ -3,10 +3,22 @@ import type { MockRuta } from "../../api/mock";
 
 const minutos = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
 
+const VACIA = {
+  decision_a_quo: null,
+  impugnante: null,
+  resultado: null,
+  sustitutiva: null,
+  derechos: [],
+  pruebas_nuevas: null,
+  n_citas_revisar: null,
+  jev_discrepa: null,
+};
+
 export const casosMock = [
   {
     id: "quintero-bedoya",
     nombre: "Quintero Bedoya c. EPS Horizonte Salud",
+    proceso: "segunda",
     radicado: "2026-00412",
     accionante: "Marta Inés Quintero Bedoya",
     accionadas: ["EPS Horizonte Salud S.A.S."],
@@ -18,10 +30,21 @@ export const casosMock = [
     n_alertas: 1,
     job_activo: null,
     actualizado: minutos(25),
+    segunda: {
+      decision_a_quo: "niega",
+      impugnante: "accionante",
+      resultado: null,
+      sustitutiva: null,
+      derechos: ["salud", "mínimo vital"],
+      pruebas_nuevas: true,
+      n_citas_revisar: 2,
+      jev_discrepa: true,
+    },
   },
   {
     id: "cardenas-ospina",
     nombre: "Cárdenas Ospina c. Aseguradora Montaña Azul",
+    proceso: "segunda",
     radicado: "2026-00398",
     accionante: "Luis Cárdenas Ospina",
     accionadas: ["Aseguradora Montaña Azul"],
@@ -33,10 +56,12 @@ export const casosMock = [
     n_alertas: 2,
     job_activo: null,
     actualizado: minutos(60 * 26),
+    segunda: VACIA,
   },
   {
     id: "arango-londono",
     nombre: "Arango Londoño c. EPS Ceiba Salud",
+    proceso: "segunda",
     radicado: "2026-00377",
     accionante: "Ana Arango Londoño",
     accionadas: ["EPS Ceiba Salud"],
@@ -48,10 +73,12 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 27),
+    segunda: VACIA,
   },
   {
     id: "restrepo-gil",
     nombre: "Restrepo Gil c. Fondo Pensional Altamira",
+    proceso: "segunda",
     radicado: "2026-00390",
     accionante: "Carlos Restrepo Gil",
     accionadas: ["Fondo Pensional Altamira"],
@@ -63,10 +90,21 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: "job-restrepo",
     actualizado: minutos(3),
+    segunda: {
+      decision_a_quo: "carencia_actual_de_objeto",
+      impugnante: "accionada",
+      resultado: null,
+      sustitutiva: null,
+      derechos: ["petición"],
+      pruebas_nuevas: false,
+      n_citas_revisar: null,
+      jev_discrepa: null,
+    },
   },
   {
     id: "mejia-rios",
     nombre: "Mejía Ríos c. Fondo Pensional Altamira",
+    proceso: "segunda",
     radicado: "2026-00301",
     accionante: "Elena Mejía Ríos",
     accionadas: ["Fondo Pensional Altamira"],
@@ -78,10 +116,21 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 24 * 13),
+    segunda: {
+      decision_a_quo: "improcedente",
+      impugnante: "accionante",
+      resultado: "REVOCAR",
+      sustitutiva: "AMPARAR",
+      derechos: ["debido proceso", "petición"],
+      pruebas_nuevas: false,
+      n_citas_revisar: null,
+      jev_discrepa: null,
+    },
   },
   {
     id: "duque-salazar",
     nombre: "Duque Salazar c. EPS Ceiba Salud",
+    proceso: "segunda",
     radicado: "2026-00288",
     accionante: "Jorge Duque Salazar",
     accionadas: ["EPS Ceiba Salud"],
@@ -93,6 +142,16 @@ export const casosMock = [
     n_alertas: 0,
     job_activo: null,
     actualizado: minutos(60 * 24 * 17),
+    segunda: {
+      decision_a_quo: "ampara",
+      impugnante: "varios",
+      resultado: "CONFIRMAR",
+      sustitutiva: null,
+      derechos: ["salud", "vida digna"],
+      pruebas_nuevas: true,
+      n_citas_revisar: null,
+      jev_discrepa: null,
+    },
   },
 ] satisfies CasoResumen[];
 

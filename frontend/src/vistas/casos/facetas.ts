@@ -5,7 +5,7 @@
  * Procesos
  *   PROCESOS: { id, corto, largo }[]          pestañas en orden: todos, primera, segunda, desacato, penal.
  *   infoProceso(id) / esProceso(x)            búsqueda y guarda de tipo.
- *   procesoDe(caso): TipoProceso              hoy siempre "segunda" (PR2 lo lee de caso.proceso).
+ *   procesoDe(caso): TipoProceso              caso.proceso.
  *
  * Estados (los 7 de la API en 6 grupos de la interfaz)
  *   ESTADOS: { id, etiqueta, tono, api[] }[]  orden de la franja y de los grupos.
@@ -19,14 +19,20 @@
  *   generales(proceso, casos): Faceta[]       Juzgado, Entidad accionada (opciones sacadas de `casos`, agrupando
  *                                             variantes sin tildes ni mayúsculas; se omiten si no hay ninguna) y
  *                                             Con alertas. `casos` = los casos en alcance (pestaña o página).
- *   PROPIAS[proceso] / propias(proceso)       facetas propias; propias() les antepone el proceso a la clave
- *                                             ("segunda.aquo"). Vacías en PR1; PR2 llena «segunda».
+ *   PROPIAS[proceso](casos)                   facetas propias con clave local ("aquo"); `casos` da las opciones
+ *   propias(proceso, casos?)                  dinámicas (Derecho, «Sin dato»). propias() antepone el proceso a la
+ *                                             clave ("segunda.aquo", en la URL s.segunda.aquo); propiasVisibles()
+ *                                             omite además las dinámicas sin opciones. Hoy solo «segunda» tiene facetas: Decisión
+ *                                             1ª inst., Impugnó, Sentido 2ª inst., Derecho, Por revisar y el
+ *                                             interruptor Con pruebas nuevas, todas sobre caso.segunda (null = sin
+ *                                             datos: ningún valor, o «Sin dato»/«Sin decidir»).
  *   FILA[proceso](caso): DatoFila[]           datos propios que la fila muestra; clave/valor dicen qué filtro
- *                                             reflejan (filtros.datosFila calcula el resaltado). Vacía en PR1.
+ *                                             reflejan (filtros.datosFila calcula el resaltado).
  *   facetaPorClave(clave, casos?)             la faceta de una clave de filtro, o undefined si no existe.
  *   esPropia(clave), opciones(...etiquetas)   ayudas.
  */
-import type { CasoResumen, EstadoCasoApi } from "../../api/contrato";
+import type { CasoResumen, DatosSegunda, EstadoCasoApi, ImpugnanteCaso, ResultadoCaso, SentidoAQuo, SustitutivaCaso } from "../../api/contrato";
+import { plural } from "../../estado/formato";
 import { plano, type TonoFicha } from "./agrupar";
 import type { TipoProceso } from "./iconos";
 
@@ -51,8 +57,8 @@ export const infoProceso = (id: ProcesoFiltro): InfoProceso => PROCESOS.find((p)
 
 export const esProceso = (x: string): x is ProcesoFiltro => PROCESOS.some((p) => p.id === x);
 
-/** El proceso del caso. CasoResumen aún no lo trae: todos los casos de hoy son de segunda instancia. */
-export const procesoDe = (_caso: CasoResumen): TipoProceso => "segunda";
+/** El proceso del caso. */
+export const procesoDe = (caso: CasoResumen): TipoProceso => caso.proceso;
 
 export type EstadoUi = "decidir" | "faltan" | "error" | "preparar" | "redaccion" | "terminado";
 
@@ -200,24 +206,6 @@ export function generales(proceso: ProcesoFiltro | null, casos: readonly CasoRes
   return [juzgado(proceso, casos), entidad(proceso, casos), ALERTAS].filter((f) => !f.dinamica || f.opciones.length > 0);
 }
 
-/** Facetas propias de cada proceso, con clave local ("aquo"). Vacías hasta que el resumen traiga sus datos (PR2). */
-export const PROPIAS: Readonly<Record<TipoProceso, readonly Faceta[]>> = {
-  primera: [],
-  segunda: [],
-  desacato: [],
-  penal: [],
-};
-
-/** Clave de filtro de una faceta propia: "<proceso>.<clave>". */
-export const clavePropia = (proceso: TipoProceso, clave: string) => `${proceso}.${clave}`;
-
-/** ¿La clave de filtro es de un proceso concreto? Las pestañas de proceso las ignoran al contar. */
-export const esPropia = (clave: string) => clave.includes(".");
-
-/** Las facetas propias del proceso, con la clave ya prefijada para usarla en Filtros.sel. */
-export const propias = (proceso: TipoProceso | null): Faceta[] =>
-  proceso ? PROPIAS[proceso].map((f) => ({ ...f, clave: clavePropia(proceso, f.clave) })) : [];
-
 export interface DatoFila {
   texto: string;
   tono?: "ok" | "alerta" | "mal";
@@ -227,12 +215,169 @@ export interface DatoFila {
   valor?: string | readonly string[];
 }
 
+/* ---------- Segunda instancia (caso.segunda) ---------- */
+
+const SIN_DATO = "sin_dato";
+const SIN_DECIDIR = "sin_decidir";
+
+const AQUO: Readonly<Record<SentidoAQuo, string>> = {
+  ampara: "Amparó",
+  niega: "Negó el amparo",
+  improcedente: "Declaró improcedente",
+  carencia_actual_de_objeto: "Carencia actual de objeto",
+  otro: "Otra",
+};
+
+const IMPUGNA: Readonly<Record<ImpugnanteCaso, string>> = {
+  accionante: "Accionante",
+  accionada: "Accionada",
+  vinculada: "Vinculada",
+  otro: "Otro",
+  varios: "Varios",
+};
+
+/** Ids en minúscula para la URL (s.segunda.sentido=revoca); etiquetas en el tiempo del fallo ya dictado. */
+const SENTIDO: Readonly<Record<ResultadoCaso, Opcion>> = {
+  CONFIRMAR: { id: "confirma", etiqueta: "Confirma" },
+  REVOCAR: { id: "revoca", etiqueta: "Revoca" },
+  MODIFICAR: { id: "modifica", etiqueta: "Modifica" },
+};
+
+/** Lo que sigue al verbo en el dato de la fila: «Fallo: revoca y ampara». */
+const SUSTITUTIVA: Readonly<Record<SustitutivaCaso, string>> = {
+  AMPARAR: "y ampara",
+  NEGAR: "y niega",
+  IMPROCEDENTE: "y declara improcedente",
+  CARENCIA_HECHO_SUPERADO: "y declara hecho superado",
+  CARENCIA_DANO_CONSUMADO: "y declara daño consumado",
+  CARENCIA_SOBREVINIENTE: "y declara situación sobreviniente",
+};
+
+const deRegistro = (r: Readonly<Record<string, string>>): Opcion[] => Object.entries(r).map(([id, etiqueta]) => ({ id, etiqueta }));
+
+/** Las opciones fijas más la de «sin valor» si algún caso cae en ella (sin `casos`, siempre, para validar la URL). */
+const conVacia = (fijas: Opcion[], casos: readonly CasoResumen[], valor: (c: CasoResumen) => string, vacia: Opcion): Opcion[] =>
+  casos.length === 0 || casos.some((c) => valor(c) === vacia.id) ? [...fijas, vacia] : fijas;
+
+const seg = (c: CasoResumen): DatosSegunda | null => c.segunda ?? null;
+
+const aquoDe = (c: CasoResumen) => seg(c)?.decision_a_quo ?? SIN_DATO;
+const sentidoDe = (c: CasoResumen) => {
+  const r = seg(c)?.resultado;
+  return r ? SENTIDO[r].id : SIN_DECIDIR;
+};
+const derechosDe = (c: CasoResumen) => seg(c)?.derechos ?? [];
+
+function segunda(casos: readonly CasoResumen[]): Faceta[] {
+  return [
+    {
+      clave: "aquo",
+      etiqueta: "Decisión de primera instancia",
+      corto: "Decisión 1ª inst.",
+      tipo: "varias",
+      opciones: conVacia(deRegistro(AQUO), casos, aquoDe, { id: SIN_DATO, etiqueta: "Sin dato" }),
+      valor: aquoDe,
+    },
+    {
+      clave: "impugna",
+      etiqueta: "Quién impugnó",
+      corto: "Impugnó",
+      tipo: "varias",
+      opciones: deRegistro(IMPUGNA),
+      valor: (c) => seg(c)?.impugnante,
+    },
+    {
+      clave: "sentido",
+      etiqueta: "Sentido del fallo de segunda instancia",
+      corto: "Sentido 2ª inst.",
+      tipo: "varias",
+      opciones: conVacia(Object.values(SENTIDO), casos, sentidoDe, { id: SIN_DECIDIR, etiqueta: "Sin decidir" }),
+      valor: sentidoDe,
+    },
+    {
+      clave: "derecho",
+      etiqueta: "Derecho invocado",
+      corto: "Derecho",
+      tipo: "buscable",
+      dinamica: true,
+      opciones: dinamicas(casos, derechosDe),
+      valor: (c) => derechosDe(c).map(normalizar),
+    },
+    {
+      clave: "revisar",
+      etiqueta: "Por revisar antes de decidir",
+      corto: "Por revisar",
+      tipo: "varias",
+      opciones: [
+        { id: "citas", etiqueta: "Citas por revisar" },
+        { id: "jev", etiqueta: "Jev discrepa" },
+      ],
+      valor: (c) => [(seg(c)?.n_citas_revisar ?? 0) > 0 ? "citas" : null, seg(c)?.jev_discrepa ? "jev" : null],
+    },
+    {
+      clave: "pruebas",
+      etiqueta: "Pruebas nuevas en segunda instancia",
+      corto: "Con pruebas nuevas",
+      tipo: "interruptor",
+      activo: "con",
+      opciones: [
+        { id: "con", etiqueta: "Con pruebas nuevas" },
+        { id: "sin", etiqueta: "Sin pruebas nuevas" },
+      ],
+      valor: (c) => {
+        const p = seg(c)?.pruebas_nuevas;
+        return p === true ? "con" : p === false ? "sin" : null;
+      },
+    },
+  ];
+}
+
+function filaSegunda(c: CasoResumen): (DatoFila | null)[] {
+  const s = seg(c);
+  if (!s) return [];
+  const sentido = s.resultado ? SENTIDO[s.resultado] : null;
+  const sustitutiva = s.resultado !== "CONFIRMAR" && s.sustitutiva ? ` ${SUSTITUTIVA[s.sustitutiva]}` : "";
+  const citas = s.n_citas_revisar ?? 0;
+  return [
+    s.decision_a_quo ? { texto: `1ª inst.: ${AQUO[s.decision_a_quo]}`, clave: "aquo", valor: s.decision_a_quo } : null,
+    s.impugnante ? { texto: `Impugna: ${IMPUGNA[s.impugnante].toLowerCase()}`, clave: "impugna", valor: s.impugnante } : null,
+    sentido ? { texto: `Fallo: ${sentido.etiqueta.toLowerCase()}${sustitutiva}`, tono: "ok", clave: "sentido", valor: sentido.id } : null,
+    s.pruebas_nuevas ? { texto: "Pruebas nuevas en 2ª", clave: "pruebas", valor: "con" } : null,
+    citas > 0 ? { texto: `${plural(citas, "cita")} por revisar`, tono: "alerta", clave: "revisar", valor: "citas" } : null,
+    s.jev_discrepa ? { texto: "Jev discrepa", tono: "alerta", clave: "revisar", valor: "jev" } : null,
+  ];
+}
+
+const ninguna = (): Faceta[] => [];
+
+/** Facetas propias de cada proceso, con clave local ("aquo"). `casos`: los casos en alcance, para las opciones dinámicas. */
+export const PROPIAS: Readonly<Record<TipoProceso, (casos: readonly CasoResumen[]) => readonly Faceta[]>> = {
+  primera: ninguna,
+  segunda,
+  desacato: ninguna,
+  penal: ninguna,
+};
+
+/** Clave de filtro de una faceta propia: "<proceso>.<clave>". */
+export const clavePropia = (proceso: TipoProceso, clave: string) => `${proceso}.${clave}`;
+
+/** ¿La clave de filtro es de un proceso concreto? Las pestañas de proceso las ignoran al contar. */
+export const esPropia = (clave: string) => clave.includes(".");
+
+/** Las facetas propias del proceso, con la clave ya prefijada para usarla en Filtros.sel. Sin `casos`, las dinámicas vienen sin opciones. */
+export const propias = (proceso: TipoProceso | null, casos: readonly CasoResumen[] = []): Faceta[] =>
+  proceso ? PROPIAS[proceso](casos).map((f) => ({ ...f, clave: clavePropia(proceso, f.clave) })) : [];
+
+/** Las propias que se muestran: sin las dinámicas que se quedaron sin opciones (p. ej. Derecho sin derechos). */
+export const propiasVisibles = (proceso: TipoProceso | null, casos: readonly CasoResumen[]): Faceta[] =>
+  propias(proceso, casos).filter((f) => !f.dinamica || f.opciones.length > 0);
+
 const sinDatos = (): (DatoFila | null)[] => [];
 
-/** Datos propios que cada fila muestra según su proceso. Vacíos en PR1. */
+/** Datos propios que cada fila muestra según su proceso. */
 export const FILA: Readonly<Record<TipoProceso, (caso: CasoResumen) => readonly (DatoFila | null)[]>> = {
   primera: sinDatos,
-  segunda: sinDatos,
+  segunda: filaSegunda,
   desacato: sinDatos,
   penal: sinDatos,
 };
@@ -244,5 +389,5 @@ export function facetaPorClave(clave: string, casos: readonly CasoResumen[] = []
   if (clave === "alertas") return ALERTAS;
   const [proceso = "", local] = clave.split(".", 2);
   if (!esProceso(proceso) || proceso === "todos" || !local) return undefined;
-  return propias(proceso).find((f) => f.clave === clave);
+  return propias(proceso, casos).find((f) => f.clave === clave);
 }

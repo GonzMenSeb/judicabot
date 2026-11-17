@@ -10,6 +10,13 @@ type Sin<T, K extends keyof T> = Omit<T, K>;
 
 export type VerificacionContrato = [
   CasoResumen: Afirmar<Igual<C.CasoResumen, S["CasoResumen"]>>,
+  CasoResumenProceso: Afirmar<Igual<C.ProcesoCaso, S["CasoResumen"]["proceso"]>>,
+  CasoResumenSegunda: Afirmar<Igual<C.CasoResumen["segunda"], S["CasoResumen"]["segunda"]>>,
+  DatosSegunda: Afirmar<Igual<C.DatosSegunda, S["DatosSegunda"]>>,
+  DatosSegundaDecisionAQuo: Afirmar<Igual<C.SentidoAQuo, NonNullable<S["DatosSegunda"]["decision_a_quo"]>>>,
+  DatosSegundaImpugnante: Afirmar<Igual<C.ImpugnanteCaso, NonNullable<S["DatosSegunda"]["impugnante"]>>>,
+  DatosSegundaResultado: Afirmar<Igual<C.ResultadoCaso, NonNullable<S["DatosSegunda"]["resultado"]>>>,
+  DatosSegundaSustitutiva: Afirmar<Igual<C.SustitutivaCaso, NonNullable<S["DatosSegunda"]["sustitutiva"]>>>,
   CrearCasoRespuesta: Afirmar<Igual<C.CrearCasoRespuesta, S["CasoCreado"]>>,
   CampoFormato: Afirmar<Igual<C.CampoFormato, S["CampoFormato"]>>,
   Despacho: Afirmar<Igual<C.Despacho, S["Despacho"]>>,
