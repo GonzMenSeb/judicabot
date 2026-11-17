@@ -1074,6 +1074,90 @@ def test_declaracion_ia(tmp_path, compulsa):
     assert "Eje de la decisión | El eje de la decisión de ejemplo." in texto
 
 
+GEN_TITULOS = {
+    "A": {"III": "FALLO RECURRIDO", "IV": "IMPUGNACIÓN", "V": "CONSIDERACIONES DEL JUZGADO"},
+    "B": {"III": "LA SENTENCIA IMPUGNADA", "IV": "LA IMPUGNACIÓN", "V": "CONSIDERACIONES"},
+}
+
+
+FILAS_IA = {
+    "antecedentes": (lambda g: "ANTECEDENTES DEL CASO", "Redactado a partir de los documentos del expediente"),
+    "sentencia_impugnada": (lambda g: GEN_TITULOS[g]["III"], "Redactado a partir del fallo de primera instancia"),
+    "impugnacion": (lambda g: GEN_TITULOS[g]["IV"], "Redactado a partir del escrito de impugnación"),
+    "consideraciones": (
+        lambda g: f"{GEN_TITULOS[g]['V']}: procedibilidad y bloques temáticos",
+        "Marco doctrinal sin aplicación al caso",
+    ),
+}
+@pytest.mark.parametrize("compulsa", [True, False])
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_mapa_secciones_sin_ediciones_es_igual_al_anterior(gen, compulsa):
+    base = render._mapa_secciones(gen, compulsa)
+    assert render._mapa_secciones(gen, compulsa, frozenset()) == base
+    assert render._mapa_secciones(gen, compulsa, set()) == base
+    assert render._mapa_secciones(gen, compulsa, {"otra", "caso"}) == base
+    for seccion, observacion in FILAS_IA.values():
+        assert [seccion(gen), "IA", observacion] in base
+    assert not any("edición humana" in fila[1] or "Corregido" in fila[2] for fila in base)
+    assert len(base) == (11 if compulsa else 10)
+
+
+@pytest.mark.parametrize("compulsa", [True, False])
+@pytest.mark.parametrize("gen", ["A", "B"])
+@pytest.mark.parametrize("clave", list(FILAS_IA))
+def test_mapa_secciones_marca_solo_la_fila_editada(gen, compulsa, clave):
+    base = render._mapa_secciones(gen, compulsa)
+    filas = render._mapa_secciones(gen, compulsa, frozenset({clave}))
+    assert len(filas) == len(base)
+    distintas = [(a, b) for a, b in zip(base, filas) if a != b]
+    assert len(distintas) == 1
+    seccion, observacion = FILAS_IA[clave]
+    assert distintas[0][0] == [seccion(gen), "IA", observacion]
+    assert distintas[0][1] == [
+        seccion(gen),
+        "IA + edición humana",
+        f"{observacion}. Corregido por el despacho en el borrador.",
+    ]
+
+
+def test_mapa_secciones_marca_varias_filas_y_deja_las_demas():
+    filas = render._mapa_secciones("B", True, {"antecedentes", "consideraciones"})
+    origenes = {fila[0]: fila[1] for fila in filas}
+    assert origenes["ANTECEDENTES DEL CASO"] == "IA + edición humana"
+    assert origenes["CONSIDERACIONES: procedibilidad y bloques temáticos"] == "IA + edición humana"
+    assert origenes["LA SENTENCIA IMPUGNADA"] == "IA" and origenes["LA IMPUGNACIÓN"] == "IA"
+    assert origenes["CASO CONCRETO"] == "IA"
+    assert sum(1 for fila in filas if "edición humana" in fila[1]) == 2
+
+
+def test_declaracion_ia_marca_las_secciones_con_edicion_humana(tmp_path):
+    estado = construir_estado()
+    estado["ediciones_humanas"] = ["antecedentes", "consideraciones"]
+    texto = lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY))
+    marcadas = [x for x in texto if "IA + edición humana" in x]
+    assert marcadas == [
+        "ANTECEDENTES DEL CASO | IA + edición humana | Redactado a partir de los documentos del expediente. "
+        "Corregido por el despacho en el borrador.",
+        f"{GEN_TITULOS[Config().plantilla_gen]['V']}: procedibilidad y bloques temáticos | IA + edición humana | "
+        "Marco doctrinal sin aplicación al caso. Corregido por el despacho en el borrador.",
+    ]
+    plano = "\n".join(texto)
+    assert plano.count("Corregido por el despacho en el borrador.") == 2
+    assert f"{GEN_TITULOS[Config().plantilla_gen]['III']} | IA | Redactado a partir del fallo de primera instancia" in plano
+    assert f"{GEN_TITULOS[Config().plantilla_gen]['IV']} | IA | Redactado a partir del escrito de impugnación" in plano
+    assert "CASO CONCRETO | IA |" in plano
+
+
+@pytest.mark.parametrize("ediciones", [None, [], ["otra"]])
+def test_declaracion_ia_sin_ediciones_humanas_no_cambia(tmp_path, ediciones):
+    estado = construir_estado()
+    base = lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "base.docx", hoy=HOY))
+    estado["ediciones_humanas"] = ediciones
+    texto = lineas(render.render_declaracion_ia(estado, Config(), tmp_path / "d.docx", hoy=HOY))
+    assert texto == base
+    assert not any("edición humana" in x for x in texto)
+
+
 def test_declaracion_ia_anexo_transcribe_el_prompt_vigente_y_las_instrucciones(tmp_path):
     from tutela2 import prompts
 

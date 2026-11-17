@@ -74,6 +74,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/casos/{caso_id}/ediciones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Leer Ediciones */
+        get: operations["leer_ediciones_api_casos__caso_id__ediciones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/ediciones/{pieza}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Editar Pieza */
+        put: operations["editar_pieza_api_casos__caso_id__ediciones__pieza__put"];
+        post?: never;
+        /** Restaurar Pieza */
+        delete: operations["restaurar_pieza_api_casos__caso_id__ediciones__pieza__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/ediciones/{pieza}/resolver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolver Pieza */
+        post: operations["resolver_pieza_api_casos__caso_id__ediciones__pieza__resolver_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/casos/{caso_id}/estado": {
         parameters: {
             query?: never;
@@ -445,6 +497,7 @@ export interface components {
         };
         /** Bloque */
         Bloque: {
+            fuente?: components["schemas"]["Fuente"] | null;
             /** Id */
             id: string;
             /**
@@ -553,6 +606,17 @@ export interface components {
             texto: string;
             /** Url */
             url?: string | null;
+        };
+        /** ConflictoEdicion */
+        ConflictoEdicion: {
+            /** Etiqueta */
+            etiqueta: string;
+            /** Huerfana */
+            huerfana: boolean;
+            /** Pieza */
+            pieza: string;
+            /** Trozos */
+            trozos: (components["schemas"]["TrozoOk"] | components["schemas"]["TrozoConflicto"])[];
         };
         /** DecisionVistaRespuesta */
         DecisionVistaRespuesta: {
@@ -727,6 +791,28 @@ export interface components {
             /** Nombre */
             nombre: string;
         };
+        /** EdicionCuerpo */
+        EdicionCuerpo: {
+            /** Original */
+            original: string;
+            /** Parrafo */
+            parrafo: number;
+            /** Texto */
+            texto: string;
+        };
+        /** EdicionesRespuesta */
+        EdicionesRespuesta: {
+            /** Conflictos */
+            conflictos: components["schemas"]["ConflictoEdicion"][];
+            /** Editable */
+            editable: boolean;
+            /** Motivo */
+            motivo: string | null;
+            /** Piezas */
+            piezas: {
+                [key: string]: components["schemas"]["PiezaEdicion"];
+            };
+        };
         /** EntradaIndice */
         EntradaIndice: {
             /** Id */
@@ -840,6 +926,13 @@ export interface components {
              */
             plantilla_gen: "A" | "B";
             valores: components["schemas"]["Despacho"];
+        };
+        /** Fuente */
+        Fuente: {
+            /** Parrafo */
+            parrafo: number;
+            /** Pieza */
+            pieza: string;
         };
         /** GeminiPreferencias */
         GeminiPreferencias: {
@@ -961,6 +1054,17 @@ export interface components {
             /** Bloques */
             bloques: components["schemas"]["Bloque"][];
         };
+        /** PiezaEdicion */
+        PiezaEdicion: {
+            /** Avisos */
+            avisos: string[];
+            /** Editados */
+            editados: number[];
+            /** Modificada */
+            modificada: boolean;
+            /** Parrafos */
+            parrafos: string[];
+        };
         /** Preferencias */
         Preferencias: {
             /** Effort */
@@ -975,6 +1079,11 @@ export interface components {
             modelo?: ("claude-sonnet-5-5" | "claude-haiku-5-5" | "claude-opus-5-5") | null;
             /** Proveedor */
             proveedor?: ("anthropic" | "gemini") | null;
+        };
+        /** ResolverCuerpo */
+        ResolverCuerpo: {
+            /** Elecciones */
+            elecciones: ("mio" | "nuevo")[];
         };
         /** RevisionBody */
         RevisionBody: {
@@ -1014,6 +1123,30 @@ export interface components {
             negrita?: boolean;
             /** Texto */
             texto: string;
+        };
+        /** TrozoConflicto */
+        TrozoConflicto: {
+            /** Mio */
+            mio: string[];
+            /** Mio Permitido */
+            mio_permitido: boolean;
+            /** Nuevo */
+            nuevo: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            tipo: "conflicto";
+        };
+        /** TrozoOk */
+        TrozoOk: {
+            /** Parrafos */
+            parrafos: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            tipo: "ok";
         };
         /** ValidationError */
         ValidationError: {
@@ -1254,6 +1387,184 @@ export interface operations {
                 content?: never;
             };
             /** @description El cuerpo no es un objeto JSON válido. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    leer_ediciones_api_casos__caso_id__ediciones_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EdicionesRespuesta"];
+                };
+            };
+            /** @description Caso o pieza no encontrados. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    editar_pieza_api_casos__caso_id__ediciones__pieza__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                pieza: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EdicionCuerpo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EdicionesRespuesta"];
+                };
+            };
+            /** @description Caso o pieza no encontrados. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La edición no es válida: el detalle es el motivo en español. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restaurar_pieza_api_casos__caso_id__ediciones__pieza__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                pieza: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EdicionesRespuesta"];
+                };
+            };
+            /** @description Caso o pieza no encontrados. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La edición no es válida: el detalle es el motivo en español. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolver_pieza_api_casos__caso_id__ediciones__pieza__resolver_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                pieza: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolverCuerpo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EdicionesRespuesta"];
+                };
+            };
+            /** @description Caso o pieza no encontrados. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La edición no es válida: el detalle es el motivo en español. */
             422: {
                 headers: {
                     [name: string]: unknown;

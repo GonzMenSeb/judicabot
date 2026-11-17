@@ -74,7 +74,7 @@ const conBitacora = (bitacora: LlamadaBitacora[] | null): EstadoCaso => {
 
 const seccionRedaccion = () => screen.getByRole("heading", { name: "Quién redactó" }).closest("section") as HTMLElement;
 
-const CLAVE = claveRevisados(CASO, VISTA_BORRADOR.sha256);
+const CLAVE = claveRevisados(CASO);
 
 async function abrir() {
   const vista = render(<Borrador caso={CASO} />);
@@ -375,14 +375,14 @@ describe("Revisión y panel", () => {
     expect(screen.getByText("Quedan 6 puntos por revisar")).toBeTruthy();
     expect(screen.getByText("Lleva 1 de 7. No bloquean la decisión.")).toBeTruthy();
     expect(within(panel()).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
-    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual(["cita-c3"]);
+    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual(["cita-c3-rechazada-sentencia T-999 de 2019"]);
     fireEvent.click(marca);
     expect(marca.getAttribute("aria-pressed")).toBe("false");
     expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual([]);
   });
 
-  it("recupera lo revisado al volver y lo reinicia si el borrador cambió", async () => {
-    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3", "cita-c2"]));
+  it("recupera lo revisado al volver y lo conserva si el borrador cambió por una edición", async () => {
+    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3-rechazada-sentencia T-999 de 2019", "cita-c2-revisar-sentencia SU-508 de 2020"]));
     simularRed();
     const primera = await abrir();
     expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("true");
@@ -394,8 +394,16 @@ describe("Revisión y panel", () => {
     otra.sha256 = "1".repeat(64);
     simularRed({ vista: otra });
     await abrir();
+    expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Quedan 5 puntos por revisar")).toBeTruthy();
+  });
+
+  it("lo revisado de una cita deja de valer si cambia su estado", async () => {
+    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3-revisar-sentencia T-999 de 2019", "cita-c2-revisar-sentencia SU-508 de 2020"]));
+    simularRed();
+    await abrir();
     expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("Quedan 7 puntos por revisar")).toBeTruthy();
+    expect(marcaRevisado("Sentencia SU-508 de 2020").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("revisar todo lo pendiente deja la barra lista para pasar a la decisión", async () => {

@@ -121,12 +121,18 @@ export type TipoBloque =
   | "pie"
   | "resuelve_numeral";
 
+export interface Fuente {
+  pieza: string;
+  parrafo: number;
+}
+
 export interface Bloque {
   id: string;
   tipo: TipoBloque;
   origen: "plantilla" | "modelo";
   seccion: string | null;
   segmentos: Segmento[];
+  fuente?: Fuente | null;
 }
 
 export interface PaginaVista {
@@ -165,6 +171,49 @@ export interface DecisionVistaRespuesta {
   encabezado: string;
   fecha_fallo: string;
   fecha_por_defecto: boolean;
+}
+
+export interface PiezaEdicion {
+  parrafos: string[];
+  editados: number[];
+  modificada: boolean;
+  avisos: string[];
+}
+
+export interface TrozoOk {
+  tipo: "ok";
+  parrafos: string[];
+}
+
+export interface TrozoConflicto {
+  tipo: "conflicto";
+  mio: string[];
+  nuevo: string[];
+  mio_permitido: boolean;
+}
+
+export interface ConflictoEdicion {
+  pieza: string;
+  etiqueta: string;
+  huerfana: boolean;
+  trozos: (TrozoOk | TrozoConflicto)[];
+}
+
+export interface EdicionesRespuesta {
+  editable: boolean;
+  motivo: string | null;
+  piezas: Record<string, PiezaEdicion>;
+  conflictos: ConflictoEdicion[];
+}
+
+export interface EdicionCuerpo {
+  parrafo: number;
+  original: string;
+  texto: string;
+}
+
+export interface ResolverCuerpo {
+  elecciones: ("mio" | "nuevo")[];
 }
 
 export type ModoJev = "apagado" | "sombra" | "relleno";

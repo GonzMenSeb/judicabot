@@ -44,8 +44,14 @@ html:has(.borrador), .borrador { --bor-dock: 4.75rem; }
   .borrador { padding-bottom: 2rem; }
   .bor-cabeza .titulo { font-size: 1.3rem; }
   .bor-doc-actual { display: none; }
+  .bor-doc-barra { flex-wrap: wrap; }
   .bor-interruptor { margin-left: auto; }
+  .bor-interruptor + .bor-interruptor { margin-left: 0; }
   .bor-txt-largo, .bor-muestra { display: none; }
+}
+
+@media (max-width: 560px) {
+  html:has(.borrador) { scroll-padding-top: 11rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

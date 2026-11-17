@@ -16,6 +16,16 @@
       },
       "Bloque": {
         "properties": {
+          "fuente": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fuente"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -366,6 +376,51 @@
         "title": "CitaVista",
         "type": "object"
       },
+      "ConflictoEdicion": {
+        "properties": {
+          "etiqueta": {
+            "title": "Etiqueta",
+            "type": "string"
+          },
+          "huerfana": {
+            "title": "Huerfana",
+            "type": "boolean"
+          },
+          "pieza": {
+            "title": "Pieza",
+            "type": "string"
+          },
+          "trozos": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "conflicto": "#/components/schemas/TrozoConflicto",
+                  "ok": "#/components/schemas/TrozoOk"
+                },
+                "propertyName": "tipo"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TrozoOk"
+                },
+                {
+                  "$ref": "#/components/schemas/TrozoConflicto"
+                }
+              ]
+            },
+            "title": "Trozos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pieza",
+          "etiqueta",
+          "huerfana",
+          "trozos"
+        ],
+        "title": "ConflictoEdicion",
+        "type": "object"
+      },
       "DecisionVistaRespuesta": {
         "properties": {
           "advertencias": {
@@ -694,6 +749,71 @@
         "title": "DocumentoFormato",
         "type": "object"
       },
+      "EdicionCuerpo": {
+        "properties": {
+          "original": {
+            "title": "Original",
+            "type": "string"
+          },
+          "parrafo": {
+            "minimum": 0.0,
+            "title": "Parrafo",
+            "type": "integer"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parrafo",
+          "original",
+          "texto"
+        ],
+        "title": "EdicionCuerpo",
+        "type": "object"
+      },
+      "EdicionesRespuesta": {
+        "properties": {
+          "conflictos": {
+            "items": {
+              "$ref": "#/components/schemas/ConflictoEdicion"
+            },
+            "title": "Conflictos",
+            "type": "array"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "piezas": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PiezaEdicion"
+            },
+            "title": "Piezas",
+            "type": "object"
+          }
+        },
+        "required": [
+          "editable",
+          "motivo",
+          "piezas",
+          "conflictos"
+        ],
+        "title": "EdicionesRespuesta",
+        "type": "object"
+      },
       "EntradaIndice": {
         "properties": {
           "id": {
@@ -1005,6 +1125,24 @@
           "documentos"
         ],
         "title": "FormatoRespuesta",
+        "type": "object"
+      },
+      "Fuente": {
+        "properties": {
+          "parrafo": {
+            "title": "Parrafo",
+            "type": "integer"
+          },
+          "pieza": {
+            "title": "Pieza",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pieza",
+          "parrafo"
+        ],
+        "title": "Fuente",
         "type": "object"
       },
       "GeminiPreferencias": {
@@ -1367,6 +1505,43 @@
         "title": "PaginaVista",
         "type": "object"
       },
+      "PiezaEdicion": {
+        "properties": {
+          "avisos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Avisos",
+            "type": "array"
+          },
+          "editados": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Editados",
+            "type": "array"
+          },
+          "modificada": {
+            "title": "Modificada",
+            "type": "boolean"
+          },
+          "parrafos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parrafos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parrafos",
+          "editados",
+          "modificada",
+          "avisos"
+        ],
+        "title": "PiezaEdicion",
+        "type": "object"
+      },
       "Preferencias": {
         "additionalProperties": false,
         "properties": {
@@ -1453,6 +1628,26 @@
           }
         },
         "title": "Preferencias",
+        "type": "object"
+      },
+      "ResolverCuerpo": {
+        "properties": {
+          "elecciones": {
+            "items": {
+              "enum": [
+                "mio",
+                "nuevo"
+              ],
+              "type": "string"
+            },
+            "title": "Elecciones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "elecciones"
+        ],
+        "title": "ResolverCuerpo",
         "type": "object"
       },
       "RevisionBody": {
@@ -1546,6 +1741,63 @@
           "texto"
         ],
         "title": "Segmento",
+        "type": "object"
+      },
+      "TrozoConflicto": {
+        "properties": {
+          "mio": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mio",
+            "type": "array"
+          },
+          "mio_permitido": {
+            "title": "Mio Permitido",
+            "type": "boolean"
+          },
+          "nuevo": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nuevo",
+            "type": "array"
+          },
+          "tipo": {
+            "const": "conflicto",
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "mio",
+          "nuevo",
+          "mio_permitido"
+        ],
+        "title": "TrozoConflicto",
+        "type": "object"
+      },
+      "TrozoOk": {
+        "properties": {
+          "parrafos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parrafos",
+            "type": "array"
+          },
+          "tipo": {
+            "const": "ok",
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "parrafos"
+        ],
+        "title": "TrozoOk",
         "type": "object"
       },
       "ValidationError": {
@@ -1883,6 +2135,207 @@
           }
         },
         "summary": "Vista Decision"
+      }
+    },
+    "/api/casos/{caso_id}/ediciones": {
+      "get": {
+        "operationId": "leer_ediciones_api_casos__caso_id__ediciones_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Ediciones"
+      }
+    },
+    "/api/casos/{caso_id}/ediciones/{pieza}": {
+      "delete": {
+        "operationId": "restaurar_pieza_api_casos__caso_id__ediciones__pieza__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Restaurar Pieza"
+      },
+      "put": {
+        "operationId": "editar_pieza_api_casos__caso_id__ediciones__pieza__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdicionCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Editar Pieza"
+      }
+    },
+    "/api/casos/{caso_id}/ediciones/{pieza}/resolver": {
+      "post": {
+        "operationId": "resolver_pieza_api_casos__caso_id__ediciones__pieza__resolver_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolverCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Resolver Pieza"
       }
     },
     "/api/casos/{caso_id}/estado": {

@@ -437,12 +437,14 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
         raise HTTPException(422, "Falta la decisión.")
     from collections import deque
 
-    from tutela2 import eventos
+    from tutela2 import ediciones, eventos
 
     job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": deque(maxlen=200), "resultado": None, "error": None}
     with _LOCK:
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
+        if body.cmd == "decidir" and ediciones.hay_conflictos(caso_dir):
+            raise HTTPException(409, "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir.")
         JOBS[job["id"]] = job
         eventos.crear(job["id"])
         for viejo in [i for i, j in JOBS.items() if j["estado"] != "corriendo"][:-50]:
@@ -514,7 +516,7 @@ class _Assets:
         await _servidor_assets(directorio)(scope, receive, send)
 
 
-for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia", "rutas_dataset", "rutas_extension"):
+for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia", "rutas_dataset", "rutas_extension", "rutas_ediciones"):
     try:
         _m = importlib.import_module(f"tutela2.{_modulo}")
     except ModuleNotFoundError as exc:
