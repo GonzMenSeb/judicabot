@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from tutela2 import papelera, resumen_caso, termino
+from tutela2 import papelera, resumen_caso, termino, vigencia
 from tutela2.esquemas import CasoCreado, CasoEliminado, CasoResumen, CasoRestaurado, Termino, TerminoRespuesta
 
 log = logging.getLogger("tutela2.rutas_casos")
@@ -168,6 +168,8 @@ def eliminar_caso(caso_id: str) -> dict[str, Any]:
         if not (raiz / caso_id).is_dir():
             raise HTTPException(404, "Caso no encontrado.")
         entrada = papelera.mover(raiz, caso_id)
+    # Las consultas de vigencia que esperaba el caso ya no le sirven a nadie: no se envían.
+    vigencia.COLA.retirar(raiz / caso_id)
     log.info("Caso %s enviado a la papelera como %s", caso_id, entrada)
     _purgar_papelera(raiz)
     return {"id": caso_id, "papelera": entrada}

@@ -9,6 +9,7 @@ from typing import Any, Iterable, Iterator, Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from tutela2 import apoderados
 from tutela2.config import (
     NODOS_LLM,
     RESPALDO_CLIENTE,
@@ -18,17 +19,23 @@ from tutela2.config import (
     modelos_permitidos,
     niveles_admitidos,
 )
+from tutela2.ingest import ETIQUETA_CERTIFICADO
 from tutela2.jev import clave_valida
 from tutela2.models import (
+    AbogadoLLM,
     AperturaLLM,
+    ApoderadosLLM,
     BloqueLLM,
     CasoConcretoLLM,
     CitaPropuesta,
     ConsideracionesLLM,
     Contestacion,
     Evento,
+    MencionLLM,
     MetadatosLLM,
     ParrafoLLM,
+    ParteLLM,
+    PoderLLM,
     Reparo,
 )
 
@@ -399,6 +406,8 @@ class FakeClient:
             salida = self._consideraciones(secs)
         elif schema is CasoConcretoLLM:
             salida = self._caso(secs)
+        elif schema is ApoderadosLLM:
+            salida = self._apoderados(secs)
         else:
             raise ErrorLLM(f"FakeClient no soporta el esquema {schema.__name__}.")
         meta = {
@@ -447,7 +456,7 @@ class FakeClient:
             Contestacion(
                 entidad=re.sub(r"^[\d_ ]+|\.\w+$", "", d["nombre"]) or "Entidad",
                 silencio=False,
-                texto="La entidad dio respuesta a la acción de tutela y solicitó que se negara el amparo por improcedente.",
+                texto=_contestacion_fake(d["texto"]),
             )
             for d in por_rol.get("contestacion", [])
         ]
@@ -576,6 +585,117 @@ class FakeClient:
             parrafos=parrafos,
             conclusion=f"En consecuencia, el Despacho considera que debe {resultado} el fallo de primera instancia y {sustitutiva}.",
         )
+
+    def _apoderados(self, secs: dict[str, str]) -> ApoderadosLLM:
+        meta = json.loads(secs.get("METADATOS", "{}") or "{}")
+        partes = [(meta.get("accionante") or "", "accionante")]
+        partes += [(n, "accionada") for n in meta.get("accionadas") or []]
+        partes += [(n, "vinculada") for n in meta.get("vinculadas") or []]
+        partes = [(n, r) for n, r in partes if n]
+        paginas = _paginas_fake(secs.get("DOCUMENTOS", ""))
+        certificados = [(doc_id, n, plano) for doc_id, n, certificado, plano in paginas if certificado]
+        abogados: dict[tuple[str, str], AbogadoLLM] = {}
+        for doc_id, n, certificado, plano in paginas:
+            if certificado:
+                continue
+            for m in _FAKE_ABOGADO.finditer(plano):
+                tras = plano[m.end() : m.end() + 300]
+                tp = _FAKE_TP.search(tras)
+                if not tp:
+                    continue
+                nombre = " ".join(m.group("nombre").split())
+                parte = _parte_cercana(plano, m.start(), [p for p, _ in partes])
+                ab = abogados.setdefault((apoderados.clave(nombre), parte), AbogadoLLM(nombre=nombre, parte=parte))
+                cc = _FAKE_CC.search(tras)
+                ab.tarjeta_texto = ab.tarjeta_texto or tp.group(1)
+                ab.cedula_texto = ab.cedula_texto or (cc.group(1) if cc else "")
+                otorga = list(_FAKE_OTORGA.finditer(plano, max(0, m.start() - 600), m.start()))
+                if not otorga:
+                    ab.menciones.append(MencionLLM(doc_id=doc_id, pagina=n, cita=_ventana_fake(plano, m.start(), m.end())))
+                    continue
+                kw = otorga[-1]
+                otorgante = next(
+                    (r.group(1) for r in reversed(list(_FAKE_REPRESENTANTE.finditer(plano, 0, kw.start())))), ""
+                )
+                tokens = apoderados.tokens_nombre(otorgante)
+                cert_doc, cert_n = next(
+                    (
+                        (d, k)
+                        for d, k, t in certificados
+                        if tokens and apoderados.ocurrencias(tokens, apoderados.plegar(t), apoderados.minimo_nombre(len(tokens)))
+                    ),
+                    ("", 0),
+                )
+                ab.poderes.append(
+                    PoderLLM(
+                        tipo="sustitucion" if kw.group().lower().startswith("sustitu") else "poder",
+                        doc_id=doc_id,
+                        pagina=n,
+                        cita=_ventana_fake(plano, kw.start(), m.end(), antes=0),
+                        otorgante=otorgante,
+                        cargo_otorgante="representante legal" if otorgante else "",
+                        certificado_doc_id=cert_doc,
+                        certificado_pagina=cert_n,
+                    )
+                )
+        representadas = {parte for _, parte in abogados}
+        return ApoderadosLLM(
+            partes=[ParteLLM(nombre=n, rol_parte=r, con_abogado=n in representadas) for n, r in partes],
+            abogados=list(abogados.values()),
+        )
+
+
+_NOMBRE_FAKE = r"(?P<nombre>(?:[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñü]+\s+){1,4}[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñü]+)"
+_FAKE_ABOGADO = re.compile(r"(?<!\w)(?P<titulo>(?i:doctora?|dra?\.|abogad[oa]))\s+" + _NOMBRE_FAKE)
+_FAKE_TP = re.compile(r"(?i:\bt\.\s?p\.|tarjeta\s+profesional)\s?(?i:n[o°º]\.?\s?)?(\d{1,3}(?:\.\d{3})+|\d{3,7})")
+_FAKE_CC = re.compile(r"(?i:\bc\.\s?c\.|c[ée]dula\s+de\s+ciudadan[íi]a)\s?(?i:n[o°º]\.?\s?)?(\d{1,3}(?:\.\d{3})+|\d{5,10})")
+_FAKE_OTORGA = re.compile(r"(?i)\b(?:confiero|otorgo|sustituyo)\b")
+_FAKE_REPRESENTANTE = re.compile(r"((?:[A-ZÁÉÍÓÚÑ]{2,} ){1,4}[A-ZÁÉÍÓÚÑ]{2,}),[\s\S]{0,200}?(?i:representante\s+legal)")
+_PAGINA_FAKE = re.compile(rf"^\[p\. (\d+)\]( {re.escape(ETIQUETA_CERTIFICADO)})?[ \t]*$", re.M)
+
+
+def _paginas_fake(documentos: str) -> list[tuple[str, int, bool, str]]:
+    salida = []
+    for d in _parsear_docs(documentos):
+        partes = _PAGINA_FAKE.split(d["texto"])
+        for i in range(1, len(partes) - 2, 3):
+            lineas = (" ".join(linea.split()) for linea in partes[i + 2].splitlines())
+            salida.append((d["doc_id"], int(partes[i]), bool(partes[i + 1]), "\n".join(filter(None, lineas))))
+    return salida
+
+
+def _ventana_fake(plano: str, ini: int, fin: int, antes: int = 6, despues: int = 14) -> str:
+    palabras = list(re.finditer(r"\S+", plano))
+    primera = next(i for i, w in enumerate(palabras) if w.end() > ini)
+    ultima = max(i for i, w in enumerate(palabras) if w.start() < fin)
+    a, b = max(0, primera - antes), min(len(palabras) - 1, ultima + despues)
+    a = max(a, b - 59)
+    return " ".join(plano[palabras[a].start() : palabras[b].end()].split())
+
+
+def _parte_cercana(plano: str, pos: int, partes: list[str]) -> str:
+    plegado = apoderados.plegar(plano)
+    antes, despues = [], []
+    for nombre in partes:
+        tokens = apoderados.tokens_parte(nombre)
+        for ini, _ in apoderados.ocurrencias(tokens, plegado, apoderados.minimo_parte(len(tokens))):
+            (antes if ini < pos else despues).append((ini, nombre))
+    if antes:
+        return max(antes)[1]
+    if despues:
+        return min(despues)[1]
+    return partes[0] if partes else ""
+
+
+def _contestacion_fake(texto: str) -> str:
+    plano = "\n".join(filter(None, (" ".join(linea.split()) for linea in texto.splitlines())))
+    abogado = next((m for m in _FAKE_ABOGADO.finditer(plano) if _FAKE_TP.search(plano, m.end(), m.end() + 300)), None)
+    if abogado is None:
+        return "La entidad dio respuesta a la acción de tutela y solicitó que se negara el amparo por improcedente."
+    nombre = " ".join(abogado.group("nombre").split()).title()
+    femenino = abogado.group("titulo").lower() in ("doctora", "dra.", "abogada")
+    quien = f"su apoderada judicial, la doctora {nombre}" if femenino else f"su apoderado judicial, el doctor {nombre}"
+    return f"La entidad, mediante {quien}, dio respuesta a la acción de tutela y solicitó que se negara el amparo por improcedente."
 
 
 _ROLES_EVENTO = (

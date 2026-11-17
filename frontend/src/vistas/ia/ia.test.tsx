@@ -306,10 +306,10 @@ describe("Claves", () => {
     expect((within(screen.getByRole("dialog", { hidden: true })).getByLabelText("Clave de la API de Anthropic") as HTMLInputElement).value).toBe("");
   });
 
-  it("no incluye la extensión de la relatoría ni su descarga", async () => {
+  it("no incluye la extensión de consultas públicas ni su descarga", async () => {
     const llamadas = await montar();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Proveedor", "Anthropic", "Gemini (Google)", "Jev, segunda opinión"]);
-    expect(screen.queryByText("Extensión de la relatoría")).toBeNull();
+    expect(screen.queryByText("Extensión de consultas públicas")).toBeNull();
     expect(screen.queryByRole("link", { name: "Descargar extensión (.zip)" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Pasos para instalar la extensión" })).toBeNull();
     expect(screen.queryByText(/citas/)).toBeNull();

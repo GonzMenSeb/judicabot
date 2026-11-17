@@ -689,7 +689,7 @@ describe("Párrafo abierto que desaparece tras recargar", () => {
       conflictos: [],
       recargar: vi.fn(async () => undefined),
     });
-    const props = { citas: new Map(), seleccionada: null, plantilla: false, alCita: vi.fn() };
+    const props = { citas: new Map(), apoderados: new Map(), seleccionada: null, plantilla: false, alCita: vi.fn(), alApoderado: vi.fn() };
     const { rerender } = render(<Documento vista={VISTA_BORRADOR} {...props} edicion={edicion(ED.piezas)} />);
     fireEvent.click(botonDe(RELATO));
     fireEvent.input(screen.getByRole("textbox", { name: "Texto del párrafo" }), { target: { value: "Tecleado y perdido" } });
@@ -879,7 +879,7 @@ describe("Documento con unidades de edición", () => {
   function documento(extra: Partial<EdicionDocumento> = {}) {
     const recargar = vi.fn(async () => undefined);
     const edicion: EdicionDocumento = { caso: CASO, activa: true, piezas, conflictos: [], recargar, ...extra };
-    const salida = render(<Documento vista={VISTA} citas={new Map()} seleccionada={null} plantilla={false} alCita={vi.fn()} edicion={edicion} />);
+    const salida = render(<Documento vista={VISTA} citas={new Map()} apoderados={new Map()} seleccionada={null} plantilla={false} alCita={vi.fn()} alApoderado={vi.fn()} edicion={edicion} />);
     return { recargar, ...salida };
   }
 
@@ -938,7 +938,7 @@ describe("Documento con unidades de edición", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Editar párrafo" })[0] as HTMLElement);
     expect(screen.getByRole("textbox")).toBeTruthy();
     const edicion: EdicionDocumento = { caso: CASO, activa: false, piezas, conflictos: [], recargar };
-    rerender(<Documento vista={VISTA} citas={new Map()} seleccionada={null} plantilla={false} alCita={vi.fn()} edicion={edicion} />);
+    rerender(<Documento vista={VISTA} citas={new Map()} apoderados={new Map()} seleccionada={null} plantilla={false} alCita={vi.fn()} alApoderado={vi.fn()} edicion={edicion} />);
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByText("Antes de la imagen.")).toBeTruthy();
   });

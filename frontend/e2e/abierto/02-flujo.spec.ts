@@ -183,6 +183,49 @@ test("borrador: bloques, citas clicables, índice, revisión y sin Jev", async (
   await plantilla.check();
   await expect(texto).toHaveClass(/bor-con-plantilla/);
   await capturar(page, "07-borrador");
+
+  // La abogada ficticia de la contestación queda marcada en el texto. Con el proveedor de prueba la consulta de su
+  // tarjeta es simulada (su cédula no termina en 0, 8 ni 9): sale vigente y, con el poder hallado, queda en verde.
+  const abogada = texto.getByRole("button", { name: /Andrea Paola Giraldo Montoya/ });
+  await expect(abogada).toHaveCount(1);
+  await expect(abogada).toHaveClass(/\bbor-apo\b.*\bverificada\b/, { timeout: 30_000 });
+  await expect(abogada).toHaveAccessibleName(/abogado verificado/);
+  await abogada.click();
+  await expect(abogada).toHaveAttribute("aria-pressed", "true");
+  const detalleAbogada = page.locator("#bor-detalle");
+  await expect(detalleAbogada).toBeVisible();
+  await expect(detalleAbogada.getByRole("heading", { level: 3 })).toHaveText("ANDREA PAOLA GIRALDO MONTOYA");
+  await expect(detalleAbogada).toContainText("Apoderada de EPS HORIZONTE SALUD S.A.S. · accionada");
+  await expect(detalleAbogada.getByText("Abogada verificada")).toBeVisible();
+  await expect(detalleAbogada).toContainText("Consulta simulada (modo de prueba)");
+  await expect(detalleAbogada.getByRole("heading", { level: 4, name: "Tarjeta profesional" })).toBeVisible();
+  await expect(detalleAbogada).toContainText("T.P. 287.415");
+  await expect(detalleAbogada).not.toContainText("1017234567");
+  await expect(detalleAbogada.getByRole("heading", { level: 4, name: "Facultad para representar" })).toBeVisible();
+  await expect(detalleAbogada.locator("q mark").first()).toHaveText("ANDREA PAOLA GIRALDO MONTOYA");
+  await expect(detalleAbogada).toContainText("Lo otorga JORGE ENRIQUE PALACIO VARGAS");
+  await expect(panel.getByRole("tab", { name: /^Apoderados/ })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("button", { name: /ANDREA PAOLA GIRALDO MONTOYA/, expanded: true })).toBeVisible();
+  await capturar(page, "07b-borrador-abogada");
+
+  const verPoder = detalleAbogada.getByRole("button", { name: /^Ver poder · p\. \d+$/ });
+  await verPoder.click();
+  const visor = page.getByRole("dialog", { name: "Poder especial · Doc. 1a-004" });
+  await expect(visor).toBeVisible();
+  await expect(visor).toContainText("Evidencia de que ANDREA PAOLA GIRALDO MONTOYA representa a EPS HORIZONTE SALUD S.A.S.");
+  const pasaje = visor.locator(".visor-ev-texto mark");
+  await expect(pasaje).toHaveCount(1);
+  await expect(pasaje).toContainText(/confiero poder especial, amplio y suficiente a la doctora ANDREA PAOLA GIRALDO\s+MONTOYA/);
+  await expect(pasaje).toBeInViewport();
+  await capturar(page, "07c-visor-poder");
+  await page.keyboard.press("Escape");
+  await expect(visor).toBeHidden();
+  await expect(verPoder).toBeFocused();
+  await expect(detalleAbogada).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(detalleAbogada).toBeHidden();
+  await expect(abogada).toBeFocused();
+
   await page.getByRole("link", { name: "Pasar a la decisión" }).click();
   await expect(page).toHaveURL(/\/decision$/);
 });

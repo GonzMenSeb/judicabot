@@ -16,7 +16,20 @@ from pydantic import ValidationError
 
 from tutela2 import config as cfgmod
 from tutela2 import ediciones as ed
-from tutela2 import expediente, fallos, graph, ingest, llm, prompts, render, resumen_caso, salidas
+from tutela2 import (
+    estado_apoderados,
+    expediente,
+    fallos,
+    graph,
+    ingest,
+    llm,
+    prompts,
+    registro_apoderados,
+    render,
+    resumen_caso,
+    salidas,
+    vigencia,
+)
 from tutela2.config import Config
 from tutela2.models import DatosAuto, Decision, Ingesta, Rol, normalizar_decision
 
@@ -237,6 +250,9 @@ def nuevo(caso_dir: str | Path) -> dict:
         if (caso_dir / "hilo.sqlite").exists():
             log.warning("%s: se descarta el hilo anterior y se reinicia el caso.", caso_dir.name)
         _borrar_hilo(caso_dir)
+        registro_apoderados.borrar(caso_dir)
+        # Las consultas de vigencia que esperaba el caso anterior ya no le sirven a nadie.
+        vigencia.COLA.retirar(caso_dir)
         shutil.rmtree(salidas.raiz(caso_dir), ignore_errors=True)
         (caso_dir / "caso.json").write_text(ing.model_dump_json(indent=2), encoding="utf-8")
         _generar_previos(caso_dir, ing, cfg)
@@ -375,6 +391,14 @@ def decidir(caso_dir: str | Path, decision: dict) -> dict:
                     error="Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de continuar.",
                 )
             decision = normalizar_decision(decision)
+            if isinstance(decision, dict) and decision.get("accion") == "decidir":
+                try:
+                    registro_apoderados.espejar_si_falta(caso_dir, lambda: antes.values.get("apoderados"))
+                    pendientes = estado_apoderados.bloqueos(caso_dir)
+                except registro_apoderados.RegistroInvalido as e:
+                    return _respuesta(actual, caso_dir, ok=False, error=str(e))
+                if pendientes:
+                    return _respuesta(actual, caso_dir, ok=False, error=estado_apoderados.mensaje_bloqueo(pendientes))
             (caso_dir / "decision.json").write_text(
                 json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
             )

@@ -15,6 +15,8 @@ from pydantic.json_schema import SkipJsonSchema
 
 ARCHIVOS = {"borrador": "previo.vista.json", "fallo": "fallo.vista.json"}
 ESTADOS_CITA = {"ok": "verificada", "alerta": "revisar", "rechazada": "rechazada"}
+PREFIJO_APODERADO = "ap:"
+"""Prefijo de los tramos de ``Registro.spans`` que marcan el nombre de un apoderado y no una cita."""
 
 TipoBloque = Literal[
     "titulo", "encabezado", "parrafo", "cita_bloque", "lista", "tabla", "firma", "pie", "resuelve_numeral"
@@ -30,6 +32,7 @@ class Segmento(BaseModel):
     negrita: bool | SkipJsonSchema[None] = _opcional()
     cursiva: bool | SkipJsonSchema[None] = _opcional()
     cita_id: str | SkipJsonSchema[None] = _opcional()
+    apoderado_id: str | SkipJsonSchema[None] = _opcional()
 
 
 class Fuente(BaseModel):
@@ -162,7 +165,9 @@ def _seg(texto: str, negrita: bool = False, cursiva: bool = False, cita: str | N
         s["negrita"] = True
     if cursiva:
         s["cursiva"] = True
-    if cita:
+    if cita and cita.startswith(PREFIJO_APODERADO):
+        s["apoderado_id"] = cita[len(PREFIJO_APODERADO) :]
+    elif cita:
         s["cita_id"] = cita
     return s
 

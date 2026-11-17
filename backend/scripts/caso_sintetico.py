@@ -27,6 +27,13 @@ ACCIONADA = "EPS HORIZONTE SALUD S.A.S."
 NIT = "800.000.412-0"
 NIT_PLANO = "800000412"
 REPRESENTANTE = "JORGE ENRIQUE PALACIO VARGAS"
+CEDULA_REPRESENTANTE = "70.555.123"
+ABOGADA = "ANDREA PAOLA GIRALDO MONTOYA"
+# La cédula de la abogada no termina en 0, 8 ni 9: con la consulta "fake" su tarjeta sale vigente.
+CEDULA_ABOGADA = "1.017.234.567"
+CEDULA_ABOGADA_PLANA = "1017234567"
+TARJETA_ABOGADA = "287.415"
+TARJETA_ABOGADA_PLANA = "287415"
 EMPLEADOR = "DISTRIBUCIONES EL FARO S.A.S."
 JUEZ_1A = "RICARDO ALBERTO SALAZAR NIETO"
 JUEZ_2A = "PATRICIA ELENA RESTREPO ZULUAGA"
@@ -187,7 +194,7 @@ def _contestacion() -> list[tuple]:
         ("izq", f"Referencia: Contestación de la acción de tutela\nRadicado: {RAD_ESPACIADO}\nAccionante: {ACCIONANTE}\nAccionada: {ACCIONADA}"),
         (
             "p",
-            f"{REPRESENTANTE}, obrando como representante legal para asuntos judiciales de la {ACCIONADA}, identificada con NIT {NIT}, me permito dar contestación a la acción de tutela de la referencia en los siguientes términos.",
+            f"La suscrita abogada {ABOGADA}, identificada con la cédula de ciudadanía No. {CEDULA_ABOGADA} y portadora de la tarjeta profesional No. {TARJETA_ABOGADA} del Consejo Superior de la Judicatura, obrando como apoderada judicial de la {ACCIONADA}, identificada con NIT {NIT}, según el poder especial que me confirió su representante legal, {REPRESENTANTE}, y que se anexa a este escrito, me permito dar contestación a la acción de tutela de la referencia en los siguientes términos.",
         ),
         ("centro", "FRENTE A LOS HECHOS"),
         (
@@ -208,7 +215,54 @@ def _contestacion() -> list[tuple]:
             "p",
             "Solicito declarar improcedente la acción de tutela o, en subsidio, negar el amparo por inexistencia de vulneración atribuible a la entidad.",
         ),
-        ("izq", f"Atentamente,\n\n{REPRESENTANTE}\nRepresentante legal para asuntos judiciales\n{ACCIONADA}\n{CORREO_ACCIONADA}"),
+        (
+            "izq",
+            f"Atentamente,\n\n{ABOGADA}\nApoderada judicial de la {ACCIONADA}\nC.C. {CEDULA_ABOGADA}\n"
+            f"T.P. {TARJETA_ABOGADA} del C. S. de la J.\n{CORREO_ACCIONADA}",
+        ),
+        ("salto",),
+        *_poder(),
+        ("salto",),
+        *_certificado_existencia(),
+    ]
+
+
+def _poder() -> list[tuple]:
+    return [
+        ("izq", "Señor\nJUEZ NOVENO PENAL MUNICIPAL CON FUNCIÓN DE CONTROL DE GARANTÍAS\nMedellín\nE. S. D."),
+        ("izq", f"Referencia: Poder especial\nRadicado: {RAD_ESPACIADO}\nAccionante: {ACCIONANTE}\nAccionada: {ACCIONADA}"),
+        (
+            "p",
+            f"{REPRESENTANTE}, mayor de edad, identificado con la cédula de ciudadanía No. {CEDULA_REPRESENTANTE}, obrando como representante legal de la {ACCIONADA}, identificada con NIT {NIT}, por medio del presente escrito confiero poder especial, amplio y suficiente a la doctora {ABOGADA}, identificada con la cédula de ciudadanía No. {CEDULA_ABOGADA} y portadora de la tarjeta profesional No. {TARJETA_ABOGADA} del Consejo Superior de la Judicatura, para que en nombre de la entidad conteste la acción de tutela de la referencia, la represente en todas sus etapas e interponga los recursos que procedan.",
+        ),
+        (
+            "p",
+            "Mi apoderada queda facultada para recibir, transigir, desistir y realizar todas las actuaciones necesarias en defensa de los intereses de la entidad.",
+        ),
+        (
+            "izq",
+            f"Atentamente,\n\n{REPRESENTANTE}\nC.C. {CEDULA_REPRESENTANTE}\nRepresentante legal\n\n"
+            f"Acepto,\n\n{ABOGADA}\nC.C. {CEDULA_ABOGADA}\nT.P. {TARJETA_ABOGADA} del C. S. de la J.",
+        ),
+    ]
+
+
+def _certificado_existencia() -> list[tuple]:
+    return [
+        ("centro", "CÁMARA DE COMERCIO DE MEDELLÍN PARA ANTIOQUIA"),
+        ("centro", "CERTIFICADO DE EXISTENCIA Y REPRESENTACIÓN LEGAL"),
+        ("izq", "Fecha de expedición: 10 de septiembre de 2026\nCódigo de verificación: SINTETICO0412 (documento ficticio)"),
+        ("izq", f"RAZÓN SOCIAL: {ACCIONADA}\nNIT: {NIT}\nDOMICILIO: Medellín"),
+        (
+            "p",
+            "CERTIFICA: Que por documento privado inscrito en esta Cámara de Comercio se constituyó la sociedad de la referencia, cuyo objeto social es la promoción de la afiliación y el aseguramiento en salud de sus afiliados.",
+        ),
+        ("centro", "REPRESENTACIÓN LEGAL"),
+        (
+            "p",
+            "La representación legal de la sociedad estará a cargo de un representante legal, quien tendrá un suplente que lo reemplazará en sus faltas absolutas, temporales o accidentales.",
+        ),
+        ("izq", f"NOMBRAMIENTOS\nCARGO: REPRESENTANTE LEGAL\nNOMBRE: {REPRESENTANTE}\nIDENTIFICACIÓN: C.C. {CEDULA_REPRESENTANTE}"),
     ]
 
 
@@ -470,6 +524,9 @@ def _construir_docx(bloques: list[tuple], ruta: Path) -> None:
     estilo.paragraph_format.space_after = Pt(8)
     for bloque in bloques:
         tipo = bloque[0]
+        if tipo == "salto":
+            doc.add_page_break()
+            continue
         if tipo == "tabla":
             filas = bloque[1]
             tabla = doc.add_table(rows=len(filas), cols=len(filas[0]))
@@ -539,7 +596,7 @@ def aislar_proveedor() -> None:
 
 
 def preparar(carpeta: Path, proveedor: str) -> None:
-    from tutela2.config import Config, LLMConfig, guardar
+    from tutela2.config import ApoderadosConfig, Config, LLMConfig, guardar
 
     carpeta = Path(carpeta)
     origen = carpeta / "01PrimeraInstancia"
@@ -549,7 +606,12 @@ def preparar(carpeta: Path, proveedor: str) -> None:
     if insumos.exists():
         shutil.rmtree(insumos)
     shutil.copytree(origen, insumos)
-    cfg = Config(llm=LLMConfig(proveedor=proveedor), verificar_relatoria=proveedor != "fake")
+    # El caso es ficticio: la vigencia de la abogada nunca se consulta en la Rama Judicial.
+    cfg = Config(
+        llm=LLMConfig(proveedor=proveedor),
+        verificar_relatoria=proveedor != "fake",
+        apoderados=ApoderadosConfig(consulta="fake"),
+    )
     guardar(carpeta, cfg)
 
 
@@ -572,10 +634,11 @@ def _aviso_costo(carpeta: Path) -> str:
         len(p.read_bytes()) for p in (carpeta / "insumos").rglob("*.pdf")
     )
     return (
-        f"Se llamará al modelo {cfg.llm.modelo} (effort {cfg.llm.effort}) en 3 pasos (apertura, consideraciones, "
-        f"caso concreto), con hasta {cfg.max_intentos} intentos por paso si el validador rechaza la salida, "
-        f"y un tope de {cfg.llm.max_tokens} tokens de salida por llamada (el razonamiento cuenta contra ese tope). "
-        f"En el peor caso son {3 * cfg.max_intentos} llamadas. Los PDF ocupan unos {texto // 1024} KB. "
+        f"Se llamará al modelo {cfg.llm.modelo} (effort {cfg.llm.effort}) en 4 pasos (apertura, apoderados, "
+        f"consideraciones, caso concreto), con hasta {cfg.max_intentos} intentos por paso si el validador rechaza la "
+        f"salida (apoderados se llama una sola vez), y un tope de {cfg.llm.max_tokens} tokens de salida por llamada "
+        f"(el razonamiento cuenta contra ese tope). "
+        f"En el peor caso son {3 * cfg.max_intentos + 1} llamadas. Los PDF ocupan unos {texto // 1024} KB. "
         f"El costo depende de la tarifa vigente del modelo; consúltela en la página de precios de Anthropic. "
         f"Los documentos son ficticios, pero se envían a la API."
     )

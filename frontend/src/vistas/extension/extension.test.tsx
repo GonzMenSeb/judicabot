@@ -6,8 +6,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Extensión de la relatoría", () => {
-  it("ofrece descargar la extensión de la relatoría sin llamar a la API", () => {
+describe("Extensión de consultas públicas", () => {
+  it("ofrece descargar la extensión sin llamar a la API", () => {
     const fetchSimulado = vi.fn();
     vi.stubGlobal("fetch", fetchSimulado);
     render(<Extension />);
@@ -16,6 +16,28 @@ describe("Extensión de la relatoría", () => {
     expect(enlace.getAttribute("download")).toBe("");
     expect(enlace.classList.contains("btn")).toBe(true);
     expect(fetchSimulado).not.toHaveBeenCalled();
+  });
+
+  it("explica las dos consultas y que para la vigencia solo sale el número de cédula", () => {
+    const { container } = render(<Extension />);
+    const texto = container.textContent ?? "";
+    for (const frase of [
+      "relatoría de la Corte Constitucional",
+      "certificado de vigencia de la tarjeta profesional",
+      "cuando la consulta automática está activada en el servidor",
+      "solo envía el número de cédula del abogado, y solo a la página de certificados de la Rama Judicial",
+      "trae de vuelta el PDF público",
+      "el navegador envía a esa página las cookies que tenga de la Rama Judicial",
+      "la consulta solo necesita las dos de afinidad que pone la propia página, que no tienen datos personales",
+      "No hay inicio de sesión, no sigue redirecciones y no se envía ninguna cookie de otros sitios",
+      "La consulta de la relatoría no cambia y sigue sin cookies",
+      "necesita la versión 1.1.0 o más",
+    ]) {
+      expect(texto).toContain(frase);
+    }
+    expect(texto).not.toContain("No usa ni envía las cookies");
+    // El navegador envía todas las cookies que tenga de la Rama Judicial, no solo las de afinidad.
+    expect(texto).not.toContain("Las únicas cookies");
   });
 
   it("no repite el título ni usa encabezados: lo pone el panel", () => {

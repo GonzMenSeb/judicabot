@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Certificados de vigencia</title>
+</head>
+<body>
+<form method="post" action="./Certificados.aspx" id="form1">
+<div class="aspNetHidden">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKLTE5NDQ5ODQ2NA9kFgJmD2QWAgIDD2QWAgIBD2QWBAIDDxAPFgIeC18hRGF0YUJvdW5kZ2QQFQQJU0VMRUNDSU9ORQdBQk9HQURPthl0D+zkiKRshwWz3CeAtxoAzoWqlRb7LTnRETw6kiqCC5zUGVTTYN/qpRQJReAiF5DOpQ0GqkPn4G02EwAVeDkrVwHKLaOoK+3k/joaZ8yvp2xZBxPZErKNasynw3BIaJSvQ0RKZNRJlVutB+g8qpw9Atd3EOSpPWnHjPkC6s+BEGweOdNqeX8z9ICmvgtN/xamsWKMFDZw8naXh4F4YW4ED87iZhHTb0GYiohMjfLZxD9YnQdDjdQbmf1TuhojP7gtipQW3tMVMjgKoBwLG/virSOjre4DZBQxcQi71BqIFT1sL7vsvR6Eg/l7lCsUy5Q0CNK7QM4McH19FVTcH0dYxlKBtLLsNqsU1jgx0XGwM5mVcU5Hdk0ghxNxawnptazu0HXOt7hoGTwW" />
+</div>
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="EC7CB15A" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="/wEdAAYAbrxA3yjlCxnI9ccEY07lO0MZsW5iiFxnBKzzwfoIJhZujoFQwSFU2+s0P04VVraurCnbk2nFu/u49zkbxIyDtvGiw6ySebgTp2h6s6XJoHiv0OiMqdltqbFj9wUlckulI8GH1QcPUMI/9n+8bFkBxSibKHqsBC4ky1tKGLeUJzw5YWuWqFojnOVbughgYpWONSzGv7IXYJ7qPJ28Wb8oT1QQdVQ8oUwRWjqfm7tVNdOsGM1o" />
+</div>
+<header>
+  <h1>Consulta de certificados de vigencia</h1>
+  <p>Seleccione la calidad y el tipo de documento, escriba el n&#250;mero y genere el certificado.</p>
+</header>
+<main>
+  <div class="campo">
+    <label for="ddlCalidad">Calidad</label>
+    <select name="ddlCalidad" id="ddlCalidad">
+	<option selected="selected" value="0">SELECCIONE</option>
+	<option value="1">ABOGADO</option>
+	<option value="2">JUEZ DE PAZ/RECONSIDERACI&#211;N</option>
+	<option value="4">LICENCIA TEMPORAL</option>
+
+</select>
+  </div>
+  <div class="campo">
+    <label for="ddlTipoDocumento">Tipo de documento</label>
+    <select name="ddlTipoDocumento" id="ddlTipoDocumento">
+	<option selected="selected" value="0">SELECCIONE</option>
+	<option value="1">C&#201;DULA DE CIUDADAN&#205;A</option>
+	<option value="2">C&#201;DULA DE EXTRANJER&#205;A</option>
+	<option value="4">PPT</option>
+
+</select>
+  </div>
+  <div class="campo">
+    <label for="txtDocumento">N&#250;mero de documento</label>
+    <input name="txtDocumento" type="text" maxlength="10" id="txtDocumento" />
+  </div>
+  <div class="campo">
+    <input type="submit" name="btnTpVigente" value="Generar" id="btnTpVigente" />
+  </div>
+</main>
+</form>
+</body>
+</html>

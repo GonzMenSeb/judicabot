@@ -1,5 +1,6 @@
 .extension { max-width: 760px; }
 .extension > .sub:first-child { max-width: 36rem; margin: 0 0 1rem; font-size: 0.92rem; }
+.extension-alcance { max-width: 36rem; margin: 0 0 1rem; font-size: 0.88rem; }
 .extension-pasos { display: grid; gap: 0.35rem; max-width: 36rem; margin: 1rem 0 0; padding-left: 1.3rem; font-size: 0.92rem; }
 .extension-pasos code { padding: 0 0.25rem; border-radius: 4px; background: var(--fondo-2); font-size: 0.88em; overflow-wrap: anywhere; }
 .extension-nota { max-width: 36rem; margin-top: 0.9rem; font-size: 0.88rem; }

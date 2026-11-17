@@ -35,6 +35,8 @@ antecedentes_hechos: los hechos y las pretensiones de la tutela y el trámite de
 
 contestaciones: un elemento por cada entidad accionada o vinculada que fue notificada. El texto es un párrafo cohesivo con sus argumentos que cierra siempre con su pretensión defensiva (por ejemplo, que se niegue el amparo o que se la desvincule). Si una entidad notificada no contestó, inclúyela con `silencio` verdadero y un texto que indique que guardó absoluto silencio.
 
+Cuando una parte actúe por medio de abogado, en antecedentes, contestaciones o impugnación nombra al abogado como consta en el expediente al describir su actuación (por ejemplo, "mediante apoderado judicial, el doctor Nombre Apellido, ..."), sin su cédula ni su tarjeta profesional.
+
 sentencia_impugnada: la decisión del juez de primera instancia y su razón de decidir, requisito por requisito (procedibilidad y fondo), seguida de las órdenes impartidas, si las hubo.
 
 impugnacion: quién impugna y cuándo, un párrafo por cada reparo (en el mismo orden de `reparos`) y un cierre con la petición concreta ante el superior. Debe cubrir todos los reparos; si el escrito los condensa en un solo párrafo, sepáralos. No agregues argumentos que el escrito no contenga.

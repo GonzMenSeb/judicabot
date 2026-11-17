@@ -1,4 +1,4 @@
-import type { Bloque, CitaVista, Vista } from "../../api/contrato";
+import type { ApoderadoVista, Bloque, CitaVista, Segmento, Vista } from "../../api/contrato";
 import { nombreModelo, porcentaje } from "../../estado";
 import type { EtapaPaso } from "../../ui";
 import type {
@@ -44,6 +44,7 @@ const ETIQUETA_ROL: Record<string, string> = {
 const ETIQUETA_NODO: Record<string, string> = {
   ingesta: "Archivo",
   apertura: "Apertura",
+  apoderados: "Apoderados",
   consideraciones: "Consideraciones",
   caso_concreto: "Caso concreto",
   documentos_caso: "Documentos",
@@ -191,6 +192,8 @@ const CAMPO_METADATOS: Record<string, string> = {
 
 const ORDEN_NIVEL: NivelRevision[] = ["mal", "alerta", "info", "ok"];
 
+const NODO_APODERADOS = "apoderados";
+
 export const dividirMotivos = (detalle: string | null): string[] =>
   (detalle ?? "").split(/(?<=\.);\s+/).filter((m) => m.trim() !== "");
 
@@ -287,31 +290,54 @@ export function seccionesDeCitas(vista: Vista): Record<string, string> {
   return secciones;
 }
 
-export function marcasDelIndice(vista: Vista): Record<string, MarcaIndice> {
+/**
+ * Las marcas del índice: cuántas citas y nombres de abogados por revisar (o rechazados) hay en cada sección y en su
+ * último subtítulo, cada uno una sola vez. Los abogados cuentan con el estado que trae /apoderados (`apoderados`);
+ * sin él, sus nombres no marcan nada, como en el texto.
+ */
+export function marcasDelIndice(vista: Vista, apoderados: ReadonlyMap<string, Pick<ApoderadoVista, "estado">> = new Map()): Record<string, MarcaIndice> {
   const estados = new Map(vista.citas.map((c) => [c.id, c.estado]));
   const marcas: Record<string, MarcaIndice> = {};
   let subtitulo: string | null = null;
   const contadas = new Set<string>();
-  const marcar = (clave: string | null, estado: CitaVista["estado"], citaId: string) => {
-    if (!clave || contadas.has(`${clave}\0${citaId}`)) return;
-    contadas.add(`${clave}\0${citaId}`);
+  const marcar = (clave: string | null, mal: boolean, id: string, abogado: boolean) => {
+    if (!clave || contadas.has(`${clave}\0${id}`)) return;
+    contadas.add(`${clave}\0${id}`);
     const marca = (marcas[clave] ??= { n: 0, mal: false });
     marca.n += 1;
-    marca.mal ||= estado === "rechazada";
+    marca.mal ||= mal;
+    if (abogado) marca.apoderados = (marca.apoderados ?? 0) + 1;
   };
   for (const pagina of vista.paginas) {
     for (const bloque of pagina.bloques) {
       if (bloque.tipo === "titulo") subtitulo = null;
       if (bloque.tipo === "encabezado" && bloque.seccion) subtitulo = bloque.id;
       for (const segmento of bloque.segmentos) {
-        const estado = segmento.cita_id ? estados.get(segmento.cita_id) : undefined;
-        if (!segmento.cita_id || !estado || estado === "verificada") continue;
-        marcar(bloque.seccion, estado, segmento.cita_id);
-        marcar(subtitulo, estado, segmento.cita_id);
+        const marca = marcaDe(segmento, estados, apoderados);
+        if (!marca) continue;
+        marcar(bloque.seccion, marca.mal, marca.id, marca.abogado);
+        marcar(subtitulo, marca.mal, marca.id, marca.abogado);
       }
     }
   }
   return marcas;
+}
+
+/** Lo que un segmento aporta al índice: una cita sin verificar o el nombre de un abogado sin verificar; si no, nada. */
+function marcaDe(
+  segmento: Segmento,
+  citas: ReadonlyMap<string, CitaVista["estado"]>,
+  apoderados: ReadonlyMap<string, Pick<ApoderadoVista, "estado">>,
+): { id: string; mal: boolean; abogado: boolean } | null {
+  if (segmento.cita_id) {
+    const estado = citas.get(segmento.cita_id);
+    return estado && estado !== "verificada" ? { id: `c:${segmento.cita_id}`, mal: estado === "rechazada", abogado: false } : null;
+  }
+  if (segmento.apoderado_id) {
+    const estado = apoderados.get(segmento.apoderado_id)?.estado;
+    return estado && estado !== "verificado" ? { id: `a:${segmento.apoderado_id}`, mal: estado === "no_verificado", abogado: true } : null;
+  }
+  return null;
 }
 
 export function construirRevision(
@@ -334,7 +360,8 @@ export function construirRevision(
       linea: cita.estado === "verificada" ? `Verificada · cobertura ${porcentaje(cita.cobertura)}` : (motivos[0] ?? ETIQUETA_ESTADO_CITA[cita.estado]),
       lineaCompleta: false,
       detalle: { tipo: "cita", cita, motivos },
-      cita: cita.id,
+      marca: { tipo: "cita", id: cita.id },
+      grupo: "citas",
     });
   }
 
@@ -347,7 +374,8 @@ export function construirRevision(
       linea: `Borrador: ${fila.borrador.principal ?? "Sin dato"} · Jev: ${fila.jev.principal ?? "Sin lectura"}`,
       lineaCompleta: false,
       detalle: { tipo: "jev", fila },
-      cita: null,
+      marca: null,
+      grupo: "citas",
     });
   }
 
@@ -357,7 +385,8 @@ export function construirRevision(
     const rechazo = /^La cita (\S+) \(.*\) (?:fue rechazada|requiere revisión):/.exec(texto);
     if (rechazo?.[1] && idsCitas.has(rechazo[1])) return;
     if (jev.length > 0 && /^Jev lee /.test(texto)) return;
-    items.push({ clave: `alerta-${nodo}-${mensaje}`, ...humanizarAlerta(nodo, texto, bloquea), cita: null });
+    const grupo = nodo === NODO_APODERADOS ? "apoderados" : "citas";
+    items.push({ clave: `alerta-${nodo}-${mensaje}`, ...humanizarAlerta(nodo, texto, bloquea), marca: null, grupo });
   });
 
   const vistos = new Set<string>();

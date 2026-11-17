@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 
-from tutela2 import radicado
-from tutela2.models import Ingesta
+from tutela2 import api, radicado, salidas, vista
+from tutela2 import config as cfgmod
+from tutela2.models import Identificacion, Ingesta
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which("soffice") and shutil.which("pdftotext")), reason="requiere soffice y pdftotext"
@@ -98,6 +100,45 @@ def test_flujo_completo_fake_termina_con_el_arbol_de_salidas(caso) -> None:
         "trabajo/previo.docx",
     }
     assert set(r["salidas"]) == esperadas, sorted(set(r["salidas"]) ^ esperadas)
+
+
+def test_identifica_a_la_abogada_de_la_accionada_con_la_cadena_confirmada(caso) -> None:
+    modulo, carpeta, _ = caso
+    cfg = cfgmod.cargar(carpeta, entorno=False)
+    assert cfg.apoderados.consulta == "fake"
+    with api._grafo(carpeta, cfg) as (g, hilo):
+        ident = Identificacion.model_validate(g.get_state(hilo).values["apoderados"])
+    [ap] = ident.apoderados
+    assert (ap.nombre, ap.parte, ap.rol_parte) == (modulo.ABOGADA, modulo.ACCIONADA, "accionada")
+    assert ap.cedula == modulo.CEDULA_ABOGADA_PLANA and ap.cedula[-1] not in "089"
+    assert ap.tarjeta == modulo.TARJETA_ABOGADA_PLANA
+    [poder] = ap.poderes
+    assert poder.otorgante == modulo.REPRESENTANTE and poder.cadena.estado == "confirmada"
+    assert ap.ajenos == [] and ap.motivos == [] and ident.alertas == []
+    assert [p.nombre for p in ident.sin_apoderado] == [modulo.ACCIONANTE]
+    contestacion = _ingesta(carpeta).documentos[3]
+    assert contestacion.rol == "contestacion" and [p.ruido for p in contestacion.paginas][-1] is True
+
+
+def test_el_borrador_marca_a_la_abogada_y_el_fallo_no(caso) -> None:
+    modulo, carpeta, _ = caso
+    cfg = cfgmod.cargar(carpeta, entorno=False)
+    with api._grafo(carpeta, cfg) as (g, hilo):
+        [ap] = Identificacion.model_validate(g.get_state(hilo).values["apoderados"]).apoderados
+
+    def marcas(ruta: Path) -> list[tuple[str, str, str]]:
+        v = json.loads(ruta.read_text(encoding="utf-8"))
+        return [
+            (b["seccion"], s["texto"], s["apoderado_id"])
+            for p in v["paginas"]
+            for b in p["bloques"]
+            for s in b["segmentos"]
+            if "apoderado_id" in s
+        ]
+
+    previo = salidas.trabajo(carpeta) / vista.ARCHIVOS["borrador"]
+    assert marcas(previo) == [("antecedentes-del-caso", modulo.ABOGADA.title(), ap.id)]
+    assert marcas(salidas.principal(carpeta) / vista.ARCHIVOS["fallo"]) == []
 
 
 def test_aislar_proveedor_ignora_el_entorno_de_gemini(tmp_path, monkeypatch) -> None:

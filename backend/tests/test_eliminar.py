@@ -37,6 +37,15 @@ def test_eliminar_mueve_la_carpeta_a_la_papelera(cliente, caso, tmp_path):
     assert cliente.get(f"/api/casos/{caso}/resumen").status_code == 404
 
 
+def test_eliminar_retira_al_caso_de_la_cola_de_vigencia(cliente, caso, tmp_path, monkeypatch):
+    from tutela2 import vigencia
+
+    retirados = []
+    monkeypatch.setattr(vigencia.COLA, "retirar", lambda caso_dir, cedulas=None: retirados.append((Path(caso_dir), cedulas)) or 0)
+    assert cliente.delete(f"/api/casos/{caso}").status_code == 200
+    assert retirados == [((_raiz(tmp_path) / caso).resolve(), None)]
+
+
 @pytest.mark.parametrize("malo", ["nada", ".papelera", "%2e%2e", ".preferencias.json"])
 def test_eliminar_con_id_invalido_es_404(cliente, caso, tmp_path, malo):
     cliente.delete(f"/api/casos/{caso}")

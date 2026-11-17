@@ -19,13 +19,99 @@ def test_tutela2_proveedor_fake_fuerza_el_cliente_falso_sin_relatoria(tmp_path, 
     cfg = cfgmod.cargar(tmp_path)
     assert cfg.llm.proveedor == "fake"
     assert cfg.verificar_relatoria is False
+    assert cfg.apoderados.consulta == "fake"
 
 
 def test_tutela2_proveedor_se_ignora_sin_entorno(tmp_path, monkeypatch):
     monkeypatch.setenv("TUTELA2_PROVEEDOR", "fake")
+    monkeypatch.setenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, "extension")
     cfg = cfgmod.cargar(tmp_path, entorno=False)
     assert cfg.llm.proveedor == "anthropic"
     assert cfg.verificar_relatoria is True
+    assert cfg.apoderados.consulta == "apagada"
+
+
+@pytest.fixture
+def sin_consulta_en_el_entorno(monkeypatch):
+    monkeypatch.delenv("TUTELA2_PROVEEDOR", raising=False)
+    monkeypatch.delenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, raising=False)
+
+
+def test_apoderados_por_defecto_y_config_json_sin_la_clave(tmp_path, sin_consulta_en_el_entorno):
+    a = Config().apoderados
+    assert (a.activo, a.consulta, a.max_chars) == (True, "apagada", 150_000)
+    (tmp_path / "config.json").write_text(Config().model_dump_json(exclude={"apoderados"}), encoding="utf-8")
+    assert cfgmod.cargar(tmp_path).apoderados == cfgmod.ApoderadosConfig()
+    cfgmod.guardar(tmp_path, Config(apoderados=cfgmod.ApoderadosConfig(consulta="extension", max_chars=9000)))
+    assert cfgmod.cargar(tmp_path).apoderados.model_dump() == {"activo": True, "consulta": "extension", "max_chars": 9000}
+
+
+def test_la_consulta_automatica_de_la_vigencia_esta_apagada_por_defecto(tmp_path, sin_consulta_en_el_entorno):
+    """Compuerta legal: hasta que la URNA y el área jurídica lo aprueben por escrito, ninguna cédula sale sola."""
+    assert cfgmod.ApoderadosConfig().consulta == "apagada"
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "apagada"
+    cfgmod.guardar(tmp_path, Config())
+    assert '"consulta": "apagada"' in (tmp_path / "config.json").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("modo", ["extension", "directa", "apagada", " Extension "])
+def test_la_variable_de_entorno_enciende_o_apaga_la_consulta_sobre_el_config_del_caso(tmp_path, sin_consulta_en_el_entorno, monkeypatch, modo):
+    cfgmod.guardar(tmp_path, Config(apoderados=cfgmod.ApoderadosConfig(consulta="extension" if modo.strip() == "apagada" else "apagada")))
+    monkeypatch.setenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, modo)
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == modo.strip().lower()
+    assert cfgmod.cargar(tmp_path, entorno=False).apoderados.consulta != modo.strip().lower()
+
+
+@pytest.mark.parametrize("modo", ["", "   "])
+def test_la_variable_de_entorno_vacia_no_cambia_nada(tmp_path, sin_consulta_en_el_entorno, monkeypatch, modo):
+    monkeypatch.setenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, modo)
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "apagada"
+    cfgmod.guardar(tmp_path, Config(apoderados=cfgmod.ApoderadosConfig(consulta="extension")))
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "extension"
+
+
+@pytest.mark.parametrize("modo", ["off", "apagado", "no", "0", "false", "fake", "encendida", "EXTENSION_X"])
+def test_la_variable_de_entorno_invalida_o_fake_apaga_la_consulta(tmp_path, sin_consulta_en_el_entorno, monkeypatch, caplog, modo):
+    """Compuerta legal: quien quiso apagar la consulta con un valor que no se entiende no la deja encendida."""
+    monkeypatch.setattr(cfgmod, "_avisadas", set())
+    cfgmod.guardar(tmp_path, Config(apoderados=cfgmod.ApoderadosConfig(consulta="extension")))
+    monkeypatch.setenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, modo)
+    with caplog.at_level("WARNING", logger="tutela2"):
+        assert cfgmod.cargar(tmp_path).apoderados.consulta == "apagada"
+        assert cfgmod.cargar(tmp_path).apoderados.consulta == "apagada"
+    avisos = [r for r in caplog.records if cfgmod.VARIABLE_CONSULTA_VIGENCIA in r.getMessage()]
+    assert len(avisos) == 1 and "extension, directa, apagada" in avisos[0].getMessage()
+    assert cfgmod.cargar(tmp_path, entorno=False).apoderados.consulta == "extension"
+
+
+def test_el_proveedor_falso_manda_sobre_la_variable_de_la_consulta(tmp_path, sin_consulta_en_el_entorno, monkeypatch):
+    monkeypatch.setenv(cfgmod.VARIABLE_CONSULTA_VIGENCIA, "extension")
+    monkeypatch.setenv("TUTELA2_PROVEEDOR", "fake")
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "fake"
+
+
+def test_la_consulta_simulada_sin_el_proveedor_falso_queda_apagada(tmp_path, sin_consulta_en_el_entorno):
+    """Un certificado ficticio nunca debe dejar en verde a un abogado de un caso real."""
+    cfgmod.guardar(tmp_path, Config(apoderados=cfgmod.ApoderadosConfig(consulta="fake")))
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "apagada"
+    assert cfgmod.cargar(tmp_path, entorno=False).apoderados.consulta == "fake"
+    cfgmod.guardar(tmp_path, Config(llm=LLMConfig(proveedor="fake"), apoderados=cfgmod.ApoderadosConfig(consulta="fake")))
+    assert cfgmod.cargar(tmp_path).apoderados.consulta == "fake"
+
+
+def test_apoderados_es_un_nodo_del_modelo_con_su_prompt_y_sus_ajustes(monkeypatch):
+    from tutela2 import prompts
+
+    assert cfgmod.NODOS_LLM == ("apertura", "apoderados", "consideraciones", "caso_concreto")
+    assert set(prompts.prompts_default()) == set(cfgmod.NODOS_LLM)
+    texto, prompt_id = prompts.prompt_para("apoderados", Config())
+    assert texto and prompt_id.startswith("apoderados@")
+    cfg = Config(llm=LLMConfig(modelo=SONNET, modelo_por_nodo={"apoderados": HAIKU}, effort_por_nodo={"apoderados": "low"}))
+    assert (cfg.modelo_para("apoderados"), cfg.effort_para("apoderados")) == (HAIKU, "low")
+    assert cfg.modelo_para("consideraciones") == SONNET
+    monkeypatch.setenv(VARIABLE, SONNET)
+    with pytest.raises(ErrorLLM, match=rf"{HAIKU} \(nodo apoderados\)"):
+        llm.cliente_para(cfg)
 
 
 def test_tutela2_proveedor_ausente_o_invalido_no_cambia_nada(tmp_path, monkeypatch):
@@ -105,8 +191,8 @@ def gemini(**extra) -> Config:
 
 def test_con_gemini_los_ajustes_por_nodo_de_claude_se_ignoran():
     cfg = gemini(effort="medium", modelo_por_nodo={"apertura": OPUS, "caso_concreto": HYDROGEN}, effort_por_nodo={"apertura": "max", "caso_concreto": "xhigh"})
-    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [ARGON, ARGON, HYDROGEN]
-    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["medium", "medium", "xhigh"]
+    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [ARGON, ARGON, ARGON, HYDROGEN]
+    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["medium", "medium", "medium", "xhigh"]
 
 
 def test_con_gemini_el_nivel_por_nodo_debe_admitirlo_el_modelo_del_nodo():
@@ -123,8 +209,8 @@ def test_con_gemini_el_nivel_global_debe_admitirlo_el_modelo_del_nodo():
 
 def test_con_anthropic_los_ajustes_por_nodo_de_gemini_se_ignoran():
     cfg = Config(llm=LLMConfig(modelo=SONNET, modelo_por_nodo={"apertura": ARGON, "caso_concreto": OPUS}, effort_por_nodo={"apertura": "max", "caso_concreto": "ultra"}))
-    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [SONNET, SONNET, OPUS]
-    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["max", "high", "high"]
+    assert [cfg.modelo_para(n) for n in cfgmod.NODOS_LLM] == [SONNET, SONNET, SONNET, OPUS]
+    assert [cfg.effort_para(n) for n in cfgmod.NODOS_LLM] == ["max", "high", "high", "high"]
 
 
 def test_el_proveedor_falso_no_filtra_los_ajustes_por_nodo():

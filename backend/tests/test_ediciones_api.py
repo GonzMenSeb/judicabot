@@ -202,13 +202,13 @@ def test_decidir_lleva_las_ediciones_al_caso_concreto_y_al_fallo(montaje):
     editar(caso, ANTECEDENTES, lambda t: t.replace("dispuso la notificación", "dispuso con urgencia la notificación"), 1)
     editar(caso, BLOQUE, lambda t: t.replace("presupuestos", "lineamientos"))
     antes = len(cliente.llamadas)
-    assert [n for n, _ in cliente.llamadas] == ["apertura", "consideraciones"]
+    assert [n for n, _ in cliente.llamadas] == ["apertura", "apoderados", "consideraciones"]
 
     r = api.decidir(caso, DECISION)
     assert r["ok"] and r["estado"] == "terminado", r["error"]
-    assert [n for n, _ in cliente.llamadas] == ["apertura", "consideraciones", "caso_concreto"]
+    assert [n for n, _ in cliente.llamadas] == ["apertura", "apoderados", "consideraciones", "caso_concreto"]
     assert len(cliente.llamadas) == antes + 1
-    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "consideraciones", "caso_concreto"]
+    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "apoderados", "consideraciones", "caso_concreto"]
 
     antecedentes = seccion_del_prompt(cliente, "caso_concreto", "ANTECEDENTES")
     consideraciones = seccion_del_prompt(cliente, "caso_concreto", "CONSIDERACIONES")
@@ -269,7 +269,7 @@ def test_rehacer_consideraciones_recibe_el_texto_humano_y_rebasa_limpio(montaje)
     editar(caso, BLOQUE, lambda t: t.replace("presupuestos", "lineamientos"))
     r = api.decidir(caso, {"accion": "rehacer_consideraciones", "instruccion": "Ajusta el tono."})
     assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
-    assert cliente.nodos() == ["apertura", "consideraciones", "consideraciones"]
+    assert cliente.nodos() == ["apertura", "apoderados", "consideraciones", "consideraciones"]
 
     anterior = json.loads(seccion_del_prompt(cliente, "consideraciones", "SALIDA ANTERIOR"))
     assert "lineamientos de esta figura" in anterior["bloques"][0]["texto"]
@@ -405,7 +405,7 @@ def test_restaurar_tras_consolidar_devuelve_el_texto_de_la_ia(montaje):
     r = api.decidir(caso, {"accion": "rehacer_consideraciones", "instruccion": "Ajusta el tono."})
     assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
     assert "pide al superior" in valores(caso)["apertura"]["impugnacion"]
-    assert len(cliente.llamadas) == 3
+    assert len(cliente.llamadas) == 4
 
     resp = api.ediciones(caso)
     assert resp["conflictos"] == [] and resp["piezas"][IMPUGNACION]["editados"] == [3]

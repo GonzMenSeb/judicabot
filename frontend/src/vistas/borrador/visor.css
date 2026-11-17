@@ -1,0 +1,68 @@
+dialog.dialogo.visor-ev { width: min(73.75rem, calc(100vw - 2rem)); height: min(45rem, calc(100dvh - 2rem)); max-height: none; overflow: hidden; border-radius: 14px; background: #fff; box-shadow: 0 30px 70px -20px rgba(10, 20, 26, 0.55); }
+.visor-ev .dialogo-cuerpo { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "ico tit ctl" "ico sub ctl" "cue cue cue"; height: 100%; padding: 0; }
+.visor-ev .dialogo-cuerpo::before { content: ""; grid-area: 1 / 1 / 3 / -1; border-bottom: 1px solid #dfe5e8; }
+.dialogo.visor-ev h2 { grid-area: tit; margin: 0; padding: 1rem 1rem 0 0; font-size: 1.05rem; line-height: 1.35; overflow-wrap: anywhere; }
+.visor-ev-ico { grid-area: ico; align-self: center; padding: 0 1rem 0 1.25rem; color: var(--acento); }
+.visor-ev-ico svg { display: block; }
+.visor-ev-sub { grid-area: sub; padding: 0.1rem 1rem 1rem 0; color: var(--suave); font-size: 0.86rem; line-height: 1.4; overflow-wrap: anywhere; }
+.visor-ev-ctl { grid-area: ctl; display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1.25rem 0.75rem 0; }
+.visor-ev-nav { display: flex; align-items: center; gap: 0.4rem; }
+.visor-ev-pag { min-width: 5.75rem; color: var(--suave); font-size: 0.86rem; text-align: center; font-variant-numeric: tabular-nums; }
+.visor-ev .btn.chico { padding: 0.34rem 0.7rem; font-size: 0.82rem; }
+.visor-ev-cerrar { display: grid; place-items: center; width: 2rem; height: 2rem; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--suave); }
+.visor-ev-cerrar:hover { background: var(--fondo-2); color: var(--tinta); }
+
+.visor-ev-cuerpo { grid-area: cue; display: grid; grid-template-columns: minmax(0, 1fr) 22.5rem; min-height: 0; }
+.visor-ev-lienzo { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 1.5rem; background: var(--fondo-2); }
+.visor-ev .visor-ev-lienzo > * { max-width: 37.5rem; margin-right: auto; margin-left: auto; }
+.visor-ev .visor-ev-lienzo > * + * { margin-top: 0.8rem; }
+.visor-ev-lienzo:focus-visible { outline-offset: -3px; }
+.visor-ev-ocr { color: var(--suave); font-size: 0.82rem; }
+.visor-ev .visor-pagina { content-visibility: visible; aspect-ratio: auto; width: 100%; padding: 2.75rem 3.25rem 1.4rem; font-size: 0.8rem; line-height: 1.7; box-shadow: 0 6px 22px -10px rgba(20, 30, 36, 0.4); }
+.visor-ev-texto { white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.visor-ev-texto mark { padding: 1px 0; border-radius: 2px; background: #f6e5a3; color: var(--tinta); box-shadow: 0 0 0 2px #f6e5a3; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+.visor-ev-lado { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid #dfe5e8; }
+.visor-ev-detalle { display: grid; flex: 1; align-content: start; gap: 1rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1.25rem; }
+.visor-ev-lado h3 { margin-bottom: 0.5rem; color: var(--tenue); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.visor-ev-cotejos { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; font-size: 0.86rem; line-height: 1.4; overflow-wrap: anywhere; }
+.visor-ev-cotejos li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.55rem; }
+.visor-ev-marca { display: grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 50%; }
+.visor-ev-marca.ok { background: var(--ok-fondo); color: var(--ok); }
+.visor-ev-marca.mal { background: var(--mal-fondo); color: var(--mal); }
+.visor-ev-marca.nulo { background: var(--fondo-2); color: var(--suave); }
+.visor-ev-vacio { color: var(--suave); font-size: 0.84rem; line-height: 1.4; }
+.visor-ev-cita { padding: 0.75rem 0.85rem; border: 1px solid #dfe5e8; border-radius: 10px; background: #fbfcfc; }
+.visor-ev-cita h3 { margin-bottom: 0.4rem; }
+.visor-ev-cita q { display: block; padding-left: 0.65rem; border-left: 3px solid var(--linea); color: var(--suave); font-family: var(--serif); font-size: 0.84rem; font-style: italic; line-height: 1.6; quotes: "«" "»"; overflow-wrap: anywhere; }
+.visor-ev-fuente { margin-top: 0.4rem; color: var(--tenue); font-size: 0.78rem; line-height: 1.4; }
+.visor-ev-enlace { padding: 0; border: 0; background: none; color: var(--acento); font: inherit; text-decoration: underline; }
+.visor-ev-enlace:hover { color: var(--acento-2); }
+.visor-ev-acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+.visor-ev-acciones .btn { white-space: normal; text-align: center; }
+.visor-ev-estado { color: var(--suave); font-size: 0.8rem; }
+.visor-ev-estado:not(:empty) { margin-top: 0.5rem; }
+.visor-ev-estado.mal { color: var(--mal); }
+.visor-ev-pie { display: grid; flex: none; gap: 0.4rem; padding: 0.85rem 1.25rem; border-top: 1px solid #dfe5e8; }
+.visor-ev .btn.visor-ev-revisar[aria-pressed=true] { border-color: var(--ok); background: var(--ok-fondo); color: var(--ok); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .visor-ev-texto mark { animation: visor-destello 1.4s ease-out; }
+  @keyframes visor-destello { 0%, 30% { box-shadow: 0 0 0 5px rgba(42, 127, 160, 0.55); } 100% { box-shadow: 0 0 0 2px #f6e5a3; } }
+}
+
+@media (max-width: 760px) {
+  dialog.dialogo.visor-ev { width: 100%; height: 100%; margin: 0; border-radius: 0; }
+  .visor-ev .dialogo-cuerpo { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-areas: "ico tit" "ico sub" "ctl ctl" "cue cue"; }
+  .visor-ev .dialogo-cuerpo::before { grid-area: 1 / 1 / 4 / -1; }
+  .dialogo.visor-ev h2 { padding-right: 3rem; }
+  .visor-ev-ico { padding-left: 1rem; }
+  .visor-ev-ctl { flex-wrap: wrap; gap: 0.5rem 0.8rem; padding: 0 1rem 0.8rem; }
+  .visor-ev-cerrar { position: absolute; top: 0.6rem; right: 0.6rem; }
+  .visor-ev-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(16rem, 1fr) auto; overflow-y: auto; }
+  .visor-ev-lienzo { padding: 1rem; }
+  .visor-ev .visor-pagina { padding: 1.6rem 1.3rem 1rem; }
+  .visor-ev-lado { display: block; border-top: 1px solid #dfe5e8; border-left: 0; }
+  .visor-ev-detalle { overflow-y: visible; }
+  .visor-ev-pie { position: sticky; bottom: 0; background: #fff; }
+}

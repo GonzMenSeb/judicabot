@@ -56,6 +56,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/casos/{caso_id}/apoderados": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Leer Apoderados */
+        get: operations["leer_apoderados_api_casos__caso_id__apoderados_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/apoderados/consultar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consultar Apoderados
+         * @description Pone en la cola de consultas automáticas la cédula de los apoderados pedidos (todos, sin ``ids``).
+         *
+         *     Sin ``forzar`` se saltan los que ya tienen un resultado y los que agotaron sus intentos del día;
+         *     ``forzar`` (el botón «Reintentar consulta automática») consulta de nuevo, pero respeta la pausa
+         *     tras quedar la Rama Judicial sin responder. Responde enseguida con el estado de los apoderados:
+         *     la consulta sigue aparte y el borrador la sigue con el GET.
+         */
+        post: operations["consultar_apoderados_api_casos__caso_id__apoderados_consultar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/apoderados/identificar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Identificar Apoderados */
+        post: operations["identificar_apoderados_api_casos__caso_id__apoderados_identificar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/apoderados/{ap_id}/ajustes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Ajustar Apoderado */
+        put: operations["ajustar_apoderado_api_casos__caso_id__apoderados__ap_id__ajustes_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/apoderados/{ap_id}/certificado": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Descargar Certificado */
+        get: operations["descargar_certificado_api_casos__caso_id__apoderados__ap_id__certificado_get"];
+        /** Subir Certificado */
+        put: operations["subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/apoderados/{ap_id}/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Revisar Apoderado */
+        put: operations["revisar_apoderado_api_casos__caso_id__apoderados__ap_id__revision_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/casos/{caso_id}/config": {
         parameters: {
             query?: never;
@@ -152,6 +263,40 @@ export interface paths {
         };
         /** Estado Caso */
         get: operations["estado_caso_api_casos__caso_id__estado_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/expediente/{doc_id}/archivo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archivo Expediente */
+        get: operations["archivo_expediente_api_casos__caso_id__expediente__doc_id__archivo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/casos/{caso_id}/expediente/{doc_id}/paginas/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pagina Expediente */
+        get: operations["pagina_expediente_api_casos__caso_id__expediente__doc_id__paginas__n__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -542,10 +687,100 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AjusteCuerpo
+         * @description Correcciones a mano de un apoderado: un campo que no viene no cambia; uno en ``null`` quita esa corrección.
+         */
+        AjusteCuerpo: {
+            /**
+             * Cedula
+             * @description Cédula del abogado si el expediente no la trae: de 5 a 10 dígitos (admite puntos y espacios).
+             */
+            cedula?: string | null;
+            /**
+             * Nota
+             * @description Razón de la corrección; queda en el informe de verificación.
+             * @default
+             */
+            nota: string;
+            /**
+             * Poder Descartado
+             * @description El poder que se muestra no es correcto («No es correcto…»).
+             */
+            poder_descartado?: boolean | null;
+            /** @description Página donde está el poder; se comprueba que nombre al abogado y de ella se toma la cita. */
+            poder_manual?: components["schemas"]["PoderManualCuerpo"] | null;
+        };
         /** ApiKeyBody */
         ApiKeyBody: {
             /** Key */
             key: string;
+        };
+        /** ApoderadoVista */
+        ApoderadoVista: {
+            /** Bloquea */
+            bloquea: boolean;
+            /** Cedula */
+            cedula: string | null;
+            /** Cotejos */
+            cotejos: components["schemas"]["Cotejo"][];
+            /**
+             * Estado
+             * @enum {string}
+             */
+            estado: "verificado" | "revisar" | "no_verificado";
+            /**
+             * Fase
+             * @enum {string}
+             */
+            fase: "en_cola" | "consultando" | "necesita_ayuda" | "listo";
+            /** Huella */
+            huella: string;
+            /** Id */
+            id: string;
+            /** Motivos */
+            motivos: string[];
+            /** Nombre */
+            nombre: string;
+            /** Parte */
+            parte: string;
+            poder: components["schemas"]["PoderVista"];
+            /** Revisado */
+            revisado: boolean;
+            /** Revision Vencida */
+            revision_vencida: boolean;
+            /**
+             * Rol Parte
+             * @enum {string}
+             */
+            rol_parte: "accionante" | "accionada" | "vinculada" | "otro";
+            /** Tarjeta */
+            tarjeta: string | null;
+            /**
+             * Tipo Persona
+             * @enum {string}
+             */
+            tipo_persona: "natural" | "juridica";
+            vigencia: components["schemas"]["VigenciaVista"];
+        };
+        /** ApoderadosRespuesta */
+        ApoderadosRespuesta: {
+            /** Alertas */
+            alertas: string[];
+            /** Apoderados */
+            apoderados: components["schemas"]["ApoderadoVista"][];
+            /** Bloquea Decision */
+            bloquea_decision: boolean;
+            consulta: components["schemas"]["ConsultaEstado"];
+            /** Editable */
+            editable: boolean;
+            /**
+             * Identificacion
+             * @enum {string}
+             */
+            identificacion: "lista" | "no_disponible" | "fallida";
+            /** Sin Apoderado */
+            sin_apoderado: components["schemas"]["ParteSinApoderadoVista"][];
         };
         /** Bloque */
         Bloque: {
@@ -574,10 +809,28 @@ export interface components {
             /** Nombre */
             nombre?: string | null;
         };
+        /** Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put */
+        Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put: {
+            /** Archivo */
+            archivo: string;
+        };
         /** Body_subir_dataset_api_dataset_put */
         Body_subir_dataset_api_dataset_put: {
             /** Archivo */
             archivo: string;
+        };
+        /** CadenaVista */
+        CadenaVista: {
+            /** Cargo */
+            cargo: string;
+            /**
+             * Estado
+             * @enum {string}
+             */
+            estado: "confirmada" | "contradicha" | "sin_certificado" | "no_aplica";
+            evidencia: components["schemas"]["EvidenciaVista"] | null;
+            /** Otorgante */
+            otorgante: string;
         };
         /** CampoFormato */
         CampoFormato: {
@@ -697,6 +950,47 @@ export interface components {
             pieza: string;
             /** Trozos */
             trozos: (components["schemas"]["TrozoOk"] | components["schemas"]["TrozoConflicto"])[];
+        };
+        /** ConsultaEstado */
+        ConsultaEstado: {
+            /** Activa */
+            activa: boolean;
+            /**
+             * Extension
+             * @enum {string}
+             */
+            extension: "conectada" | "desactualizada" | "no_conectada";
+            /**
+             * Modo
+             * @enum {string}
+             */
+            modo: "extension" | "directa" | "fake" | "apagada";
+            /** Pausa Hasta */
+            pausa_hasta: string | null;
+        };
+        /** ConsultarCuerpo */
+        ConsultarCuerpo: {
+            /**
+             * Forzar
+             * @description Consultar de nuevo aunque ya haya un resultado, uno en caché o se hayan agotado los intentos del día; respeta la pausa tras quedar la Rama Judicial sin responder.
+             * @default false
+             */
+            forzar: boolean;
+            /**
+             * Ids
+             * @description Apoderados cuya vigencia se consulta; sin ids, todos los del caso.
+             */
+            ids?: string[] | null;
+        };
+        /**
+         * Cotejo
+         * @description Una comprobación automática: ``ok`` es ``None`` cuando no se pudo cotejar.
+         */
+        Cotejo: {
+            /** Ok */
+            ok: boolean | null;
+            /** Texto */
+            texto: string;
         };
         /**
          * DatosSegunda
@@ -986,6 +1280,27 @@ export interface components {
             /** Eventos */
             eventos: components["schemas"]["Evento"][];
         };
+        /** EvidenciaVista */
+        EvidenciaVista: {
+            /** Cita */
+            cita: string;
+            /** Doc Id */
+            doc_id: string;
+            /** Documento */
+            documento: string;
+            /** Fin */
+            fin: number | null;
+            /** Inicio */
+            inicio: number | null;
+            /** Ocr */
+            ocr: boolean;
+            /** Pagina */
+            pagina: number;
+            /** Rol */
+            rol: ("acta_reparto_1a" | "acta_reparto_2a" | "escrito_tutela" | "auto_admisorio" | "auto_vinculacion" | "contestacion" | "fallo_a_quo" | "impugnacion" | "auto_concede_impugnacion" | "notificacion" | "correo" | "memorial" | "indice" | "anexo" | "producto_despacho" | "otro") | null;
+            /** Total Paginas */
+            total_paginas: number | null;
+        };
         /** FaltanteDecision */
         FaltanteDecision: {
             /** Campo */
@@ -1153,10 +1468,44 @@ export interface components {
             /** Texto */
             texto: string;
         };
+        /** PaginaExpediente */
+        PaginaExpediente: {
+            /** Doc Id */
+            doc_id: string;
+            /** Documento */
+            documento: string;
+            /** Es Pdf */
+            es_pdf: boolean;
+            /** Ocr */
+            ocr: boolean;
+            /** Pagina */
+            pagina: number;
+            /**
+             * Rol
+             * @enum {string}
+             */
+            rol: "acta_reparto_1a" | "acta_reparto_2a" | "escrito_tutela" | "auto_admisorio" | "auto_vinculacion" | "contestacion" | "fallo_a_quo" | "impugnacion" | "auto_concede_impugnacion" | "notificacion" | "correo" | "memorial" | "indice" | "anexo" | "producto_despacho" | "otro";
+            /** Texto */
+            texto: string;
+            /** Total */
+            total: number;
+        };
         /** PaginaVista */
         PaginaVista: {
             /** Bloques */
             bloques: components["schemas"]["Bloque"][];
+        };
+        /** ParteSinApoderadoVista */
+        ParteSinApoderadoVista: {
+            /** Nombre */
+            nombre: string;
+            /** Nota */
+            nota: string;
+            /**
+             * Rol Parte
+             * @enum {string}
+             */
+            rol_parte: "accionante" | "accionada" | "vinculada" | "otro";
         };
         /** PiezaEdicion */
         PiezaEdicion: {
@@ -1168,6 +1517,40 @@ export interface components {
             modificada: boolean;
             /** Parrafos */
             parrafos: string[];
+        };
+        /** PoderManualCuerpo */
+        PoderManualCuerpo: {
+            /**
+             * Doc Id
+             * @description doc_id de la ingesta, p. ej. 1a-014.
+             */
+            doc_id: string;
+            /** Pagina */
+            pagina: number;
+        };
+        /** PoderVista */
+        PoderVista: {
+            cadena: components["schemas"]["CadenaVista"] | null;
+            /** Documentos Revisados */
+            documentos_revisados: number;
+            /**
+             * Estado
+             * @enum {string}
+             */
+            estado: "hallado" | "hallado_reserva" | "manual" | "sin_poder" | "ajeno" | "descartado";
+            evidencia: components["schemas"]["EvidenciaVista"] | null;
+            /**
+             * Hay Hallado
+             * @description El código halló en el expediente un poder del abogado (aunque se muestre otro o se haya descartado): «Deshacer el descarte» solo tiene adónde volver si es así.
+             */
+            hay_hallado: boolean;
+            mencion: components["schemas"]["EvidenciaVista"] | null;
+            /** Otorgante */
+            otorgante: string;
+            /** Parte */
+            parte: string;
+            /** Tipo */
+            tipo: ("poder" | "sustitucion" | "certificado_existencia") | null;
         };
         /** Preferencias */
         Preferencias: {
@@ -1200,6 +1583,21 @@ export interface components {
                 [key: string]: string;
             } | null;
         };
+        /** RevisionCuerpo */
+        RevisionCuerpo: {
+            /**
+             * Huella
+             * @description Huella del estado que vio quien revisa (ApoderadoVista.huella); obligatoria para marcar como revisado.
+             */
+            huella?: string | null;
+            /**
+             * Nota
+             * @default
+             */
+            nota: string;
+            /** Revisado */
+            revisado: boolean;
+        };
         /** RunBody */
         RunBody: {
             /**
@@ -1219,6 +1617,8 @@ export interface components {
         };
         /** Segmento */
         Segmento: {
+            /** Apoderado Id */
+            apoderado_id?: string;
             /** Cita Id */
             cita_id?: string;
             /** Cursiva */
@@ -1301,6 +1701,40 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VigenciaVista */
+        VigenciaVista: {
+            /** Cedula */
+            cedula: string | null;
+            /** Certificado Url */
+            certificado_url: string | null;
+            /** Codigo Verificacion */
+            codigo_verificacion: string | null;
+            /** Consultado En */
+            consultado_en: string | null;
+            /** Detalle */
+            detalle: string;
+            /**
+             * Estado
+             * @enum {string}
+             */
+            estado: "vigente" | "vigente_obs" | "no_vigente" | "no_inscrito" | "otra_persona" | "ilegible" | "inaccesible" | "sin_cedula" | "sin_consultar";
+            /**
+             * Fase
+             * @enum {string}
+             */
+            fase: "en_cola" | "consultando" | "necesita_ayuda" | "listo";
+            /**
+             * Grave
+             * @description La vigencia por sí sola deja al abogado sin verificar (se muestra en rojo): tarjeta no vigente, o cédula no inscrita que consta en una página del expediente leída sin OCR. Una cédula no inscrita que pudo leerse o escribirse mal no es grave, aunque el abogado quede sin verificar por otra razón.
+             */
+            grave: boolean;
+            /** Numero Certificado */
+            numero_certificado: string | null;
+            /** Origen */
+            origen: ("extension" | "directa" | "manual" | "fake") | null;
+            /** Tarjeta Registro */
+            tarjeta_registro: string | null;
         };
         /** Vista */
         Vista: {
@@ -1457,6 +1891,388 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    leer_apoderados_api_casos__caso_id__apoderados_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadosRespuesta"];
+                };
+            };
+            /** @description Caso no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    consultar_apoderados_api_casos__caso_id__apoderados_consultar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsultarCuerpo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadosRespuesta"];
+                };
+            };
+            /** @description Caso o apoderado no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El caso no está esperando la decisión, o la consulta automática está apagada. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    identificar_apoderados_api_casos__caso_id__apoderados_identificar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description El caso ya tiene a sus apoderados identificados; no se hizo nada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadosRespuesta"];
+                };
+            };
+            /** @description La identificación empezó en un trabajo del caso (cabecera Location: /api/jobs/{id}); la respuesta es el estado actual, que se vuelve a leer con GET …/apoderados. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadosRespuesta"];
+                };
+            };
+            /** @description Caso no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El caso no está esperando la decisión, ya hay una ejecución en curso o la identificación está desactivada. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ajustar_apoderado_api_casos__caso_id__apoderados__ap_id__ajustes_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                ap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AjusteCuerpo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadoVista"];
+                };
+            };
+            /** @description Caso o apoderado no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El caso no está esperando la decisión, la cédula ya consta en el expediente o no hay un poder que descartar. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No hay nada que ajustar, la cédula no es válida, o la página no existe, es de otro radicado o no nombra al abogado. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    descargar_certificado_api_casos__caso_id__apoderados__ap_id__certificado_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                ap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Caso, apoderado o certificado no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                ap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadoVista"];
+                };
+            };
+            /** @description Caso o apoderado no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El caso no está esperando la decisión. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El archivo pasa de 2 MiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No es un PDF, no se pudo leer el certificado, es de otra persona o no trae nombre (cédula no inscrita) y el abogado no tiene cédula. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revisar_apoderado_api_casos__caso_id__apoderados__ap_id__revision_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                ap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionCuerpo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApoderadoVista"];
+                };
+            };
+            /** @description Caso o apoderado no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El caso no está esperando la decisión, o el estado del apoderado cambió desde que se vio. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description El registro de apoderados del caso está dañado. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -1780,6 +2596,89 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archivo_expediente_api_casos__caso_id__expediente__doc_id__archivo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                /** @description doc_id de la ingesta, p. ej. 1a-014 */
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                    "application/pdf": unknown;
+                    "text/plain": unknown;
+                };
+            };
+            /** @description Caso o documento inexistente, o archivo fuera de insumos/. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pagina_expediente_api_casos__caso_id__expediente__doc_id__paginas__n__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+                /** @description doc_id de la ingesta, p. ej. 1a-014 */
+                doc_id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginaExpediente"];
+                };
+            };
+            /** @description Caso, documento o página inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -16,9 +16,9 @@ from docx.text.paragraph import Paragraph
 from fastapi.testclient import TestClient
 
 from test_render import HOY, construir_decision, construir_estado
-from tutela2 import ediciones, formulas, render, salidas, vista
+from tutela2 import apoderados, ediciones, formulas, registro_apoderados, render, salidas, vista
 from tutela2.config import Config
-from tutela2.models import CitaVerificada
+from tutela2.models import Apoderado, CitaVerificada, Identificacion
 
 PRINCIPAL = "/".join(salidas.PRINCIPAL)
 
@@ -570,6 +570,151 @@ def test_openapi_declara_vista(cliente):
     segmento = esquema["components"]["schemas"]["Segmento"]
     assert segmento["required"] == ["texto"]
     assert segmento["properties"]["negrita"] == {"title": "Negrita", "type": "boolean"}
+    assert segmento["properties"]["apoderado_id"] == {"title": "Apoderado Id", "type": "string"}
+
+
+# --- Nombres de apoderados en el borrador previo ---
+
+ABOGADA = ("MARÍA JOSÉ PÉREZ GÓMEZ", "BANCO EJEMPLO S.A.")
+ABOGADO = ("CARLOS EDUARDO PINEDA RUIZ", "CLÍNICA MODELO S.A.S.")
+HOMONIMO = ("José Fernando Reyes Cuartas", "ANA EJEMPLO PRUEBA")
+"""Homónimo del magistrado ponente de la cita c1: su nombre está también dentro de la referencia."""
+
+
+def id_de(par: tuple[str, str]) -> str:
+    return apoderados.id_apoderado(*par)
+
+
+def identificacion(*pares: tuple[str, str]) -> dict:
+    return Identificacion(
+        ingesta_sha="i" * 64,
+        apoderados=[Apoderado(id=id_de(p), nombre=p[0], parte=p[1]) for p in pares],
+    ).model_dump(mode="json")
+
+
+def estado_con_apoderados() -> dict:
+    e = estado_para()
+    e["apoderados"] = identificacion(ABOGADA, ABOGADO, HOMONIMO)
+    ap = e["apertura"]
+    ap["antecedentes_hechos"] += (
+        "\n\nANTECEDENTES_APODERADA: el banco actuó por medio de la doctora Maria Jose\n   Perez Gomez, sin tildes."
+    )
+    ap["contestaciones"][0]["texto"] = (
+        "CONTESTACION_BANCO: la entidad, mediante su apoderada judicial, la doctora María José Pérez Gómez, "
+        "guardó absoluto silencio."
+    )
+    ap["sentencia_impugnada"] = (
+        "SENTENCIA_IMPUGNADA_TEXTO. El juez oyó al doctor CARLOS EDUARDO PINEDA, apoderado de la vinculada, "
+        "y no al señor Carlos Eduardo Pineda Restrepo ni a maría josé pérez gómez."
+    )
+    ap["impugnacion"] = "IMPUGNACION_TEXTO. El doctor José Fernando Reyes Cuartas sustentó el recurso."
+    return e
+
+
+def marcas(v: dict) -> list[tuple[str, str]]:
+    return [(s["texto"], s["apoderado_id"]) for b in bloques(v) for s in b["segmentos"] if "apoderado_id" in s]
+
+
+def partes_docx(ruta: Path) -> dict[str, bytes]:
+    """El contenido de cada parte del docx; los bytes del zip llevan la hora de escritura de cada parte."""
+    with zipfile.ZipFile(ruta) as z:
+        return {n: z.read(n) for n in z.namelist()}
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_el_borrador_marca_los_nombres_de_los_apoderados(tmp_path, gen):
+    docx, v = generar(tmp_path, "borrador", gen, estado_con_apoderados())
+    assert marcas(v) == [
+        ("Maria Jose Perez Gomez", id_de(ABOGADA)),
+        ("María José Pérez Gómez", id_de(ABOGADA)),
+        ("CARLOS EDUARDO PINEDA", id_de(ABOGADO)),
+        ("José Fernando Reyes Cuartas", id_de(HOMONIMO)),
+    ]
+    assert bloque_con(v, "CONTESTACION_BANCO")["segmentos"] == [
+        {"texto": "CONTESTACION_BANCO: la entidad, mediante su apoderada judicial, la doctora "},
+        {"texto": "María José Pérez Gómez", "apoderado_id": id_de(ABOGADA)},
+        {"texto": ", guardó absoluto silencio."},
+    ]
+    assert bloque_con(v, "CONTESTACION_BANCO")["origen"] == "modelo"
+    assert lineas_vista(v) == lineas_docx(docx)
+    assert v["sha256"] == hashlib.sha256(docx.read_bytes()).hexdigest()
+    vista.Vista.model_validate(v)
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_un_nombre_dentro_de_una_cita_queda_en_la_cita(tmp_path, gen):
+    _, v = generar(tmp_path, "borrador", gen, estado_con_apoderados())
+    p1 = bloque_con(v, "PROCEDIBILIDAD_P1")
+    assert [s["cita_id"] for s in p1["segmentos"] if "cita_id" in s] == ["c1", "c1"]
+    assert all("José Fernando Reyes Cuartas" in s["texto"] for s in p1["segmentos"] if "cita_id" in s)
+    assert not any("apoderado_id" in s for s in p1["segmentos"])
+    assert all(not ("cita_id" in s and "apoderado_id" in s) for b in bloques(v) for s in b["segmentos"])
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_las_marcas_no_cambian_el_docx_el_texto_ni_las_citas(tmp_path, gen):
+    e = estado_con_apoderados()
+    docx_con, con = generar(tmp_path / "con", "borrador", gen, e)
+    docx_sin, sin = generar(tmp_path / "sin", "borrador", gen, {**e, "apoderados": None})
+    assert marcas(con) and not marcas(sin)
+    assert partes_docx(docx_con) == partes_docx(docx_sin)
+    assert lineas_vista(con) == lineas_vista(sin)
+    assert con["citas"] == sin["citas"] and con["indice"] == sin["indice"]
+    assert sorted(c["id"] for c in con["citas"]) == ["c1", "c2", "c3"]
+    assert [[b["id"] for b in p["bloques"]] for p in con["paginas"]] == [[b["id"] for b in p["bloques"]] for p in sin["paginas"]]
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_el_fallo_no_marca_apoderados(tmp_path, gen):
+    e = estado_con_apoderados()
+    docx_con, con = generar(tmp_path / "con", "fallo", gen, e)
+    docx_sin, sin = generar(tmp_path / "sin", "fallo", gen, {k: v for k, v in e.items() if k != "apoderados"})
+    assert not marcas(con)
+    assert partes_docx(docx_con) == partes_docx(docx_sin)
+    con.pop("sha256"), sin.pop("sha256")
+    assert con == sin
+
+
+@pytest.mark.parametrize(
+    "valor",
+    [
+        pytest.param(None, id="ninguna"),
+        pytest.param({}, id="vacia"),
+        pytest.param(Identificacion(alertas=["ALERTA: la identificación falló."]).model_dump(mode="json"), id="fallida"),
+        pytest.param({"apoderados": [{"id": "ap-0000000000"}]}, id="invalida"),
+    ],
+)
+def test_sin_identificacion_valida_el_borrador_sale_sin_marcas(tmp_path, valor):
+    e = estado_con_apoderados()
+    e["apoderados"] = valor
+    docx, v = generar(tmp_path, "borrador", "B", e)
+    assert not marcas(v)
+    assert lineas_vista(v) == lineas_docx(docx)
+
+
+def test_revisar_un_apoderado_no_toca_el_borrador_ni_su_vista(cliente, caso, monkeypatch):
+    from tutela2 import rutas_apoderados
+
+    e = estado_con_apoderados()
+    ruta = salidas.trabajo(caso) / "previo.docx"
+    render.render_previo(e, Config(plantilla_gen="B"), ruta)
+    archivos = (ruta, ruta.with_name(vista.ARCHIVOS["borrador"]))
+    antes = [p.read_bytes() for p in archivos]
+    url_vista = "/api/casos/caso-1/vista/borrador"
+    sha = cliente.get(url_vista).json()["sha256"]
+    assert marcas(cliente.get(url_vista).json())
+
+    monkeypatch.setattr(rutas_apoderados, "_estado_del_caso", lambda caso_dir: ("esperando_decision", {}))
+    registro_apoderados.espejar(caso, Identificacion.model_validate(e["apoderados"]))
+    consulta = registro_apoderados.ConsultaVigencia(estado="no_vigente", origen="manual", consultado_en=registro_apoderados.ahora())
+    registro_apoderados.actualizar(caso, lambda r: r.consultas.update({"52000013": consulta}))
+    url = "/api/casos/caso-1/apoderados"
+    ap = next(a for a in cliente.get(url).json()["apoderados"] if a["id"] == id_de(ABOGADA))
+    r = cliente.put(f"{url}/{ap['id']}/revision", json={"revisado": True, "huella": ap["huella"]})
+    assert r.status_code == 200 and r.json()["revisado"] is True
+
+    assert [p.read_bytes() for p in archivos] == antes
+    assert cliente.get(url_vista).json()["sha256"] == sha
 
 
 def _datos_vista() -> dict:

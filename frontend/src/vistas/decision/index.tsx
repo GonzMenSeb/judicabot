@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ErrorApi } from "../../api";
-import type { CasoResumen, JobInicio, ProveedorCaso } from "../../api/contrato";
+import type { ApoderadosRespuesta, CasoResumen, JobInicio, ProveedorCaso } from "../../api/contrato";
 import { DATOS_PROVEEDOR, estadoServidor, jobActual, proveedorSinClave, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Dialogo, Migas, Pasos, Vacio } from "../../ui";
+import { bloqueantes, listaNombres } from "../borrador/apoderados";
 import type { PropsVista } from "../tipos";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "./almacen";
 import {
@@ -51,9 +52,13 @@ function mensajeDe(e: unknown): string {
   return e instanceof Error && e.message ? e.message : "No se pudo completar la operación.";
 }
 
+const EN_CURSO = "Ya hay una ejecución en curso para este caso.";
+const esBloqueoApoderados = (mensaje: string) => mensaje.startsWith("Hay apoderados no verificados");
+
 function accionDelError(mensaje: string, base: string) {
   if (mensaje.startsWith("Falta la clave de la API")) return <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton>;
   if (mensaje.startsWith("Hay conflictos de edición")) return <Boton href={`${base}/borrador`}>Resolver en el borrador</Boton>;
+  if (esBloqueoApoderados(mensaje)) return <Boton href={`${base}/borrador`}>Ir al borrador</Boton>;
   return <Boton href={`${base}/proceso`}>Ver el proceso</Boton>;
 }
 
@@ -183,7 +188,18 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
   const [confirmar, setConfirmar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  const [apoderados, setApoderados] = useState<ApoderadosRespuesta | null>(null);
+  const [consultaApoderados, setConsultaApoderados] = useState(0);
   const cambiar: Cambiar = (fn) => setF(fn);
+
+  useEffect(() => {
+    const control = new AbortController();
+    api.get<ApoderadosRespuesta>(`/api/casos/${codificar(caso)}/apoderados`, { signal: control.signal }).then(setApoderados, () => {});
+    return () => control.abort();
+  }, [caso, consultaApoderados]);
+
+  const sinRevisar = bloqueantes(apoderados);
+  const nombresSinRevisar = [...new Set(sinRevisar.map((a) => a.nombre))];
 
   useEffect(() => {
     guardarBorrador(caso, f);
@@ -220,7 +236,12 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
     });
 
   const cortos = [...new Set(hallazgos.map(resumenCorto))];
-  const estado = cortos.length ? `Para enviar falta: ${cortos.join(", ")}.` : "Listo para enviar.";
+  const estado =
+    sinRevisar.length > 0
+      ? "Revise en el borrador los apoderados no verificados antes de enviar."
+      : cortos.length
+        ? `Para enviar falta: ${cortos.join(", ")}.`
+        : "Listo para enviar.";
   const faltanteServidor = hallazgos.map((h) => h.mensaje).filter((m, i, l) => l.indexOf(m) === i);
 
   const intentar = () => {
@@ -248,7 +269,13 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
     } catch (e) {
       setConfirmar(false);
       setEnviando(false);
-      setErrorEnvio(e instanceof ErrorApi && e.estado === 409 && typeof e.detalle !== "string" ? "Ya hay una ejecución en curso para este caso." : mensajeDe(e));
+      if (e instanceof ErrorApi && e.estado === 409) {
+        // El servidor explica el 409 (conflictos de edición, apoderados sin revisar o una ejecución en curso).
+        setErrorEnvio(typeof e.detalle === "string" && e.message ? e.message : EN_CURSO);
+        setConsultaApoderados((n) => n + 1);
+      } else {
+        setErrorEnvio(mensajeDe(e));
+      }
     }
   };
 
@@ -260,6 +287,11 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
       {bloqueado && (
         <Aviso tipo="info" acciones={<Boton href={`${base}/proceso`}>Ver el proceso</Boton>}>
           Hay una ejecución en curso para este caso. Espere a que termine para enviar la decisión.
+        </Aviso>
+      )}
+      {sinRevisar.length > 0 && (
+        <Aviso tipo="error" titulo="Hay apoderados no verificados sin revisar" acciones={<Boton href={`${base}/borrador`}>Ir al borrador</Boton>}>
+          {`${listaNombres(nombresSinRevisar)}: ${nombresSinRevisar.length === 1 ? "márquelo como revisado" : "márquelos como revisados"} en la pestaña Apoderados del borrador para poder enviar la decisión.`}
         </Aviso>
       )}
       {mostrar && mensajesGenerales.length > 0 && (
@@ -320,7 +352,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
             {estado}
           </span>
           <Boton href={`${base}/borrador`}>Volver al borrador</Boton>
-          <Boton variante="sello" grande onClick={intentar} disabled={bloqueado} cargando={enviando} aria-describedby="dec-estado">
+          <Boton variante="sello" grande onClick={intentar} disabled={bloqueado || sinRevisar.length > 0} cargando={enviando} aria-describedby="dec-estado">
             Enviar decisión y redactar
           </Boton>
         </div>

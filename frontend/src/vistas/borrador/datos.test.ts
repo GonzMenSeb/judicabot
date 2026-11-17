@@ -19,7 +19,7 @@ import {
   tituloDelCaso,
   unidadesDe,
 } from "./datos";
-import { ESTADO_BORRADOR, VISTA_BORRADOR } from "./mock";
+import { APODERADOS_BORRADOR, ESTADO_BORRADOR, VISTA_BORRADOR } from "./mock";
 import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const md = { impugnante_rol: "accionante", impugnante: "Marta", decision_a_quo: "negó el amparo" };
@@ -281,6 +281,22 @@ describe("seccionesDeCitas y marcasDelIndice", () => {
     expect(marcasDelIndice(vista)).toEqual(marcasDelIndice(VISTA_BORRADOR));
   });
 
+  it("cuenta una vez los nombres de abogados por revisar o no verificados, con el estado de /apoderados", () => {
+    const porId = new Map(APODERADOS_BORRADOR.apoderados.map((a) => [a.id, a]));
+    const marcas = marcasDelIndice(VISTA_BORRADOR, porId);
+    expect(marcas["antecedentes-del-caso"]).toEqual({ n: 2, mal: true, apoderados: 2 });
+    // Las citas siguen igual: los abogados verificados no marcan nada.
+    expect(marcas.consideraciones).toEqual({ n: 2, mal: true });
+    const verdes = new Map([...porId].map(([id, a]) => [id, { ...a, estado: "verificado" as const }]));
+    expect(marcasDelIndice(VISTA_BORRADOR, verdes)["antecedentes-del-caso"]).toBeUndefined();
+    const ambar = new Map([...porId].map(([id, a]) => [id, { ...a, estado: "revisar" as const }]));
+    expect(marcasDelIndice(VISTA_BORRADOR, ambar)["antecedentes-del-caso"]).toEqual({ n: 3, mal: false, apoderados: 3 });
+  });
+
+  it("sin el estado de los apoderados sus nombres no marcan el índice", () => {
+    expect(marcasDelIndice(VISTA_BORRADOR)["antecedentes-del-caso"]).toBeUndefined();
+  });
+
   it("sin citas por revisar no hay marcas", () => {
     const vista = { ...VISTA_BORRADOR, citas: VISTA_BORRADOR.citas.map((c): CitaVista => ({ ...c, estado: "verificada" })) };
     expect(marcasDelIndice(vista)).toEqual({});
@@ -358,7 +374,7 @@ describe("construirRevision", () => {
       origen: "Cita · V. Consideraciones",
       titulo: "Sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa",
       linea: `Verificada · cobertura ${porcentaje(0.98)}`,
-      cita: "c1",
+      marca: { tipo: "cita", id: "c1" },
       detalle: { tipo: "cita", motivos: [] },
     });
     const c2 = items.find((i) => i.clave === "cita-c2-revisar-sentencia SU-508 de 2020");
@@ -380,7 +396,7 @@ describe("construirRevision", () => {
       titulo: "Sentido del fallo de primera instancia",
       linea: "Borrador: Declaró improcedente la acción de tutela · Jev: Niega el amparo",
       detalle: { tipo: "jev" },
-      cita: null,
+      marca: null,
     });
     expect(items.find((i) => i.clave === "jev-rol")?.origen).toBe("Jev · coincide");
   });
@@ -415,6 +431,20 @@ describe("construirRevision", () => {
       ["y", "mal", "Archivo"],
       ["x", "alerta", "Archivo"],
     ]);
+  });
+
+  it("pone citas, Jev y alertas en el grupo de citas y las alertas de apoderados en el suyo", () => {
+    const r = construirRevision(
+      VISTA_BORRADOR.citas,
+      { apertura: ["ALERTA: x"], apoderados: ["ALERTA: Según el modelo, la Clínica actúa por medio de abogado, pero no se pudo comprobar."] },
+      [],
+      {},
+    );
+    const claves = new Map(VISTA_BORRADOR.citas.map((c) => [c.id, `cita-${c.id}-${c.estado}-${c.fuente}`]));
+    expect(r.filter((i) => i.grupo === "apoderados").map((i) => [i.clave, i.origen, i.nivel])).toEqual([
+      ["alerta-apoderados-ALERTA: Según el modelo, la Clínica actúa por medio de abogado, pero no se pudo comprobar.", "Apoderados", "alerta"],
+    ]);
+    expect(r.filter((i) => i.grupo === "citas").map((i) => i.clave)).toEqual([claves.get("c3"), claves.get("c2"), "alerta-apertura-ALERTA: x", claves.get("c1")]);
   });
 
   it("tolera alertas ausentes", () => {

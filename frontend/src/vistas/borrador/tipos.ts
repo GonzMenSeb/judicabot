@@ -1,4 +1,5 @@
-import type { Bloque, CitaVista, EstadoCasoApi } from "../../api/contrato";
+import type { ApoderadoVista, Bloque, CitaVista, EstadoCasoApi, EvidenciaVista } from "../../api/contrato";
+import type { TonoChip } from "../../ui";
 
 export type PreguntaJev = "sentido_fallo" | "sentido_clausula" | "rol_impugnante";
 
@@ -74,7 +75,8 @@ export type DetalleRevision =
   | { tipo: "cita"; cita: CitaVista; motivos: string[] }
   | { tipo: "jev"; fila: FilaJev }
   | { tipo: "archivo"; archivo: string; nota: string }
-  | { tipo: "comparar"; lecturas: { etiqueta: string; valores: string[] }[] };
+  | { tipo: "comparar"; lecturas: { etiqueta: string; valores: string[] }[] }
+  | { tipo: "apoderado"; apoderado: ApoderadoVista };
 
 export interface AlertaLegible {
   nivel: NivelRevision;
@@ -85,9 +87,40 @@ export interface AlertaLegible {
   detalle: DetalleRevision | null;
 }
 
+export type GrupoRevision = "citas" | "apoderados";
+
+export type Pestana = GrupoRevision;
+
+/** Lo que está marcado en el texto del borrador: una cita o el nombre de un abogado. */
+export interface Seleccion {
+  tipo: "cita" | "apoderado";
+  id: string;
+}
+
 export interface ItemRevision extends AlertaLegible {
   clave: string;
-  cita: string | null;
+  /** La marca del texto que corresponde a la fila, si la hay. */
+  marca: Seleccion | null;
+  grupo: GrupoRevision;
+  /**
+   * Un aviso corto que la fila cerrada muestra antes de su línea, como «Necesita su ayuda». Con `giro` es algo en
+   * curso («Consultando vigencia en la Rama Judicial…»): va en su propio renglón, con el indicador de actividad.
+   */
+  etiqueta?: { texto: string; tono: TonoChip; giro?: boolean };
+}
+
+/** Una corrección a mano de un apoderado que pide un diálogo (M5): descartar el poder, señalarlo o escribir la cédula. */
+export interface PedidoAjuste {
+  tipo: "descartar" | "poder" | "cedula";
+  apoderado: string;
+}
+
+/** Qué abrir en el visor de evidencia: la página citada de un documento del expediente. */
+export interface PedidoVisor {
+  apoderado: string;
+  evidencia: EvidenciaVista;
+  titulo: string;
+  subtitulo: string;
 }
 
 export interface EntradaIndice {
@@ -100,6 +133,8 @@ export interface EntradaIndice {
 export interface MarcaIndice {
   n: number;
   mal: boolean;
+  /** Cuántos de los `n` son nombres de abogados (el resto, citas); sin abogados no viene. */
+  apoderados?: number;
 }
 
 export type GrupoBloque =

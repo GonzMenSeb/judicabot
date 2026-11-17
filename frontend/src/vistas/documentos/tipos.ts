@@ -85,7 +85,8 @@ export interface RevisionCuerpo {
 export interface JobEstado {
   id: string;
   caso: string;
-  cmd: "nuevo" | "iniciar" | "decidir" | "continuar";
+  /** «identificar» es el trabajo que identifica a los apoderados de un caso anterior (POST …/apoderados/identificar). */
+  cmd: "nuevo" | "iniciar" | "decidir" | "continuar" | "identificar";
   estado: "corriendo" | "terminado" | "error";
   error: string | null;
 }
