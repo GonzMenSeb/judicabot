@@ -1,0 +1,20 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-17T21:00:00Z" },
+  "title": "Eliminar casos",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 1180, "title": "Mi trabajo · eliminar desde la fila (pruébelo)", "expand": "fill", "is_interactive": true },
+    "Estados.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 1400, "title": "Estados: fila, confirmación y avisos" },
+    "Movil.dc.html": { "x": 2720, "y": 0, "w": 860, "h": 844, "title": "Teléfono (390 px)" }
+  },
+  "order": ["Main.dc.html", "Estados.dc.html", "Movil.dc.html"],
+  "notes": {
+    "titulo": { "x": 0, "y": -300, "text": "Eliminar casos: confirmar, deshacer y papelera", "kind": "title1", "maxW": 3580 },
+    "pruebe": { "x": 0, "y": 1300, "w": 600, "text": "Pruébelo: toque la papelera de una fila, confirme con «Eliminar caso» y use «Deshacer» en el aviso. «Compacta» muestra la misma acción en la vista de una línea.\n\nEl caso «En redacción» no tiene papelera: no se puede eliminar mientras corre un proceso.\n\nAquí los terminados se ven para poder probar; en la lista real se muestran tocando «Terminados · ocultos» en la franja de estados.", "fill": "teal" },
+    "servidor": { "x": 680, "y": 1300, "w": 600, "text": "Qué pasa en el servidor: la carpeta del caso no se borra. Pasa a una papelera oculta (CASOS_DIR/.papelera) y se purga a los 30 días. «Deshacer» la devuelve tal cual, con documentos, borrador y fallo.\n\nMientras un caso está en la papelera, su identificador no se reutiliza, así que Deshacer nunca choca con un caso nuevo del mismo nombre.\n\nDespués de eliminar, el foco pasa al título de la lista (el botón que abrió el diálogo ya no existe).", "fill": "gray" },
+    "fuera": { "x": 1360, "y": 1520, "w": 600, "text": "Fuera de este cambio: página de papelera, eliminar varios a la vez y eliminar desde las páginas del caso. Pasados los 10 s del aviso, recuperar exige mover la carpeta a mano (queda en el README).", "fill": "orange" }
+  },
+  "designSystems": []
+}

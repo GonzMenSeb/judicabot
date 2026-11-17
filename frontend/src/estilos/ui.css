@@ -129,12 +129,14 @@ dialog.panel:focus { outline: none; }
 .vacio .acciones { margin-top: 0.6rem; }
 
 .toasts { position: fixed; left: 50%; bottom: 5.5rem; z-index: 60; display: grid; gap: 0.5rem; justify-items: center; width: max-content; max-width: calc(100vw - 2rem); transform: translateX(-50%); pointer-events: none; }
-.toast { display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 1.1rem; border-radius: 8px; background: var(--tinta); color: #fff; font-size: 0.92rem; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25); pointer-events: auto; }
+.toast { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.55rem 0.45rem 1.1rem; border-radius: 8px; background: var(--tinta); color: #fff; font-size: 0.92rem; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25); pointer-events: auto; }
 .toast.error { background: var(--mal); }
 .toast.ok { background: var(--ok); }
 .toast.alerta { background: var(--alerta); }
-.toast button { padding: 0 0.3rem; border: 0; background: none; color: inherit; font-size: 1.1rem; line-height: 1; opacity: 0.8; }
+.toast button { flex: none; min-width: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 5px; background: none; color: inherit; font-size: 1.1rem; line-height: 1; opacity: 0.8; }
 .toast button:hover { opacity: 1; }
+.toast .accion { padding: 0 0.65rem; font-size: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; opacity: 1; }
+.toast .accion:hover { background: rgba(255, 255, 255, 0.14); }
 
 @media (max-width: 960px) {
   .desplegable-velo { background: rgba(29, 42, 51, 0.35); }

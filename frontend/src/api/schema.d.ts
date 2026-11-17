@@ -39,6 +39,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/casos/{caso_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Eliminar Caso */
+        delete: operations["eliminar_caso_api_casos__caso_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/casos/{caso_id}/config": {
         parameters: {
             query?: never;
@@ -418,6 +435,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/papelera/{entrada}/restaurar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restaurar Caso */
+        post: operations["restaurar_caso_api_papelera__entrada__restaurar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/prompts-default": {
         parameters: {
             query?: never;
@@ -516,6 +550,21 @@ export interface components {
             id: string;
             /** N Insumos */
             n_insumos: number;
+        };
+        /**
+         * CasoEliminado
+         * @description DELETE /api/casos/{id}: papelera es la entrada <id>@<sello> de CASOS_DIR/.papelera que sirve para restaurarlo.
+         */
+        CasoEliminado: {
+            /** Id */
+            id: string;
+            /** Papelera */
+            papelera: string;
+        };
+        /** CasoRestaurado */
+        CasoRestaurado: {
+            /** Id */
+            id: string;
         };
         /** CasoResumen */
         CasoResumen: {
@@ -1221,6 +1270,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CasoCreado"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    eliminar_caso_api_casos__caso_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caso_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasoEliminado"];
+                };
+            };
+            /** @description Caso no encontrado. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Hay una ejecución en curso para este caso. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2071,6 +2165,51 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restaurar_caso_api_papelera__entrada__restaurar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entrada: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasoRestaurado"];
+                };
+            };
+            /** @description No se encontró el caso en la papelera. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ya hay otro caso con ese identificador. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

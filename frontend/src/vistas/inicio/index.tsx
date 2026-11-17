@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api, esAbortado } from "../../api";
 import type { CasoResumen, Despacho } from "../../api/contrato";
+import { versionCasos } from "../../estado";
 import { Aviso, Boton } from "../../ui";
 import { IconoProceso } from "../casos/iconos";
 import type { TipoProceso } from "../casos/iconos";
@@ -48,15 +49,23 @@ export default function Inicio(_props: PropsVista) {
     }
   }, []);
 
+  const version = versionCasos.value;
   useEffect(() => {
     const control = new AbortController();
     void cargarCasos(control.signal);
+    return () => control.abort();
+  }, [cargarCasos, version]);
+
+  useEffect(() => {
+    const control = new AbortController();
     api
       .get<{ valores: Pick<Despacho, "nombre_cuerpo"> }>("/api/formato", { signal: control.signal })
       .then((formato) => setDespacho(formato.valores.nombre_cuerpo || null))
       .catch(() => undefined);
     return () => control.abort();
-  }, [cargarCasos]);
+  }, []);
+
+  const quitar = useCallback((id: string) => setCasos((lista) => lista && lista.filter((c) => c.id !== id)), []);
 
   const { esperan, abiertos } = useMemo(() => {
     const lista = casos ?? [];
@@ -108,7 +117,7 @@ export default function Inicio(_props: PropsVista) {
           No se pudo cargar el resumen de los casos.
         </Aviso>
       )}
-      {casos && casos.length > 0 && <ListaCasos casos={casos} />}
+      {casos && casos.length > 0 && <ListaCasos casos={casos} alEliminado={quitar} />}
     </div>
   );
 }

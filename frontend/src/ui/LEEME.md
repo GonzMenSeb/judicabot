@@ -33,7 +33,7 @@ Importar siempre desde `../../ui` (barrel `src/ui/index.ts`), `../../estado` y `
 | `Migas` | `items: {texto: string; href?: string}[]`. El último es la página actual (sin enlace, `aria-current="page"`) |
 | `Pasos` | `caso: string`, `actual: EtapaPaso`, `limite?: EtapaPaso`, `detalles?: Partial<Record<EtapaPaso, string>>` |
 | `Topbar` | `seccion?: "inicio"\|"configuracion"\|null`, `clave: boolean\|null`. Enlace Inicio y engranaje «Configuración» (`#/configuracion`, `id="boton-configuracion"`, activo con `seccion="configuracion"`). Con la clave ausente (`false`) o desconocida (`null`) el engranaje lleva un punto (`mal`/`nulo`) y su nombre accesible dice «Configuración, falta la clave» o «…, estado de la clave desconocido». Lo monta el shell con `clave={claveActiva(servidor)}`; las vistas no lo usan |
-| `Toasts` | sin props; lo monta el shell |
+| `Toasts` | sin props; lo monta el shell. La `accion` de un aviso va como botón antes de ×: al pulsarla cierra el aviso y llama `alHacer`; si tenía el foco, antes lo pasa a `#contenido`. Mientras el foco o el puntero están dentro de un aviso con acción no se cierra por tiempo (WCAG 2.2.1); al salir vuelve a contar desde cero |
 | `cx(...partes)` | une clases ignorando falsos |
 
 **Nunca renderizar un `<dialog>` para un menú o filtro.** `vistas/casos/soltar.ts` trata cualquier `dialog[open]` como un modal abierto y deja de aceptar carpetas arrastradas; por eso `Desplegable` usa un `div role="dialog"`. Reserve `<dialog>` (`Dialogo`, `Panel`) para lo verdaderamente modal.
@@ -58,10 +58,11 @@ El estado de filtros, orden y agrupación de una página vive en la consulta del
 | `estadoServidor` (signal `EstadoServidor\|null`), `cargarEstadoServidor(forzar?)`, `errorEstadoServidor` | `GET /api/estado-servidor`; el shell lo carga una vez. Tras guardar una clave: `await cargarEstadoServidor(true)` |
 | `claveActiva(servidor)`, `claveDe(claves, proveedor)`, `DATOS_PROVEEDOR` | Clave del proveedor activo (`anthropic` o `gemini`) o de uno dado; nombre ("Gemini (Google)"), nombre corto ("Gemini") y ruta de la clave de cada proveedor. `servidor.proveedor` ya sale de las preferencias guardadas y de `TUTELA2_PROVEEDOR_LLM`, y `servidor.modelo` es el de ese proveedor; con ellos se pintan el punto del engranaje y el enlace de IA del panel |
 | `proveedorSinClave(servidor, delCaso)`, `proveedorDelCaso(servidor, delCaso)` | Dentro de un caso, avise que falta la clave con estas funciones y el `proveedor_llm` de `GET /api/casos/<id>/estado` (el que resuelven las preferencias, `TUTELA2_PROVEEDOR_LLM` y el `config.json` del caso, o `fake` si el caso lo fija): `proveedorSinClave` da el proveedor sin clave o `null` (con `fake` o sin servidor), `proveedorDelCaso` el que corresponde al diálogo de la clave |
-| `mostrarToast(texto, {tipo?, ms?}) => id` | `tipo` como `Aviso` (def. info); desaparece a los 3500 ms; `ms: 0` o `tipo: "error"` persiste hasta `cerrarToast(id)` |
+| `mostrarToast(texto, {tipo?, ms?, accion?}) => id` | `tipo` como `Aviso` (def. info); desaparece a los 3500 ms; `ms: 0` o `tipo: "error"` persiste hasta `cerrarToast(id)`. `accion?: {texto, alHacer}` agrega un botón (p. ej. «Deshacer» con `ms: 10_000`; ver `Toasts`) |
 | `toasts`, `cerrarToast(id)` | lista reactiva |
 | `useTitulo(texto)` | título del documento de la vista |
 | `casoActual`, `jobActual`, `preferencias` | signals existentes |
+| `versionCasos` (signal `number`) | Súbala cuando cambien los casos del servidor fuera de la lista que se ve (Deshacer una eliminación, un 409 al eliminar). Inicio y la página del proceso recargan `GET /api/casos` al cambiar, así recarga la vista visible aunque el aviso venga de otra |
 | `fechaRelativa(iso, ahora?)` | "ahora mismo", "hace 5 min", "hace 3 h", "ayer", "hace 4 días", luego "15 de sept" (con año si es otro año); `""` si inválida |
 | `plural(n, singular, plural?)` → "3 casos"; `pluralizar(n, singular, plural?)` → solo la palabra | auto: vocal +s, consonante +es, "-ión" → "-iones", "z" → "ces" |
 | `porcentaje(fraccion, decimales = 0)` | fracción 0-1 → "97 %" (con espacio duro); `null`/NaN → "—" |

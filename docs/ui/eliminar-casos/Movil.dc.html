@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Eliminar un caso en el teléfono</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+:root{--fondo:#e6ebec;--fondo-2:#dce3e5;--tinta:#1d2a33;--suave:#4a5760;--tenue:#55646e;--linea:#c8d1d5;--acento:#1e5a6e;--sello:#7a2634;--ok:#2c6a4b;--alerta:#8f5a00;--alerta-fondo:#f6e8c8;--mal:#a8281f;--mal-fondo:#f5dcd9;--foco:#2a7fa0;--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#cfd8db;color:var(--tinta);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h2,h3,p{margin:0}
+button,input{font:inherit;color:inherit;cursor:pointer}
+.telefono{position:relative;width:390px;height:844px;overflow:hidden;border-radius:28px;background:var(--fondo);box-shadow:0 0 0 1px #b4c0c5,0 18px 40px -18px rgba(0,0,0,.35)}
+.contenido{padding:1.25rem 1rem 1rem;display:grid;gap:.6rem}
+.cabeza{display:grid;gap:.6rem;margin-bottom:.2rem}
+.cabeza h2{font-size:1.3rem;font-weight:600}
+.cabeza input{width:100%;padding:.45rem .7rem;border:1px solid var(--linea);border-radius:6px;background:#fff}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem 1.1rem;border:1px solid var(--linea);border-radius:6px;background:#fff;color:var(--tinta);font-weight:500;white-space:nowrap}
+.btn.sello{background:var(--sello);border-color:var(--sello);color:#fff}
+.btn.peligro{background:var(--mal);border-color:var(--mal);color:#fff}
+.btn.foco{outline:2px solid var(--foco);outline-offset:2px}
+.chip{display:inline-block;padding:.05rem .6rem;border-radius:999px;background:var(--fondo-2);color:var(--suave);font-size:.8rem;font-weight:500;white-space:nowrap}
+.chip.alerta{background:var(--alerta-fondo);color:var(--alerta)}
+.ficha{position:relative;display:grid;gap:.6rem;padding:.85rem 1rem .85rem 1.15rem;background:#fff;border:1px solid var(--linea);border-radius:12px}
+.ficha::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:4px;border-radius:0 3px 3px 0;background:var(--acento)}
+.ficha.sello::before{background:var(--sello)}
+.ficha.ok::before{background:var(--ok)}
+.ficha h3{font-size:1rem;font-weight:600}
+.meta{font-size:.86rem;color:var(--suave)}
+.seg4{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.seg4 i{height:5px;border-radius:3px;background:var(--fondo-2)}
+.seg4 i.h{background:var(--acento)}
+.seg4 i.a{background:var(--sello)}
+.siguiente{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .6rem;margin-top:.35rem;font-size:.86rem;color:var(--suave)}
+.ficha.sello .siguiente small{color:var(--sello);font-weight:500}
+.accion{display:flex;align-items:center;gap:.8rem}
+.accion small{font-size:.82rem;color:var(--suave)}
+.accion-fila{display:flex;align-items:center;gap:.3rem}
+.borrar{display:inline-grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--tenue)}
+.velo{position:absolute;inset:0;display:grid;place-items:center;padding:1rem;background:rgba(20,30,36,.5)}
+.dialogo{width:100%;border-radius:12px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.dialogo-cuerpo{padding:1.3rem}
+.dialogo h3{margin-bottom:.75rem;font-size:1.15rem;font-weight:600}
+.caso{display:grid;gap:.1rem;margin-bottom:.75rem;padding:.6rem .8rem;border:1px solid var(--linea);border-radius:8px;background:#f7f9fa}
+.caso strong{font-size:.95rem;font-weight:600}
+.caso span{font-size:.86rem;color:var(--suave)}
+.explica{font-size:.92rem;color:var(--suave)}
+.acciones{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.6rem;margin-top:1.1rem}
+.toast{position:absolute;left:1rem;right:1rem;bottom:1.25rem;display:flex;align-items:center;gap:.4rem;padding:.45rem .5rem .45rem 1rem;border-radius:8px;background:var(--tinta);color:#fff;font-size:.9rem;box-shadow:0 10px 24px rgba(0,0,0,.25)}
+.toast span{flex:1;min-width:0}
+.toast .deshacer{padding:.5rem .6rem;border:0;border-radius:5px;background:transparent;color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.toast .cerrar{min-width:36px;min-height:36px;padding:0;border:0;background:none;color:inherit;font-size:1.1rem;opacity:.8}
+</style>
+</helmet>
+<div style="width: 860px; height: 844px; display: flex; gap: 80px">
+
+  <div class="telefono" role="group" aria-label="Lista tras eliminar un caso">
+    <div class="contenido">
+      <div class="cabeza">
+        <h2 tabindex="-1" style="outline: 2px solid var(--foco); outline-offset: 4px; border-radius: 4px; justify-self: start">Mi trabajo</h2>
+        <input type="search" aria-label="Buscar casos" placeholder="Radicado, partes, juzgado o entidad">
+      </div>
+      <article class="ficha sello">
+        <div>
+          <h3>Quintero Bedoya c. EPS Horizonte Salud</h3>
+          <p class="meta">Radicado 2026-00412 · Juzgado 9 Penal Municipal</p>
+        </div>
+        <div>
+          <div class="seg4" role="img" aria-label="Avance: paso 3 de 4, borrador y decisión"><i class="h"></i><i class="h"></i><i class="a"></i><i></i></div>
+          <div class="siguiente"><small>Revisar el borrador y decidir</small><span class="chip alerta">Faltan 3 días hábiles</span></div>
+        </div>
+        <div class="accion">
+          <div class="accion-fila">
+            <button type="button" class="btn sello">Decidir</button>
+            <button type="button" class="borrar" aria-label="Eliminar: Quintero Bedoya c. EPS Horizonte Salud">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9.5 7V4.5h5V7"></path><path d="M6.5 7l.9 12.5h9.2L17.5 7"></path><path d="M10.2 11v5.5M13.8 11v5.5"></path></svg>
+            </button>
+          </div>
+          <small>hace 2 h</small>
+        </div>
+      </article>
+      <article class="ficha ok">
+        <div>
+          <h3>Duque Salazar c. EPS Ceiba Salud</h3>
+          <p class="meta">Radicado 2026-00288 · Juzgado 3 Penal Municipal</p>
+        </div>
+        <div>
+          <div class="seg4" role="img" aria-label="Avance: completo"><i class="h"></i><i class="h"></i><i class="h"></i><i class="h"></i></div>
+          <div class="siguiente"><small>Ver el fallo</small></div>
+        </div>
+        <div class="accion">
+          <div class="accion-fila">
+            <button type="button" class="btn">Ver fallo</button>
+            <button type="button" class="borrar" aria-label="Eliminar: Duque Salazar c. EPS Ceiba Salud">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9.5 7V4.5h5V7"></path><path d="M6.5 7l.9 12.5h9.2L17.5 7"></path><path d="M10.2 11v5.5M13.8 11v5.5"></path></svg>
+            </button>
+          </div>
+          <small>hace 17 días</small>
+        </div>
+      </article>
+    </div>
+    <div class="toast" role="status"><span>Se eliminó «Mejía Ríos c. Fondo Pensional Altamira».</span><button type="button" class="deshacer">Deshacer</button><button type="button" class="cerrar" aria-label="Cerrar aviso">×</button></div>
+  </div>
+
+  <div class="telefono" role="group" aria-label="Confirmación en el teléfono">
+    <div class="contenido" aria-hidden="true">
+      <div class="cabeza">
+        <h2>Mi trabajo</h2>
+        <input type="search" placeholder="Radicado, partes, juzgado o entidad" tabindex="-1">
+      </div>
+      <article class="ficha sello">
+        <div><h3>Quintero Bedoya c. EPS Horizonte Salud</h3><p class="meta">Radicado 2026-00412 · Juzgado 9 Penal Municipal</p></div>
+        <div class="accion"><div class="accion-fila"><span class="btn sello">Decidir</span></div><small>hace 2 h</small></div>
+      </article>
+      <article class="ficha ok">
+        <div><h3>Mejía Ríos c. Fondo Pensional Altamira</h3><p class="meta">Radicado 2026-00301 · Juzgado 9 Penal Municipal</p></div>
+        <div class="accion"><div class="accion-fila"><span class="btn">Ver fallo</span></div><small>hace 9 días</small></div>
+      </article>
+      <article class="ficha ok">
+        <div><h3>Duque Salazar c. EPS Ceiba Salud</h3><p class="meta">Radicado 2026-00288 · Juzgado 3 Penal Municipal</p></div>
+        <div class="accion"><div class="accion-fila"><span class="btn">Ver fallo</span></div><small>hace 17 días</small></div>
+      </article>
+    </div>
+    <div class="velo">
+      <div class="dialogo" role="dialog" aria-modal="true" aria-label="¿Eliminar este caso?">
+        <div class="dialogo-cuerpo">
+          <h3>¿Eliminar este caso?</h3>
+          <div class="caso"><strong>Mejía Ríos c. Fondo Pensional Altamira</strong><span>Radicado 2026-00301</span></div>
+          <p class="explica">Se quitará de la lista con sus documentos, el borrador y el fallo. Podrá deshacerlo justo después.</p>
+          <div class="acciones">
+            <button type="button" class="btn foco">Cancelar</button>
+            <button type="button" class="btn peligro">Eliminar caso</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":860,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

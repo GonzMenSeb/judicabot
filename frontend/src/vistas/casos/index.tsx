@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { api, cancelable, esAbortado } from "../../api";
 import type { CasoResumen } from "../../api/contrato";
+import { versionCasos } from "../../estado";
 import { Aviso, Boton, Cargando, Migas, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
 import { IconoProceso } from "./iconos";
@@ -26,10 +27,13 @@ export default function Casos(_props: PropsVista) {
     }
   }, [nuevaSenal]);
 
+  const version = versionCasos.value;
   useEffect(() => {
     void cargar();
     return () => void nuevaSenal();
-  }, [cargar, nuevaSenal]);
+  }, [cargar, nuevaSenal, version]);
+
+  const quitar = useCallback((id: string) => setCasos((lista) => lista && lista.filter((c) => c.id !== id)), []);
 
   return (
     <div data-vista="casos">
@@ -55,6 +59,7 @@ export default function Casos(_props: PropsVista) {
           ) : undefined
         }
         vacio={<Vacio titulo="Aún no hay casos">Cree uno soltando la carpeta 01PrimeraInstancia.</Vacio>}
+        alEliminado={quitar}
       />
     </div>
   );

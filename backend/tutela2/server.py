@@ -45,8 +45,12 @@ _LOCK = threading.Lock()
 _JOB_ACTUAL: ContextVar[str | None] = ContextVar("job_actual", default=None)
 
 def _calentar_resumenes() -> None:
-    from tutela2 import resumen_caso
+    from tutela2 import papelera, resumen_caso
 
+    try:
+        papelera.purgar(casos_dir())
+    except Exception:
+        log.warning("No se pudo purgar la papelera", exc_info=True)
     try:
         resumen_caso.calentar(casos_dir())
     except Exception:
@@ -157,17 +161,24 @@ def _ruta_salida(caso_id: str, archivo: str) -> Path:
 
 
 def _crear_dir_caso(nombre: str) -> tuple[str, Path]:
+    from tutela2 import papelera
+
     base = _slug(nombre) or "caso"
     raiz = casos_dir()
     raiz.mkdir(parents=True, exist_ok=True)
     n = 1
-    while True:
-        caso_id = base if n == 1 else f"{base}-{n}"
-        try:
-            (raiz / caso_id).mkdir()
-            return caso_id, raiz / caso_id
-        except FileExistsError:
+    with _LOCK:
+        en_papelera = papelera.ids(raiz)
+        while True:
+            caso_id = base if n == 1 else f"{base}-{n}"
             n += 1
+            if caso_id in en_papelera:
+                continue
+            try:
+                (raiz / caso_id).mkdir()
+                return caso_id, raiz / caso_id
+            except FileExistsError:
+                pass
 
 
 def _contar_insumos(caso_dir: Path) -> int:
@@ -449,6 +460,8 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
 
     job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": deque(maxlen=200), "resultado": None, "error": None}
     with _LOCK:
+        if not caso_dir.is_dir():
+            raise HTTPException(404, "Caso no encontrado.")
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
         JOBS[job["id"]] = job
@@ -474,6 +487,8 @@ def leer_job(job_id: str) -> dict[str, Any]:
 def revisar(caso_id: str, body: RevisionBody) -> dict[str, Any]:
     caso_dir = _dir_caso(caso_id)
     with _LOCK:
+        if not caso_dir.is_dir():
+            raise HTTPException(404, "Caso no encontrado.")
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
         try:

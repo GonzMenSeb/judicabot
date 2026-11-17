@@ -206,4 +206,17 @@ export const mocks: MockRuta[] = [
   ...casosMock.filter((caso) => caso.id !== "demo-sin-leer").map((caso): MockRuta => ({ metodo: "GET", ruta: `/api/casos/${caso.id}/resumen`, respuesta: caso })),
   { metodo: "POST", ruta: "/api/casos", respuesta: () => ({ id: "nuevo-caso-demo", n_insumos: 9 }) },
   { metodo: "POST", ruta: "/api/casos/nuevo-caso-demo/run", respuesta: { job_id: "job-demo" } },
+  {
+    metodo: "DELETE",
+    ruta: /^\/api\/casos\/([^/?]+)$/,
+    respuesta: ({ ruta }) => {
+      const id = decodeURIComponent(ruta.slice("/api/casos/".length));
+      return { id, papelera: `${id}@20261117T150000000000Z` };
+    },
+  },
+  {
+    metodo: "POST",
+    ruta: /^\/api\/papelera\/([^/?]+)\/restaurar$/,
+    respuesta: ({ ruta }) => ({ id: decodeURIComponent(ruta.split("/")[3]!).replace(/@[^@]*$/, "") }),
+  },
 ];
