@@ -97,6 +97,17 @@ class CasoCreado(BaseModel):
     n_insumos: int
 
 
+class CasoEliminado(BaseModel):
+    """DELETE /api/casos/{id}: papelera es la entrada <id>@<sello> de CASOS_DIR/.papelera que sirve para restaurarlo."""
+
+    id: str
+    papelera: str
+
+
+class CasoRestaurado(BaseModel):
+    id: str
+
+
 # --- vista del RESUELVE (B5) ---
 
 

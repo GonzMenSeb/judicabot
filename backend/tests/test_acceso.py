@@ -63,3 +63,16 @@ def test_sin_contrasena_configurada_no_hay_compuerta(monkeypatch):
     monkeypatch.delenv("JUDICABOT_PASSWORD", raising=False)
     c = TestClient(server.app, base_url="http://127.0.0.1", follow_redirects=False)
     assert c.get("/api/config-default").status_code == 200
+
+
+def test_eliminar_y_restaurar_sin_cookie_dan_401(cliente, tmp_path, monkeypatch):
+    monkeypatch.setenv("CASOS_DIR", str(tmp_path))
+    (tmp_path / "caso").mkdir()
+    (tmp_path / ".papelera" / "otro@20261117T150000000000Z").mkdir(parents=True)
+    assert cliente.delete("/api/casos/caso").status_code == 401
+    assert cliente.post("/api/papelera/otro@20261117T150000000000Z/restaurar").status_code == 401
+    assert (tmp_path / "caso").is_dir() and not (tmp_path / "otro").exists()
+    cliente.post("/login", content="password=clave-de-prueba", headers={"content-type": "application/x-www-form-urlencoded"})
+    assert cliente.delete("/api/casos/caso").status_code == 200
+    assert cliente.post("/api/papelera/otro@20261117T150000000000Z/restaurar").status_code == 200
+    assert not (tmp_path / "caso").exists() and (tmp_path / "otro").is_dir()

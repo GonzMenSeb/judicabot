@@ -97,6 +97,15 @@ export interface CrearCasoRespuesta {
   n_insumos: number;
 }
 
+export interface CasoEliminado {
+  id: string;
+  papelera: string;
+}
+
+export interface CasoRestaurado {
+  id: string;
+}
+
 export type TipoCampo = "texto" | "texto_largo" | "lista";
 
 export interface CampoFormato {

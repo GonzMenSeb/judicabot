@@ -76,3 +76,11 @@ export function IconoLupa() {
     </svg>
   );
 }
+
+export function IconoPapelera({ tam = 18 }: { tam?: number }) {
+  return (
+    <svg width={tam} height={tam} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7M10.2 11v5.5M13.8 11v5.5" />
+    </svg>
+  );
+}

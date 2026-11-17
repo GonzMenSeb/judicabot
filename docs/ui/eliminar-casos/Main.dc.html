@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mi trabajo: eliminar un caso</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+:root{--fondo:#e6ebec;--fondo-2:#dce3e5;--tinta:#1d2a33;--suave:#4a5760;--tenue:#55646e;--linea:#c8d1d5;--acento:#1e5a6e;--acento-2:#174757;--acento-fondo:#d6e6eb;--sello:#7a2634;--sello-2:#611c28;--ok:#2c6a4b;--alerta:#8f5a00;--alerta-fondo:#f6e8c8;--mal:#a8281f;--mal-fondo:#f5dcd9;--foco:#2a7fa0;--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fondo);color:var(--tinta);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--foco);outline-offset:2px}
+a{color:#1e5a6e}a:hover{color:#174757}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem 1.1rem;border:1px solid var(--linea);border-radius:6px;background:#fff;color:var(--tinta);font-weight:500;text-decoration:none;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--acento)}
+.btn.sello{background:var(--sello);border-color:var(--sello);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.08),0 6px 16px -8px rgba(122,38,52,.7)}
+.btn.sello:hover:not(:disabled){background:var(--sello-2);border-color:var(--sello-2)}
+.btn.peligro{background:var(--mal);border-color:var(--mal);color:#fff}
+.btn.peligro:hover:not(:disabled){background:#8a2018;border-color:#8a2018}
+.btn.cargando{cursor:progress;opacity:.85}
+.btn.chico{padding:.32rem .8rem;font-size:.86rem}
+.chip{display:inline-block;padding:.05rem .6rem;border-radius:999px;background:var(--fondo-2);color:var(--suave);font-size:.8rem;font-weight:500;white-space:nowrap}
+.chip.alerta{background:var(--alerta-fondo);color:var(--alerta)}
+.chip.mal{background:var(--mal-fondo);color:var(--mal)}
+.pagina{max-width:1180px;margin:0 auto;padding:1.75rem 1.5rem 7rem}
+.ceja-pagina{margin-bottom:.4rem;font-size:.88rem;color:var(--suave)}
+.cabeza-trabajo{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem 1.5rem;margin-bottom:.85rem}
+.cabeza-trabajo h2{font-size:1.35rem;font-weight:600;line-height:1.25;border-radius:4px}
+.cabeza-trabajo h2.enfocado{outline:2px solid var(--foco);outline-offset:4px}
+.buscar{width:21rem;max-width:100%}
+.buscar input{width:100%;padding:.45rem .7rem;background:#fff;border:1px solid var(--linea);border-radius:6px}
+.barra-res{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem 1rem;margin-bottom:.7rem;font-size:.9rem;color:var(--suave)}
+.densidad{display:inline-flex;border:1px solid var(--linea);border-radius:6px;background:#fff;overflow:hidden}
+.densidad button{padding:.3rem .85rem;border:0;background:transparent;font-size:.86rem;color:var(--suave)}
+.densidad button[aria-pressed=true]{background:var(--acento-fondo);color:var(--acento-2);font-weight:600}
+.fichas{display:grid;gap:.6rem}
+.ficha{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 14rem 13.5rem;gap:1.5rem;align-items:center;padding:.95rem 1.2rem .95rem 1.35rem;background:#fff;border:1px solid var(--linea);border-radius:12px}
+.ficha::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:4px;border-radius:0 3px 3px 0;background:var(--acento)}
+.ficha.sello::before{background:var(--sello)}
+.ficha.alerta::before{background:#d19a2c}
+.ficha.ok::before{background:var(--ok)}
+.ficha.trabajando::before{background:#7fa9b8}
+.ficha .datos{min-width:0}
+.ficha h3{font-size:1.02rem;font-weight:600}
+.ficha .meta{display:flex;gap:.1rem 1.2rem;margin-top:.15rem;font-size:.88rem;color:var(--suave);min-width:0}
+.ficha .meta span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ficha .meta .radicado{flex:none}
+.ficha .partes{margin-top:.1rem;overflow:hidden;font-size:.88rem;color:var(--suave);text-overflow:ellipsis;white-space:nowrap}
+.ficha .avance{display:grid;gap:.35rem}
+.seg4{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.seg4 i{height:5px;border-radius:3px;background:var(--fondo-2)}
+.seg4 i.h{background:var(--acento)}
+.seg4 i.a{background:var(--acento);opacity:.45}
+.ficha.sello .seg4 i.a{background:var(--sello);opacity:1}
+.ficha.alerta .seg4 i.a{background:#d19a2c;opacity:1}
+.ficha.trabajando .seg4 i.a{background:#7fa9b8;opacity:1}
+.ficha .siguiente{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .6rem}
+.ficha .siguiente small,.c-sig{font-size:.86rem;color:var(--suave)}
+.ficha.sello .siguiente small,.fila-c.sello .c-sig{color:var(--sello);font-weight:500}
+.ficha.alerta .siguiente small,.fila-c.alerta .c-sig{color:var(--alerta);font-weight:500}
+.ficha .accion{display:grid;justify-items:end;gap:.25rem;min-width:0}
+.ficha .accion small,.fila-c small{color:var(--suave);font-size:.82rem}
+.accion-fila{display:flex;align-items:center;gap:.3rem}
+.borrar{display:inline-grid;place-items:center;flex:none;width:36px;height:36px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--tenue)}
+.borrar:hover{background:var(--mal-fondo);color:var(--mal)}
+.hueco{display:inline-block;flex:none;width:36px;height:36px}
+.fichas.compacta{gap:0;overflow:hidden;border:1px solid var(--linea);border-radius:12px;background:#fff}
+.fila-c{display:grid;grid-template-columns:.55rem minmax(0,2fr) minmax(0,1.2fr) 14rem 5.5rem 12.5rem;gap:1rem;align-items:center;padding:.5rem 1rem;border-top:1px solid #e3e8ea}
+.fila-c:first-child{border-top:0}
+.fila-c:hover{background:#f7f9fa}
+.punto-estado{width:.55rem;height:.55rem;border-radius:50%;background:var(--c,var(--acento))}
+.c-nombre{min-width:0}
+.fila-c h3,.fila-c small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fila-c h3{font-size:.95rem;font-weight:600;line-height:1.3}
+.c-nombre small{display:block}
+.c-marcas{display:flex;flex-wrap:wrap;gap:.25rem .3rem;min-width:0}
+.c-cuando{text-align:right}
+.fila-c .fin{display:flex;align-items:center;justify-content:flex-end;gap:.2rem}
+.fila-c .borrar,.fila-c .hueco{width:32px;height:32px}
+.e-decidir{--c:var(--sello)}
+.e-faltan{--c:#d19a2c}
+.e-redaccion{--c:#7fa9b8}
+.e-terminado{--c:var(--ok)}
+.vacio{padding:2.5rem 1.5rem;border:1px dashed var(--linea);border-radius:12px;text-align:center;color:var(--suave)}
+.vacio h3{margin-bottom:.4rem;color:var(--tinta);font-size:1.05rem;font-weight:600}
+.vacio .btn{margin-top:1rem}
+.velo{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:1rem;background:rgba(20,30,36,.5)}
+.dialogo{width:min(30rem,100%);border-radius:12px;background:#fff;color:var(--tinta);box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.dialogo-cuerpo{padding:1.6rem}
+.dialogo h2{margin-bottom:.8rem;font-size:1.2rem;font-weight:600}
+.dialogo .caso{display:grid;gap:.1rem;margin-bottom:.8rem;padding:.7rem .9rem;border:1px solid var(--linea);border-radius:8px;background:#f7f9fa}
+.dialogo .caso strong{font-weight:600}
+.dialogo .caso span{font-size:.88rem;color:var(--suave)}
+.dialogo .explica{font-size:.95rem;color:var(--suave)}
+.dialogo .acciones{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.7rem;margin-top:1.3rem}
+.toasts{position:fixed;left:50%;bottom:2rem;z-index:60;width:max-content;max-width:calc(100vw - 2rem);transform:translateX(-50%)}
+.toast{display:flex;align-items:center;gap:.6rem;padding:.45rem .55rem .45rem 1.1rem;border-radius:8px;background:var(--tinta);color:#fff;font-size:.92rem;box-shadow:0 10px 24px rgba(0,0,0,.25)}
+.toast .deshacer{padding:.35rem .65rem;border:0;border-radius:5px;background:transparent;color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.toast .deshacer:hover{background:rgba(255,255,255,.14)}
+.toast .cerrar{min-width:32px;min-height:32px;padding:0;border:0;background:none;color:inherit;font-size:1.1rem;line-height:1;opacity:.8}
+.toast .cerrar:hover{opacity:1}
+@media (max-width:960px){
+.ficha{grid-template-columns:1fr;gap:.7rem}
+.ficha .accion{grid-auto-flow:column;align-items:center;justify-content:start;gap:.8rem}
+.ficha .meta{flex-wrap:wrap}
+.ficha .meta span,.ficha .partes{overflow:visible;white-space:normal}
+.fila-c{grid-template-columns:.55rem minmax(0,1fr) auto;row-gap:.3rem}
+.fila-c .c-sig,.fila-c .c-marcas,.fila-c .c-cuando{grid-column:2/-1}
+.fila-c .c-cuando{text-align:left}
+.fila-c .fin{grid-column:3;grid-row:1}
+}
+</style>
+</helmet>
+<div class="pagina">
+  <p class="ceja-pagina">Inicio</p>
+  <section aria-labelledby="titulo-trabajo">
+    <div class="cabeza-trabajo">
+      <h2 id="titulo-trabajo" tabindex="-1" class="{{claseTitulo}}">Mi trabajo</h2>
+      <div class="buscar">
+        <input type="search" aria-label="Buscar casos" placeholder="Radicado, partes, juzgado o entidad">
+      </div>
+    </div>
+    <div class="barra-res">
+      <span>{{conteo}}</span>
+      <div class="densidad" role="group" aria-label="Densidad">
+        <button type="button" aria-pressed="{{pressFichas}}" onClick="{{verFichas}}">Fichas</button>
+        <button type="button" aria-pressed="{{pressCompacta}}" onClick="{{verCompacta}}">Compacta</button>
+      </div>
+    </div>
+
+    <sc-if value="{{fichas}}" hint-placeholder-val="{{ true }}">
+      <div class="fichas">
+        <sc-for list="{{casos}}" as="c" hint-placeholder-count="6">
+          <article class="ficha {{c.tono}}">
+            <div class="datos">
+              <h3>{{c.nombre}}</h3>
+              <div class="meta">
+                <span class="radicado">Radicado {{c.radicado}}</span>
+                <span title="{{c.juzgado}}">{{c.juzgado}}</span>
+              </div>
+              <p class="partes" title="{{c.partes}}">{{c.partes}}</p>
+            </div>
+            <div class="avance">
+              <div class="seg4" role="img" aria-label="{{c.avance}}">
+                <i class="{{c.t0}}"></i><i class="{{c.t1}}"></i><i class="{{c.t2}}"></i><i class="{{c.t3}}"></i>
+              </div>
+              <div class="siguiente">
+                <small>{{c.siguiente}}</small>
+                <sc-if value="{{c.plazo}}"><span class="chip {{c.plazoTono}}">{{c.plazo}}</span></sc-if>
+                <sc-if value="{{c.alertas}}"><span class="chip alerta">{{c.alertas}}</span></sc-if>
+              </div>
+            </div>
+            <div class="accion">
+              <div class="accion-fila">
+                <button type="button" class="btn {{c.variante}}" aria-label="{{c.etiquetaAccion}}">{{c.accion}}</button>
+                <sc-if value="{{c.borrable}}" hint-placeholder-val="{{ true }}">
+                  <button type="button" class="borrar" aria-label="{{c.etiquetaBorrar}}" title="Eliminar caso" onClick="{{c.pedir}}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9.5 7V4.5h5V7"></path><path d="M6.5 7l.9 12.5h9.2L17.5 7"></path><path d="M10.2 11v5.5M13.8 11v5.5"></path></svg>
+                  </button>
+                </sc-if>
+                <sc-if value="{{c.ocupado}}"><span class="hueco" aria-hidden="true"></span></sc-if>
+              </div>
+              <small>{{c.cuando}}</small>
+            </div>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{compacta}}">
+      <div class="fichas compacta">
+        <sc-for list="{{casos}}" as="c" hint-placeholder-count="6">
+          <article class="fila-c {{c.tono}} {{c.e}}">
+            <span class="punto-estado" title="{{c.estadoTxt}}" aria-hidden="true"></span>
+            <div class="c-nombre">
+              <h3 title="{{c.nombre}}">{{c.nombre}}</h3>
+              <small>Radicado {{c.radicado}} · {{c.juzgado}}</small>
+            </div>
+            <p class="c-sig">{{c.siguiente}}</p>
+            <div class="c-marcas">
+              <sc-if value="{{c.plazo}}"><span class="chip {{c.plazoTono}}">{{c.plazo}}</span></sc-if>
+              <sc-if value="{{c.alertas}}"><span class="chip alerta">{{c.alertas}}</span></sc-if>
+            </div>
+            <small class="c-cuando">{{c.cuando}}</small>
+            <div class="fin">
+              <button type="button" class="btn chico {{c.variante}}" aria-label="{{c.etiquetaAccion}}">{{c.accion}}</button>
+              <sc-if value="{{c.borrable}}" hint-placeholder-val="{{ true }}">
+                <button type="button" class="borrar" aria-label="{{c.etiquetaBorrar}}" title="Eliminar caso" onClick="{{c.pedir}}">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9.5 7V4.5h5V7"></path><path d="M6.5 7l.9 12.5h9.2L17.5 7"></path><path d="M10.2 11v5.5M13.8 11v5.5"></path></svg>
+                </button>
+              </sc-if>
+              <sc-if value="{{c.ocupado}}"><span class="hueco" aria-hidden="true"></span></sc-if>
+            </div>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{vacio}}">
+      <div class="vacio">
+        <h3>No quedan casos en esta demostración</h3>
+        <p>En Inicio, la lista desaparece cuando no hay casos; en la página del proceso se ve «Aún no hay casos».</p>
+        <button type="button" class="btn" onClick="{{reiniciar}}">Volver a empezar</button>
+      </div>
+    </sc-if>
+  </section>
+</div>
+
+<sc-if value="{{hayDialogo}}">
+  <div class="velo" onClick="{{cancelar}}">
+    <div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="titulo-eliminar" onClick="{{parar}}">
+      <div class="dialogo-cuerpo">
+        <h2 id="titulo-eliminar">¿Eliminar este caso?</h2>
+        <div class="caso">
+          <strong>{{p.nombre}}</strong>
+          <span>Radicado {{p.radicado}}</span>
+        </div>
+        <p class="explica">Se quitará de la lista con sus documentos, el borrador y el fallo. Podrá deshacerlo justo después.</p>
+        <div class="acciones">
+          <button type="button" class="btn" onClick="{{cancelar}}" disabled="{{eliminando}}" ref="{{refCancelar}}">Cancelar</button>
+          <button type="button" class="btn peligro {{claseEliminar}}" aria-busy="{{ariaOcupado}}" onClick="{{confirmar}}" disabled="{{eliminando}}">{{textoEliminar}}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<div class="toasts" role="status" aria-live="polite">
+  <sc-if value="{{hayToast}}">
+    <div class="toast">
+      <span>{{toast.texto}}</span>
+      <sc-if value="{{toast.deshacer}}">
+        <button type="button" class="deshacer" onClick="{{deshacer}}">Deshacer</button>
+      </sc-if>
+      <button type="button" class="cerrar" aria-label="Cerrar aviso" onClick="{{cerrarToast}}">×</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+const CASOS = [
+  { id: 'quintero', nombre: 'Quintero Bedoya c. EPS Horizonte Salud', radicado: '2026-00412', juzgado: 'Juzgado 9 Penal Municipal con Función de Control de Garantías', partes: 'Marta Inés Quintero Bedoya contra EPS Horizonte Salud', tono: 'sello', e: 'e-decidir', estadoTxt: 'Por decidir', etapa: 2, siguiente: 'Revisar el borrador y decidir', plazo: 'Faltan 3 días hábiles', plazoTono: 'alerta', alertas: '1 alerta', accion: 'Decidir', variante: 'sello', cuando: 'hace 2 h', ocupado: false },
+  { id: 'cardenas', nombre: 'Cárdenas Ospina c. Aseguradora Montaña Azul', radicado: '2026-00398', juzgado: 'Juzgado 2 Penal Municipal con Función de Conocimiento', partes: 'Luis Cárdenas Ospina contra Aseguradora Montaña Azul', tono: 'alerta', e: 'e-faltan', estadoTxt: 'Faltan documentos', etapa: 0, siguiente: 'Completar los documentos', plazo: 'Venció hace 2 días hábiles', plazoTono: 'mal', alertas: '2 alertas', accion: 'Completar', variante: '', cuando: 'ayer', ocupado: false },
+  { id: 'restrepo', nombre: 'Restrepo Gil c. Fondo Pensional Altamira', radicado: '2026-00390', juzgado: 'Juzgado 5 Penal Municipal con Función de Conocimiento', partes: 'Carlos Restrepo Gil contra Fondo Pensional Altamira', tono: 'trabajando', e: 'e-redaccion', estadoTxt: 'En redacción', etapa: 1, siguiente: 'Redactando las consideraciones', plazo: 'Faltan 14 días hábiles', plazoTono: '', alertas: '', accion: 'Ver avance', variante: '', cuando: 'hace 5 min', ocupado: true },
+  { id: 'arango', nombre: 'Arango Londoño c. EPS Ceiba Salud', radicado: '2026-00377', juzgado: 'Juzgado 14 Penal Municipal con Función de Control de Garantías', partes: 'Ana Arango Londoño contra EPS Ceiba Salud', tono: '', e: '', estadoTxt: 'Por preparar', etapa: 0, siguiente: 'Revisar los documentos', plazo: 'Vence hoy', plazoTono: 'mal', alertas: '', accion: 'Revisar documentos', variante: '', cuando: 'hace 3 h', ocupado: false },
+  { id: 'mejia', nombre: 'Mejía Ríos c. Fondo Pensional Altamira', radicado: '2026-00301', juzgado: 'Juzgado 9 Penal Municipal con Función de Control de Garantías', partes: 'Elena Mejía Ríos contra Fondo Pensional Altamira', tono: 'ok', e: 'e-terminado', estadoTxt: 'Terminado', etapa: 4, siguiente: 'Ver el fallo', plazo: '', plazoTono: '', alertas: '', accion: 'Ver fallo', variante: '', cuando: 'hace 9 días', ocupado: false },
+  { id: 'duque', nombre: 'Duque Salazar c. EPS Ceiba Salud', radicado: '2026-00288', juzgado: 'Juzgado 3 Penal Municipal con Función de Conocimiento', partes: 'Jorge Duque Salazar contra EPS Ceiba Salud', tono: 'ok', e: 'e-terminado', estadoTxt: 'Terminado', etapa: 4, siguiente: 'Ver el fallo', plazo: '', plazoTono: '', alertas: '', accion: 'Ver fallo', variante: '', cuando: 'hace 17 días', ocupado: false }
+];
+const PASOS = ['documentos', 'proceso', 'borrador y decisión', 'fallo'];
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { eliminados: [], pendiente: null, fase: 'confirmar', toast: null, compacta: false, enfoque: false };
+    this.refCancelar = { current: null };
+  }
+
+  componentDidUpdate(_props, previo) {
+    if (this.state.pendiente && !previo.pendiente && this.refCancelar.current) this.refCancelar.current.focus();
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.t1);
+    clearTimeout(this.t2);
+  }
+
+  pedir(id) {
+    this.setState({ pendiente: id, fase: 'confirmar', enfoque: false });
+  }
+
+  confirmar() {
+    const id = this.state.pendiente;
+    if (!id || this.state.fase === 'eliminando') return;
+    this.setState({ fase: 'eliminando' });
+    clearTimeout(this.t1);
+    this.t1 = setTimeout(() => {
+      const caso = CASOS.find((c) => c.id === id);
+      this.setState({
+        eliminados: [...this.state.eliminados, id],
+        pendiente: null,
+        fase: 'confirmar',
+        enfoque: true,
+        toast: { texto: 'Se eliminó «' + caso.nombre + '».', deshacer: true, id: id }
+      });
+      this.programar(10000);
+    }, 700);
+  }
+
+  deshacer() {
+    const t = this.state.toast;
+    if (!t || !t.id) return;
+    const caso = CASOS.find((c) => c.id === t.id);
+    this.setState({
+      eliminados: this.state.eliminados.filter((x) => x !== t.id),
+      toast: { texto: 'Se restauró «' + caso.nombre + '».', deshacer: false, id: null },
+      enfoque: false
+    });
+    this.programar(3500);
+  }
+
+  programar(ms) {
+    clearTimeout(this.t2);
+    this.t2 = setTimeout(() => this.setState({ toast: null }), ms);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const visibles = CASOS.filter((c) => !s.eliminados.includes(c.id));
+    const casos = visibles.map((c) => {
+      const tramo = (i) => (i < c.etapa ? 'h' : i === c.etapa ? 'a' : '');
+      return Object.assign({}, c, {
+        t0: tramo(0), t1: tramo(1), t2: tramo(2), t3: tramo(3),
+        avance: c.etapa >= 4 ? 'Avance: completo' : 'Avance: paso ' + (c.etapa + 1) + ' de 4, ' + PASOS[c.etapa],
+        borrable: !c.ocupado,
+        etiquetaAccion: c.accion + ': ' + c.nombre,
+        etiquetaBorrar: 'Eliminar: ' + c.nombre,
+        pedir: () => this.pedir(c.id)
+      });
+    });
+    const p = CASOS.find((c) => c.id === s.pendiente) || null;
+    const eliminando = s.fase === 'eliminando';
+    return {
+      casos: casos,
+      fichas: !s.compacta && visibles.length > 0,
+      compacta: s.compacta && visibles.length > 0,
+      vacio: visibles.length === 0,
+      conteo: visibles.length === 1 ? '1 caso' : visibles.length + ' casos',
+      pressFichas: s.compacta ? 'false' : 'true',
+      pressCompacta: s.compacta ? 'true' : 'false',
+      verFichas: () => this.setState({ compacta: false }),
+      verCompacta: () => this.setState({ compacta: true }),
+      claseTitulo: s.enfoque ? 'enfocado' : '',
+      hayDialogo: Boolean(p),
+      p: p || { nombre: '', radicado: '' },
+      eliminando: eliminando,
+      ariaOcupado: eliminando ? 'true' : 'false',
+      textoEliminar: eliminando ? 'Eliminando…' : 'Eliminar caso',
+      claseEliminar: eliminando ? 'cargando' : '',
+      refCancelar: this.refCancelar,
+      cancelar: () => { if (this.state.fase !== 'eliminando') this.setState({ pendiente: null }); },
+      parar: (e) => e.stopPropagation(),
+      confirmar: () => this.confirmar(),
+      hayToast: Boolean(s.toast),
+      toast: s.toast || { texto: '', deshacer: false },
+      deshacer: () => this.deshacer(),
+      cerrarToast: () => { clearTimeout(this.t2); this.setState({ toast: null }); },
+      reiniciar: () => this.setState({ eliminados: [], toast: null, enfoque: false })
+    };
+  }
+}
+</script>
+</body>
+</html>
