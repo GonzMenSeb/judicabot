@@ -1,5 +1,6 @@
-import type { Bloque, CitaVista, Segmento, TipoBloque, Vista } from "../../api/contrato";
-import type { MockRuta } from "../../api/mock";
+import { ErrorApi } from "../../api/cliente";
+import type { Bloque, CitaVista, EdicionCuerpo, EdicionesRespuesta, Fuente, Segmento, TipoBloque, Vista } from "../../api/contrato";
+import type { MockRuta, PeticionMock } from "../../api/mock";
 import type { EstadoCaso } from "./tipos";
 
 export const CASO_MOCK_BORRADOR = "borrador-quintero";
@@ -47,6 +48,30 @@ const citas: CitaVista[] = [
     detalle: "No aparece en el dataset de la Corte Constitucional.; Quite la cita o reemplácela por una verificable.",
   },
 ];
+
+const FUENTES: Record<string, Fuente> = {
+  "antecedentes-del-caso-1": { pieza: "apertura.antecedentes_hechos", parrafo: 0 },
+  "antecedentes-del-caso-2": { pieza: "apertura.antecedentes_hechos", parrafo: 1 },
+  "antecedentes-del-caso-3": { pieza: "apertura.antecedentes_hechos", parrafo: 2 },
+  "antecedentes-del-caso-4": { pieza: "apertura.contestaciones.0.texto", parrafo: 0 },
+  "la-sentencia-impugnada-1": { pieza: "apertura.sentencia_impugnada", parrafo: 0 },
+  "la-sentencia-impugnada-2": { pieza: "apertura.sentencia_impugnada", parrafo: 1 },
+  "la-impugnacion-1": { pieza: "apertura.impugnacion", parrafo: 0 },
+  "la-impugnacion-2": { pieza: "apertura.impugnacion", parrafo: 1 },
+  "consideraciones-5": { pieza: "consideraciones.bloques.0.titulo", parrafo: 0 },
+  "consideraciones-6": { pieza: "consideraciones.bloques.0.texto", parrafo: 0 },
+  "consideraciones-7": { pieza: "consideraciones.bloques.0.texto", parrafo: 1 },
+  "consideraciones-9": { pieza: "consideraciones.bloques.1.titulo", parrafo: 0 },
+  "consideraciones-10": { pieza: "consideraciones.bloques.1.texto", parrafo: 0 },
+  "consideraciones-11": { pieza: "consideraciones.bloques.2.titulo", parrafo: 0 },
+  "consideraciones-12": { pieza: "consideraciones.bloques.2.texto", parrafo: 0 },
+};
+
+const conFuente = (bloques: Bloque[]): Bloque[] =>
+  bloques.map((b) => {
+    const fuente = FUENTES[b.id];
+    return fuente ? { ...b, fuente } : b;
+  });
 
 const pagina1: Bloque[] = [
   bloque("encabezado-1", "encabezado", "plantilla", null, t("JUZGADO TERCERO PENAL DEL CIRCUITO CON FUNCIÓN DE CONOCIMIENTO DE MEDELLÍN", { negrita: true })),
@@ -261,7 +286,7 @@ const pagina3: Bloque[] = [
 export const VISTA_BORRADOR: Vista = {
   tipo: "borrador",
   sha256: "0".repeat(64),
-  paginas: [{ bloques: [...pagina1, ...pie(1)] }, { bloques: [...pagina2, ...pie(2)] }, { bloques: pagina3 }],
+  paginas: [{ bloques: conFuente([...pagina1, ...pie(1)]) }, { bloques: conFuente([...pagina2, ...pie(2)]) }, { bloques: conFuente(pagina3) }],
   citas,
   indice: [
     { id: "asunto", titulo: "I. ASUNTO" },
@@ -322,9 +347,118 @@ export const ESTADO_BORRADOR: EstadoCaso = {
   },
 };
 
+const parrafosDe = (texto: string): string[] =>
+  texto
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+const fichasDe = (parrafos: string[]): string => (parrafos.join("\n").match(/⟦[^⟧]*⟧/g) ?? []).sort().join("|");
+
+const textoEditable = (bloque: Bloque): string =>
+  bloque.segmentos.map((s) => (s.cita_id ? `⟦cita ${s.cita_id} · ${s.texto.replace(/^⟦CITA NO VERIFICADA: sentencia |^sentencia |⟧$/g, "")}⟧` : s.texto)).join("");
+
+function segmentosDe(texto: string, molde: Bloque): Segmento[] {
+  const { negrita, cursiva } = molde.segmentos[0] ?? {};
+  const estilo = { ...(negrita && { negrita }), ...(cursiva && { cursiva }) };
+  return texto.split(/(⟦cita [^⟧]*⟧)/).flatMap((parte, i): Segmento[] => {
+    const cita = i % 2 ? /^⟦cita (\S+) · ([^⟧]*)⟧$/.exec(parte) : null;
+    if (cita) return [{ texto: `sentencia ${cita[2]}`, cita_id: cita[1] ?? "" }];
+    return parte ? [{ texto: parte, ...estilo }] : [];
+  });
+}
+
+const piezaDe = (ruta: string): string => decodeURIComponent(/\/ediciones\/([^/?]+)/.exec(ruta)?.[1] ?? "");
+const fallo = (estado: number, mensaje: string) => new ErrorApi(estado, mensaje, mensaje);
+
+export function crearEdicionesMock() {
+  const ia: Record<string, string[]> = {};
+  for (const b of VISTA_BORRADOR.paginas.flatMap((p) => p.bloques)) {
+    if (b.fuente) (ia[b.fuente.pieza] ??= [])[b.fuente.parrafo] = textoEditable(b);
+  }
+  const grupos: Record<string, string[][]> = {};
+  const reiniciar = (pieza: string) => {
+    grupos[pieza] = (ia[pieza] ?? []).map((t) => [t]);
+  };
+  Object.keys(ia).forEach(reiniciar);
+
+  const aplanado = (pieza: string): string[] => (grupos[pieza] ?? []).flat();
+  const inicio = (pieza: string, k: number): number => (grupos[pieza] ?? []).slice(0, k).reduce((n, g) => n + g.length, 0);
+  const sinCambios = (pieza: string, k: number): boolean => {
+    const grupo = grupos[pieza]?.[k];
+    return grupo?.length === 1 && grupo[0] === ia[pieza]?.[k];
+  };
+
+  function respuesta(): EdicionesRespuesta {
+    const piezas: EdicionesRespuesta["piezas"] = {};
+    for (const pieza of Object.keys(ia)) {
+      const editados = (grupos[pieza] ?? []).flatMap((g, k) => (sinCambios(pieza, k) ? [] : g.map((_, j) => inicio(pieza, k) + j)));
+      const modificada = JSON.stringify(aplanado(pieza)) !== JSON.stringify(ia[pieza] ?? []);
+      piezas[pieza] = { parrafos: aplanado(pieza), editados, modificada, avisos: [] };
+    }
+    return { editable: true, motivo: null, piezas, conflictos: [] };
+  }
+
+  function vista(): Vista {
+    const copia = structuredClone(VISTA_BORRADOR);
+    for (const pagina of copia.paginas) {
+      pagina.bloques = pagina.bloques.flatMap((b) => {
+        const f = b.fuente;
+        if (!f) return [b];
+        const desde = inicio(f.pieza, f.parrafo);
+        if (sinCambios(f.pieza, f.parrafo)) return [{ ...b, fuente: { pieza: f.pieza, parrafo: desde } }];
+        return (grupos[f.pieza]?.[f.parrafo] ?? []).map((t, j) => ({
+          ...b,
+          id: j ? `${b.id}-${j}` : b.id,
+          fuente: { pieza: f.pieza, parrafo: desde + j },
+          segmentos: segmentosDe(t, b),
+        }));
+      });
+    }
+    return copia;
+  }
+
+  function editar({ ruta, cuerpo }: PeticionMock): EdicionesRespuesta {
+    const pieza = piezaDe(ruta);
+    const { parrafo, original, texto } = cuerpo as EdicionCuerpo;
+    const lista = grupos[pieza];
+    if (!lista) throw fallo(404, `No existe la pieza ${pieza}.`);
+    const antes = aplanado(pieza);
+    const k = lista.findIndex((_, i) => parrafo >= inicio(pieza, i) && parrafo < inicio(pieza, i) + (lista[i]?.length ?? 0));
+    const grupo = lista[k];
+    if (!grupo || antes[parrafo] !== original) throw fallo(409, "El texto cambió; recargue el borrador.");
+    const nuevos = parrafosDe(texto);
+    const despues = antes.slice();
+    despues.splice(parrafo, 1, ...nuevos);
+    const errores: string[] = [];
+    if (pieza.endsWith(".titulo") && /\n/.test(texto)) errores.push("El título debe ocupar una sola línea.");
+    if (despues.length === 0) errores.push("El texto no puede quedar vacío.");
+    if (fichasDe(despues) !== fichasDe(antes)) errores.push("Las fichas ⟦…⟧ no se pueden agregar, quitar ni cambiar.");
+    if (errores.length > 0) throw fallo(422, errores.join(" "));
+    grupo.splice(parrafo - inicio(pieza, k), 1, ...nuevos);
+    return respuesta();
+  }
+
+  function restaurar({ ruta }: PeticionMock): EdicionesRespuesta {
+    const pieza = piezaDe(ruta);
+    if (!grupos[pieza]) throw fallo(404, `No existe la pieza ${pieza}.`);
+    reiniciar(pieza);
+    return respuesta();
+  }
+
+  return { respuesta, vista, editar, restaurar };
+}
+
+const edicionesMock = crearEdicionesMock();
+const BASE = `/api/casos/${CASO_MOCK_BORRADOR}/ediciones`;
+
 export const mocks: MockRuta[] = [
-  { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/vista\/borrador$/, respuesta: VISTA_BORRADOR },
+  { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/vista\/borrador$/, respuesta: edicionesMock.vista },
   { metodo: "GET", ruta: `/api/casos/${CASO_MOCK_BORRADOR}/estado`, respuesta: ESTADO_BORRADOR },
+  { metodo: "GET", ruta: BASE, respuesta: edicionesMock.respuesta },
+  { metodo: "PUT", ruta: new RegExp(`^${BASE.replace(/\//g, "\\/")}\\/[^/]+$`), respuesta: edicionesMock.editar },
+  { metodo: "DELETE", ruta: new RegExp(`^${BASE.replace(/\//g, "\\/")}\\/[^/]+$`), respuesta: edicionesMock.restaurar },
+  { metodo: "POST", ruta: new RegExp(`^${BASE.replace(/\//g, "\\/")}\\/[^/]+\\/resolver$`), respuesta: edicionesMock.respuesta },
   {
     metodo: "POST",
     ruta: `/api/casos/${CASO_MOCK_BORRADOR}/run`,

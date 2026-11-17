@@ -537,3 +537,4 @@ class Estado(TypedDict, total=False):
     bitacora: Annotated[list[dict[str, Any]], operator.add]
     salidas: dict[str, str]
     jev_metadatos: Optional[dict[str, Any]]
+    ediciones_humanas: list[str]

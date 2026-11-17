@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api, ErrorApi, esAbortado, esCasoNoEncontrado } from "../../api";
-import type { Vista } from "../../api/contrato";
+import type { EdicionesRespuesta, Vista } from "../../api/contrato";
 import { casoActual, jobActual, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
-import { Aviso, Boton, Cargando, CasoNoEncontrado, Chip, Migas, Pasos, Vacio } from "../../ui";
+import { Aviso, Boton, Cargando, CasoNoEncontrado, Chip, Dialogo, Migas, Pasos, Vacio } from "../../ui";
+import { useGuardiaSalida } from "../formato/guardia";
 import type { PropsVista } from "../tipos";
 import "./estilos.css";
 import {
@@ -22,6 +23,7 @@ import {
   seccionesDeCitas,
   tituloDelCaso,
 } from "./datos";
+import { DialogoConflictos } from "./DialogoConflictos";
 import { DialogoCorrecciones } from "./DialogoCorrecciones";
 import { Dock } from "./Dock";
 import { Documento } from "./Documento";
@@ -78,17 +80,25 @@ export default function Borrador({ caso }: PropsVista) {
   const [indiceAbierto, setIndiceAbierto] = useState(false);
   const [panelAbierto, setPanelAbierto] = useState(false);
   const [corrigiendo, setCorrigiendo] = useState(false);
+  const [ediciones, setEdiciones] = useState<EdicionesRespuesta | null>(null);
+  const [editando, setEditando] = useState(false);
+  const [resolviendo, setResolviendo] = useState(false);
+  const [sucio, setSucio] = useState(false);
+  const [apagando, setApagando] = useState(false);
+  const guardia = useGuardiaSalida(sucio);
   const tituloDetalle = useRef<HTMLHeadingElement>(null);
   const disparador = useRef<HTMLElement | null>(null);
   const columna = useRef<HTMLDivElement>(null);
   const botonIndice = useRef<HTMLButtonElement>(null);
   const botonPanel = useRef<HTMLButtonElement>(null);
   const espera = useRef(0);
+  const recarga = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!caso) return;
     const control = new AbortController();
     const base = `/api/casos/${encodeURIComponent(caso)}`;
+    recarga.current?.abort();
     setFase("cargando");
     setEstado(null);
     setEstadoFallo(false);
@@ -96,6 +106,11 @@ export default function Borrador({ caso }: PropsVista) {
     setSeleccionada(null);
     setAncla(null);
     setAbierta(null);
+    setEdiciones(null);
+    setEditando(false);
+    setResolviendo(false);
+    setApagando(false);
+    setSucio(false);
     api.get<Vista>(`${base}/vista/borrador`, { signal: control.signal }).then(
       (datos) => {
         setVista(datos);
@@ -120,8 +135,36 @@ export default function Borrador({ caso }: PropsVista) {
         else setEstadoFallo(true);
       },
     );
-    return () => control.abort();
+    api.get<EdicionesRespuesta>(`${base}/ediciones`, { signal: control.signal }).then(
+      (datos) => setEdiciones(datos),
+      () => undefined,
+    );
+    return () => {
+      control.abort();
+      recarga.current?.abort();
+    };
   }, [caso, intento]);
+
+  const recargar = useCallback(async () => {
+    if (!caso) return;
+    const base = `/api/casos/${encodeURIComponent(caso)}`;
+    recarga.current?.abort();
+    const control = new AbortController();
+    recarga.current = control;
+    const { signal } = control;
+    const [nueva, edicion, actual] = await Promise.allSettled([
+      api.get<Vista>(`${base}/vista/borrador`, { signal }),
+      api.get<EdicionesRespuesta>(`${base}/ediciones`, { signal }),
+      api.get<EstadoCaso>(`${base}/estado`, { signal }),
+    ]);
+    if (signal.aborted) return;
+    if (nueva.status === "fulfilled") setVista(nueva.value);
+    if (edicion.status === "fulfilled") setEdiciones(edicion.value);
+    if (actual.status === "fulfilled") {
+      setEstado(actual.value);
+      setEstadoFallo(false);
+    }
+  }, [caso]);
 
   useEffect(() => () => window.clearTimeout(espera.current), []);
 
@@ -141,10 +184,12 @@ export default function Borrador({ caso }: PropsVista) {
   const items = useMemo(() => construirRevision(citas ?? [], resumen?.alertas, filas, secciones), [citas, resumen, filas, secciones]);
   const redaccion = useMemo(() => redaccionPorNodo(resumen?.bitacora), [resumen]);
 
-  const clave = caso && vista ? claveRevisados(caso, vista.sha256) : null;
+  const clave = caso ? claveRevisados(caso) : null;
+  const alertasLeidas = estado?.resumen?.alertas != null;
+  const vigentes = useMemo(() => (alertasLeidas ? new Set(items.map((i) => i.clave)) : undefined), [alertasLeidas, items]);
   const revisados = useMemo(
-    () => (guardados && guardados.clave === clave ? guardados.revisados : clave ? leerRevisados(clave) : VACIO),
-    [guardados, clave],
+    () => (guardados && guardados.clave === clave ? guardados.revisados : clave ? leerRevisados(clave, vigentes) : VACIO),
+    [guardados, clave, vigentes],
   );
   const pendientes = items.filter((i) => i.nivel !== "ok");
   const hechos = pendientes.filter((i) => revisados.has(i.clave)).length;
@@ -158,10 +203,10 @@ export default function Borrador({ caso }: PropsVista) {
       if (!clave) return;
       const siguiente = new Set(revisados);
       if (!siguiente.delete(k)) siguiente.add(k);
-      guardarRevisados(clave, siguiente);
+      guardarRevisados(clave, siguiente, vigentes);
       setGuardados({ clave, revisados: siguiente });
     },
-    [clave, revisados],
+    [clave, revisados, vigentes],
   );
 
   const elegirCita = useCallback(
@@ -280,6 +325,9 @@ export default function Borrador({ caso }: PropsVista) {
   const motivo = motivoNoCorregir(estado, !estadoFallo);
   const corrigible = !sinEstado && motivo === null;
   const enCurso = Boolean(estado?.job_activo) || estado?.estado === "corriendo";
+  const editable = ediciones?.editable === true;
+  const modoEdicion = editando && editable;
+  const conflictos = editable ? (ediciones?.conflictos ?? []) : [];
   const radicado = metadatos?.cui_2a || metadatos?.cui_1a;
 
   const cabecera = (
@@ -378,6 +426,21 @@ export default function Borrador({ caso }: PropsVista) {
           Hay una redacción en curso para este caso. El borrador puede cambiar cuando termine.
         </Aviso>
       )}
+      {conflictos.length > 0 && (
+        <Aviso
+          tipo="alerta"
+          class="bor-aviso"
+          acciones={
+            <Boton variante="primario" onClick={() => setResolviendo(true)}>
+              Resolver
+            </Boton>
+          }
+        >
+          {conflictos.length === 1
+            ? "Hay 1 conflicto entre sus ediciones y la corrección de la IA"
+            : `Hay ${conflictos.length} conflictos entre sus ediciones y la corrección de la IA`}
+        </Aviso>
+      )}
       <div class="bor-mesa">
         <Indice entradas={entradas} marcas={marcas} activa={activa} alSeccion={alSeccion} redaccion={redaccion} abierto={indiceAbierto} />
         <div class="bor-col-doc" ref={columna}>
@@ -409,6 +472,26 @@ export default function Borrador({ caso }: PropsVista) {
                 <span class="bor-txt-largo">Marcar texto de</span> plantilla
               </span>
             </label>
+            {editable && (
+              <label class="bor-interruptor" title="Permite corregir a mano el texto que redactó el modelo. Las citas, las imágenes y la plantilla no se pueden cambiar.">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Editar texto"
+                  checked={editando}
+                  onChange={(e) => {
+                    if (!e.currentTarget.checked && sucio) {
+                      e.currentTarget.checked = true;
+                      setApagando(true);
+                      return;
+                    }
+                    setEditando(e.currentTarget.checked);
+                  }}
+                />
+                <span class="bor-pista" aria-hidden="true" />
+                <span>Editar texto</span>
+              </label>
+            )}
             <button
               type="button"
               class="bor-boton-icono bor-solo-angosto"
@@ -421,7 +504,14 @@ export default function Borrador({ caso }: PropsVista) {
             </button>
           </div>
           <h2 class="solo-lectura">Texto del borrador</h2>
-          <Documento vista={vista} citas={citasPorId} seleccionada={seleccionada} plantilla={plantilla} alCita={elegirCita} />
+          <Documento
+            vista={vista}
+            citas={citasPorId}
+            seleccionada={seleccionada}
+            plantilla={plantilla}
+            alCita={elegirCita}
+            edicion={ediciones && editable ? { caso, activa: modoEdicion, piezas: ediciones.piezas, conflictos: conflictos.map((c) => c.pieza), recargar, alSucio: setSucio } : undefined}
+          />
           {cita && ancla && columna.current && (
             <PopoverCita
               cita={cita}
@@ -459,7 +549,43 @@ export default function Borrador({ caso }: PropsVista) {
         puedeCorregir={corrigible}
         motivoNoCorregir={motivo}
         alCorregir={() => setCorrigiendo(true)}
+        conflictos={conflictos.length}
       />
+      <Dialogo
+        abierto={apagando || guardia.destino !== null}
+        titulo="Hay texto sin guardar"
+        onCerrar={() => {
+          setApagando(false);
+          guardia.quedarse();
+        }}
+        acciones={
+          <>
+            <Boton
+              data-enfoque
+              onClick={() => {
+                setApagando(false);
+                guardia.quedarse();
+              }}
+            >
+              Seguir editando
+            </Boton>
+            <Boton
+              variante="peligro"
+              onClick={() => {
+                if (apagando) {
+                  setApagando(false);
+                  setEditando(false);
+                } else guardia.salir();
+              }}
+            >
+              Descartar el texto
+            </Boton>
+          </>
+        }
+      >
+        <p>Tiene un párrafo con cambios sin guardar. Si continúa, pierde lo que escribió.</p>
+      </Dialogo>
+      <DialogoConflictos abierto={resolviendo} caso={caso} conflictos={conflictos} recargar={recargar} onCerrar={() => setResolviendo(false)} />
       <DialogoCorrecciones
         abierto={corrigiendo}
         caso={caso}

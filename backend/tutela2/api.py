@@ -6,17 +6,19 @@ import json
 import logging
 import shutil
 import sqlite3
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Iterator, get_args
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
+from pydantic import ValidationError
 
 from tutela2 import config as cfgmod
+from tutela2 import ediciones as ed
 from tutela2 import expediente, fallos, graph, ingest, llm, prompts, render, resumen_caso, salidas
 from tutela2.config import Config
-from tutela2.models import DatosAuto, Ingesta, Rol, normalizar_decision
+from tutela2.models import DatosAuto, Decision, Ingesta, Rol, normalizar_decision
 
 log = logging.getLogger("tutela2")
 
@@ -104,6 +106,8 @@ def _borrar_hilo(caso_dir: Path) -> None:
         (caso_dir / f"hilo.sqlite{sufijo}").unlink(missing_ok=True)
     (caso_dir / "decision.json").unlink(missing_ok=True)
     (caso_dir / fallos.ARCHIVO).unlink(missing_ok=True)
+    (caso_dir / ed.ARCHIVO).unlink(missing_ok=True)
+    (caso_dir / ed.LOG).unlink(missing_ok=True)
 
 
 @contextmanager
@@ -147,12 +151,45 @@ def _clasificar(snap: Any) -> tuple[str, dict | None, str | None]:
     return "sin_iniciar", None, None
 
 
+def _regenerar_previo(caso_dir: Path, cfg: Config, valores: dict, capa: dict) -> None:
+    render.render_previo(ed.aplicar(valores, capa), cfg, salidas.trabajo(caso_dir) / "previo.docx")
+
+
+def _guardar_capa(caso_dir: Path, cfg: Config, valores: dict, antes: dict, capa: dict, eventos: list[dict]) -> None:
+    """Renderiza el previo con la capa candidata y solo entonces la guarda y la registra.
+
+    Si el render falla no queda una capa guardada que el previo (y su hash) no refleje; si falla el guardado, el
+    previo se vuelve a generar con la capa anterior. Si, ya guardada la capa, falla solo la línea de auditoría, la
+    capa y el previo ya son coherentes y no se deshace nada.
+    """
+    _regenerar_previo(caso_dir, cfg, valores, capa)
+    try:
+        ed.guardar(caso_dir, capa)
+    except BaseException:
+        with suppress(Exception):
+            _regenerar_previo(caso_dir, cfg, valores, antes)
+        raise
+    for evento in eventos:
+        ed.registrar(caso_dir, **evento)
+
+
+def _sincronizar(caso_dir: Path, cfg: Config, valores: dict, regenerar: bool = False) -> tuple[dict, bool]:
+    leida = ed.leer(caso_dir)
+    capa, eventos = ed.sincronizar(valores, leida)
+    cambio = bool(eventos) or capa != leida
+    if cambio:
+        _guardar_capa(caso_dir, cfg, valores, leida, capa, eventos)
+    elif regenerar:
+        _regenerar_previo(caso_dir, cfg, valores, capa)
+    return capa, cambio
+
+
 def _leer_estado(g: Any, hilo: dict, cfg: Config, caso_dir: Path, regenerar_previo: bool = False) -> dict:
     snap = g.get_state(hilo)
     estado, payload, error = _clasificar(snap)
     valores = dict(snap.values)
     if estado == "esperando_decision" and regenerar_previo:
-        render.render_previo(valores, cfg, salidas.trabajo(caso_dir) / "previo.docx")
+        _sincronizar(caso_dir, cfg, valores, regenerar=True)
     return _respuesta(estado, caso_dir, ok=estado != "error", payload=payload, resumen=_resumen(valores), error=error)
 
 
@@ -303,6 +340,13 @@ def estado(caso_dir: str | Path) -> dict:
         return _fallo(caso_dir, e)
 
 
+def _decision_valida(decision: dict) -> bool:
+    try:
+        return not Decision.model_validate(decision).errores()
+    except ValidationError:
+        return False
+
+
 @resumen_caso.tras_transicion
 def decidir(caso_dir: str | Path, decision: dict) -> dict:
     caso_dir = Path(caso_dir).resolve()
@@ -321,6 +365,15 @@ def decidir(caso_dir: str | Path, decision: dict) -> dict:
                 if actual == "error":
                     mensaje += ' Si ya envió la decisión, quedó guardada: use "Continuar ejecución" en la pestaña Ejecutar.'
                 return _respuesta(actual, caso_dir, ok=False, error=mensaje)
+            valores = dict(antes.values)
+            capa, _ = _sincronizar(caso_dir, cfg, valores)
+            if capa["conflictos"]:
+                return _respuesta(
+                    actual,
+                    caso_dir,
+                    ok=False,
+                    error="Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de continuar.",
+                )
             decision = normalizar_decision(decision)
             (caso_dir / "decision.json").write_text(
                 json.dumps(decision, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -329,7 +382,15 @@ def decidir(caso_dir: str | Path, decision: dict) -> dict:
             if not decision.get("previo_sha256") and previo.exists():
                 decision = {**decision, "previo_sha256": hashlib.sha256(previo.read_bytes()).hexdigest()}
             n_antes = len(antes.values.get("decisiones") or [])
-            g.invoke(Command(resume=decision), hilo, durability="sync")
+            actualizacion = ed.consolidar(valores, capa) if _decision_valida(decision) else {}
+            if actualizacion:
+                for pieza, e in capa["piezas"].items():
+                    ed.registrar(caso_dir, "consolidar", pieza, e["ia"], e["texto"])
+            g.invoke(
+                Command(update=actualizacion, resume=decision) if actualizacion else Command(resume=decision),
+                hilo,
+                durability="sync",
+            )
             despues = g.get_state(hilo).values.get("decisiones") or []
             rehecho = len(despues) > n_antes and despues[-1]["accion"].startswith("rehacer")
             return _leer_estado(g, hilo, cfg, caso_dir, regenerar_previo=rehecho)
@@ -381,3 +442,73 @@ def continuar(caso_dir: str | Path, forzar: bool = False) -> dict:
             return _leer_estado(g, hilo, cfg, caso_dir, regenerar_previo=actual == "error")
     except Exception as e:
         return _fallo(caso_dir, e)
+
+
+_MOTIVOS = {
+    "sin_iniciar": "El caso aún no tiene un borrador.",
+    "terminado": "El fallo ya se redactó: el borrador ya no se puede editar.",
+    "error": "El proceso quedó a medias: continúe la ejecución antes de editar el borrador.",
+}
+
+
+def _valores_del_hilo(caso_dir: Path, cfg: Config) -> tuple[str, dict]:
+    if not (caso_dir / "hilo.sqlite").exists():
+        return "sin_iniciar", {}
+    with _grafo(caso_dir, cfg) as (g, hilo):
+        snap = g.get_state(hilo)
+    return _clasificar(snap)[0], dict(snap.values)
+
+
+def _motivo(estado: str) -> str:
+    return _MOTIVOS.get(estado, "El borrador solo se puede editar mientras espera la decisión.")
+
+
+def ediciones(caso_dir: str | Path) -> dict:
+    caso_dir = Path(caso_dir).resolve()
+    cfg = cfgmod.cargar(caso_dir)
+    estado, valores = _valores_del_hilo(caso_dir, cfg)
+    if estado != "esperando_decision":
+        return ed.respuesta({}, ed.leer(caso_dir), editable=False, motivo=_motivo(estado))
+    capa, _ = _sincronizar(caso_dir, cfg, valores)
+    return ed.respuesta(valores, capa)
+
+
+def _capa_vigente(caso_dir: Path) -> tuple[Config, dict, dict]:
+    cfg = cfgmod.cargar(caso_dir)
+    estado, valores = _valores_del_hilo(caso_dir, cfg)
+    if estado != "esperando_decision":
+        raise ed.ErrorEdicion(409, _motivo(estado))
+    capa, _ = _sincronizar(caso_dir, cfg, valores)
+    return cfg, valores, capa
+
+
+def _cerrar_edicion(
+    caso_dir: Path, cfg: Config, valores: dict, previa: dict, capa: dict, accion: str, pieza: str
+) -> dict:
+    if capa != previa:
+        e = capa["piezas"].get(pieza)
+        evento = {"accion": accion, "pieza": pieza, "ia": e["ia"] if e else None, "texto": e["texto"] if e else None}
+        _guardar_capa(caso_dir, cfg, valores, previa, capa, [evento])
+    return ed.respuesta(valores, capa)
+
+
+def editar_pieza(caso_dir: str | Path, pieza: str, parrafo: int, original: str, texto: str) -> dict:
+    caso_dir = Path(caso_dir).resolve()
+    cfg, valores, capa = _capa_vigente(caso_dir)
+    nueva = ed.editar(valores, capa, pieza, parrafo, original, texto)
+    return _cerrar_edicion(caso_dir, cfg, valores, capa, nueva, "editar", pieza)
+
+
+def restaurar_pieza(caso_dir: str | Path, pieza: str) -> dict:
+    caso_dir = Path(caso_dir).resolve()
+    cfg, valores, capa = _capa_vigente(caso_dir)
+    huerfana = bool(capa["conflictos"].get(pieza, {}).get("huerfana"))
+    nueva = ed.restaurar(valores, capa, pieza)
+    return _cerrar_edicion(caso_dir, cfg, valores, capa, nueva, "descartar" if huerfana else "restaurar", pieza)
+
+
+def resolver_pieza(caso_dir: str | Path, pieza: str, elecciones: list[str]) -> dict:
+    caso_dir = Path(caso_dir).resolve()
+    cfg, valores, capa = _capa_vigente(caso_dir)
+    nueva = ed.resolver(valores, capa, pieza, elecciones)
+    return _cerrar_edicion(caso_dir, cfg, valores, capa, nueva, "resolver", pieza)
