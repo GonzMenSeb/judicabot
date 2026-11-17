@@ -119,3 +119,49 @@ class DecisionVistaRespuesta(BaseModel):
     encabezado: str
     fecha_fallo: str
     fecha_por_defecto: bool
+
+
+# --- edición in situ del borrador ---
+
+
+class PiezaEdicion(BaseModel):
+    parrafos: list[str]
+    editados: list[int]
+    modificada: bool
+    avisos: list[str]
+
+
+class TrozoOk(BaseModel):
+    tipo: Literal["ok"]
+    parrafos: list[str]
+
+
+class TrozoConflicto(BaseModel):
+    tipo: Literal["conflicto"]
+    mio: list[str]
+    nuevo: list[str]
+    mio_permitido: bool
+
+
+class ConflictoEdicion(BaseModel):
+    pieza: str
+    etiqueta: str
+    huerfana: bool
+    trozos: list[Annotated[TrozoOk | TrozoConflicto, Field(discriminator="tipo")]]
+
+
+class EdicionesRespuesta(BaseModel):
+    editable: bool
+    motivo: str | None
+    piezas: dict[str, PiezaEdicion]
+    conflictos: list[ConflictoEdicion]
+
+
+class EdicionCuerpo(BaseModel):
+    parrafo: int = Field(ge=0)
+    original: str
+    texto: str
+
+
+class ResolverCuerpo(BaseModel):
+    elecciones: list[Literal["mio", "nuevo"]]

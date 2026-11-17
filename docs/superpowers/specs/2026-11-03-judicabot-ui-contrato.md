@@ -85,10 +85,14 @@ Evento { n: int; t: str  // ISO; etapa: "ingesta"|"apertura"|"consideraciones"|"
 Vista { tipo: "borrador"|"fallo"; sha256: str; paginas: Pagina[]; citas: CitaVista[]; indice: {id,titulo}[] }
 Pagina { bloques: Bloque[] }
 Bloque { id: str; tipo: "titulo"|"encabezado"|"parrafo"|"cita_bloque"|"lista"|"tabla"|"firma"|"pie"|"resuelve_numeral";
-         origen: "plantilla"|"modelo"; seccion: str|null; segmentos: Segmento[] }
+         origen: "plantilla"|"modelo"; seccion: str|null; segmentos: Segmento[];
+         fuente: Fuente|null  // por defecto null }
+Fuente { pieza: str; parrafo: int }  // pieza editable (B7) y posición del párrafo en `PiezaEdicion.parrafos`
 Segmento { texto: str; negrita?: bool; cursiva?: bool; cita_id?: str }
 CitaVista { id: str; texto: str; fuente: str; cobertura: float|null; estado: "verificada"|"revisar"|"rechazada"; detalle: str|null }
 ```
+
+`fuente` solo la llevan los bloques de prosa editable de las secciones I a V (y el título de cada bloque de consideraciones, con `parrafo: 0`); vale `null` en plantilla, encabezado, ASUNTO, `cita_bloque`, tablas, caso concreto, resolutiva y pies. El fallo también la lleva en I a V, pero su vista la ignora.
 
 Invariante: concatenar `segmentos[].texto` de todos los bloques de texto reproduce el texto de los párrafos del .docx (prueba de equivalencia).
 
@@ -104,6 +108,36 @@ Nunca 500: entradas inválidas devuelven `errores` y `numerales` vacío o parcia
 ## B6 — Preferencias de IA
 
 `GET /api/ia` → `{modelo, modelos[], api_key: bool, jev_key: bool, jev: {modo:"apagado"|"sombra"|"relleno", umbral: float}, effort, max_tokens: int, max_retries: int}`; `PUT /api/ia` con los mismos campos editables (`modelo, jev.modo, jev.umbral, effort, max_tokens, max_retries`) → mismo shape. Se guarda en `.preferencias.json` (se conserva `modelo`) y se aplica a casos nuevos y al ejecutar (como hoy `TUTELA2_MODELO`). `/api/estado-servidor`, `/api/modelo`, `/api/api-key`, `/api/jev-key` se mantienen.
+
+## B7 — Edición in situ del borrador
+
+Diseño: `docs/superpowers/specs/2026-11-17-edicion-in-situ-design.md`. Rutas en `backend/tutela2/rutas_ediciones.py`; esquemas en `esquemas.py`. Una **pieza** es un campo de texto del estado (`apertura.antecedentes_hechos`, `apertura.contestaciones.{i}.texto`, `apertura.sentencia_impugnada`, `apertura.impugnacion`, `consideraciones.procedibilidad`, `consideraciones.bloques.{i}.titulo`, `consideraciones.bloques.{i}.texto`); cualquier otro id es desconocido. El id va en la ruta: el cliente aplica `encodeURIComponent`. Las ediciones no tocan el grafo: viven en `caso_dir/ediciones.json` y se consolidan al decidir.
+
+```
+PiezaEdicion { parrafos: str[]; editados: int[]; modificada: bool; avisos: str[] }
+  // parrafos: forma editable (citas ⟦cita c2 · T-200 de 2022⟧, imágenes ⟦imagen · desc⟧; el frontend no las convierte)
+  // editados: índices de párrafos distintos del texto de la IA (inserciones y reemplazos; un párrafo quitado no tiene índice)
+  // modificada: el texto efectivo difiere del de la IA, también cuando solo se quitaron párrafos (en un conflicto vale false)
+TrozoOk { tipo: "ok"; parrafos: str[] }
+TrozoConflicto { tipo: "conflicto"; mio: str[]; nuevo: str[]; mio_permitido: bool }
+ConflictoEdicion { pieza: str; etiqueta: str; huerfana: bool; trozos: (TrozoOk|TrozoConflicto)[] }  // discriminador `tipo`
+  // huerfana: la pieza perdió su ancla (contestación por entidad, bloque por título de la IA); trozos = [TrozoOk con el texto del usuario], solo se descarta
+EdicionesRespuesta { editable: bool; motivo: str|null; piezas: {[pieza]: PiezaEdicion}; conflictos: ConflictoEdicion[] }
+EdicionCuerpo { parrafo: int >= 0; original: str; texto: str }
+ResolverCuerpo { elecciones: ("mio"|"nuevo")[] }
+```
+
+`GET /api/casos/{id}/ediciones` → `EdicionesRespuesta`. Con un job corriendo o con el caso fuera de `esperando_decision` responde **200** `{editable: false, motivo, piezas: {}, conflictos: []}`, nunca un 4xx. Si es editable, sincroniza con la salida actual de la IA; si la capa cambió, la guarda y regenera `previo.docx`. 404 `{"detail": "Caso no encontrado."}` si el caso no existe.
+
+`PUT /api/casos/{id}/ediciones/{pieza}` body `EdicionCuerpo` → `EdicionesRespuesta`. `original` debe ser `piezas[pieza].parrafos[parrafo]` tal como se recibió (no el texto del bloque de la vista); `texto` puede traer 0 o más párrafos separados por una línea en blanco (0 borra el párrafo). Los títulos (`…titulo`) rechazan cualquier salto de línea.
+`DELETE /api/casos/{id}/ediciones/{pieza}` → `EdicionesRespuesta`. Restaura **toda** la pieza al texto de la IA, o descarta la edición de una pieza huérfana.
+`POST /api/casos/{id}/ediciones/{pieza}/resolver` body `ResolverCuerpo` → `EdicionesRespuesta`. Una elección por trozo en conflicto, en orden; elegir `"mio"` exige `mio_permitido`. Una pieza huérfana no se resuelve: se descarta con DELETE.
+
+Cada llamada que modifica devuelve la `EdicionesRespuesta` completa y regenera `previo.docx` y la vista del borrador.
+
+Códigos de PUT, DELETE y POST: **404** `{"detail": "No existe la pieza …"}` si la pieza es desconocida (o el caso no existe); **409** si hay un job corriendo, el caso no está en `esperando_decision`, la pieza tiene un conflicto pendiente (PUT) o `original` está desfasado (`"recargue el borrador"`), o no hay conflicto que resolver (POST); **422** si la validación falla (pieza vacía, `[[`/`]]` o fichas ⟦…⟧ alteradas, citas o imágenes distintas de las de la IA, jurisprudencia nueva fuera de ficha, número de elecciones distinto, `"mio"` no permitido o pieza huérfana). Todos los errores son `{"detail": str}` en español, con los motivos unidos por un espacio; los 422 de validación del cuerpo de FastAPI traen una lista.
+
+**Conflictos y decisión.** `POST /api/casos/{id}/run` con `cmd: "decidir"` responde **409** `{"detail": "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir."}` mientras haya conflictos pendientes, de forma síncrona y sin crear un job (así no aparece un job fallido en la vista del proceso). Vale para toda decisión enviada con ese `cmd`, también las de rehacer apertura o consideraciones. Tras una corrección de la IA, el rebase puede dejar conflictos nuevos: aparecen en el siguiente `GET …/ediciones` y bloquean la siguiente decisión hasta resolverlos.
 
 ## Existentes que la UI usa sin cambios
 

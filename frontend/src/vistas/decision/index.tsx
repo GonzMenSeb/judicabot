@@ -51,6 +51,12 @@ function mensajeDe(e: unknown): string {
   return e instanceof Error && e.message ? e.message : "No se pudo completar la operación.";
 }
 
+function accionDelError(mensaje: string, base: string) {
+  if (mensaje.startsWith("Falta la clave de la API")) return <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton>;
+  if (mensaje.startsWith("Hay conflictos de edición")) return <Boton href={`${base}/borrador`}>Resolver en el borrador</Boton>;
+  return <Boton href={`${base}/proceso`}>Ver el proceso</Boton>;
+}
+
 export default function Decision({ caso }: PropsVista) {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [resumen, setResumen] = useState<CasoResumen | null>(null);
@@ -242,7 +248,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
     } catch (e) {
       setConfirmar(false);
       setEnviando(false);
-      setErrorEnvio(e instanceof ErrorApi && e.estado === 409 ? "Ya hay una ejecución en curso para este caso." : mensajeDe(e));
+      setErrorEnvio(e instanceof ErrorApi && e.estado === 409 && typeof e.detalle !== "string" ? "Ya hay una ejecución en curso para este caso." : mensajeDe(e));
     }
   };
 
@@ -282,7 +288,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
         <Aviso
           tipo="error"
           titulo="No se pudo enviar la decisión"
-          acciones={errorEnvio.startsWith("Falta la clave de la API") ? <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton> : <Boton href={`${base}/proceso`}>Ver el proceso</Boton>}
+          acciones={accionDelError(errorEnvio, base)}
         >
           {errorEnvio}
         </Aviso>

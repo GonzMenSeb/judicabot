@@ -16,7 +16,7 @@ from docx.text.paragraph import Paragraph
 from fastapi.testclient import TestClient
 
 from test_render import HOY, construir_decision, construir_estado
-from tutela2 import formulas, render, salidas, vista
+from tutela2 import ediciones, formulas, render, salidas, vista
 from tutela2.config import Config
 from tutela2.models import CitaVerificada
 
@@ -268,6 +268,199 @@ def test_equivalencia_con_saltos_y_tabulaciones_sin_normalizar(tmp_path, gen, ti
     e["metadatos"]["accionante"] = "ANA\tEJEMPLO\r\nPRUEBA"
     docx, v = generar(tmp_path, tipo, gen, e)
     assert lineas_vista(v) == lineas_docx(docx)
+
+
+TIPOS_Y_GEN = [pytest.param(tipo, gen, id=f"{tipo}-{gen}") for tipo in ("borrador", "fallo") for gen in ("A", "B")]
+
+
+def fuente_de(b: dict) -> tuple[str, int] | None:
+    return None if b["fuente"] is None else (b["fuente"]["pieza"], b["fuente"]["parrafo"])
+
+
+def con_fuente(v: dict) -> list[dict]:
+    return [b for b in bloques(v) if b["fuente"] is not None]
+
+
+def estado_con_prosa_irregular() -> dict:
+    e = estado_para()
+    ap, cons = e["apertura"], e["consideraciones"]
+    ap["antecedentes_hechos"] = (
+        "\n\n  Primero en dos\nlíneas.\n\n\n  \n\nSegundo   con   espacios.\r\n\r\n"
+        "Tercero [[IMAGEN 1 p. 2 primera captura]] medio [[IMAGEN 2 p. 3 segunda]] cierre.\n \n"
+    )
+    ap["contestaciones"].append(
+        {"entidad": "CLÍNICA MODELO S.A.S.", "texto": "Contestó\nen dos líneas.\n\n\n\nY calló el resto."}
+    )
+    ap["sentencia_impugnada"] = "Uno\ny dos.\n\nTres."
+    ap["impugnacion"] = "Reparo uno.\n\n\n\nReparo dos.\n"
+    cons["procedibilidad"] = "Abre con [[CITA:c1]] y sigue.\nMisma línea lógica.\n\n\nCierra sin cita."
+    cons["bloques"][0]["texto"] = "Alfa [[CITA:c2]] beta.\n\n[[IMAGEN 5 p. 1 solo imagen]]\n\nOmega."
+    cons["bloques"].append({"titulo": "Debido proceso", "reparo_ids": ["R1"], "texto": "Un único\npárrafo largo."})
+    return e
+
+
+def piezas_de(e: dict) -> dict[str, str]:
+    ap, cons = e["apertura"], e["consideraciones"]
+    piezas = {"apertura.antecedentes_hechos": ap["antecedentes_hechos"]}
+    piezas |= {f"apertura.contestaciones.{i}.texto": c["texto"] for i, c in enumerate(ap["contestaciones"])}
+    piezas["apertura.sentencia_impugnada"] = ap["sentencia_impugnada"]
+    piezas["apertura.impugnacion"] = ap["impugnacion"]
+    piezas["consideraciones.procedibilidad"] = cons["procedibilidad"]
+    for i, b in enumerate(cons["bloques"]):
+        piezas[f"consideraciones.bloques.{i}.titulo"] = b["titulo"]
+        piezas[f"consideraciones.bloques.{i}.texto"] = b["texto"]
+    return piezas
+
+
+@pytest.mark.parametrize("tipo,gen", TIPOS_Y_GEN)
+def test_fuente_en_la_prosa_del_modelo_de_i_a_v_y_nula_en_el_resto(tmp_path, tipo, gen):
+    _, v = generar(tmp_path, tipo, gen, estado_para())
+    esperado = [
+        (("apertura.antecedentes_hechos", 0), "ANTECEDENTES_HECHOS primer"),
+        (("apertura.antecedentes_hechos", 1), "ANTECEDENTES_HECHOS segundo"),
+        (("apertura.contestaciones.0.texto", 0), "CONTESTACION_BANCO"),
+        (("apertura.sentencia_impugnada", 0), "SENTENCIA_IMPUGNADA_TEXTO"),
+        (("apertura.impugnacion", 0), "IMPUGNACION_TEXTO"),
+        (("consideraciones.procedibilidad", 0), "PROCEDIBILIDAD_P1"),
+        (("consideraciones.procedibilidad", 1), "PROCEDIBILIDAD_P2"),
+        (("consideraciones.bloques.0.titulo", 0), "Hábeas data"),
+        (("consideraciones.bloques.0.texto", 0), "BLOQUE_TEXTO"),
+    ]
+    propios = con_fuente(v)
+    assert [fuente_de(b) for b in propios] == [f for f, _ in esperado]
+    for b, (_, inicio) in zip(propios, esperado):
+        assert texto(b).startswith(inicio) and b["origen"] == "modelo"
+    assert all("fuente" in b for p in v["paginas"] for b in p["bloques"])
+    sin_fuente = [b for b in bloques(v) if b["fuente"] is None]
+    assert bloques(v)[0]["tipo"] == "encabezado" and bloques(v)[0]["fuente"] is None
+    assert all(b["fuente"] is None for b in bloques(v) if b["origen"] == "plantilla")
+    assert all(b["fuente"] is None for b in sin_fuente if b["tipo"] in ("titulo", "tabla", "cita_bloque", "lista", "firma"))
+    assert bloque_con(v, "Procede el Despacho a resolver")["fuente"] is None
+    citados = [b for b in bloques(v) if b["tipo"] == "cita_bloque"]
+    assert len(citados) == (2 if tipo == "borrador" else 3) and all(b["fuente"] is None for b in citados)
+    pies = bloques(v, pie=True)
+    assert pies and all(b["fuente"] is None for b in pies)
+    if tipo == "fallo":
+        caso = [b for b in bloques(v) if b["seccion"] == "caso-concreto"]
+        assert any("INSERTAR IMAGEN" in texto(b) for b in caso)
+        assert all(b["fuente"] is None for b in caso)
+        assert all(b["fuente"] is None for b in bloques(v) if b["tipo"] in ("resuelve_numeral", "firma"))
+        assert bloque_con(v, "HECHOS_REF_COMPULSA")["fuente"] is None
+    vista.Vista.model_validate(v)
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_sin_apertura_ni_consideraciones_no_hay_fuente(tmp_path, gen):
+    e = estado_para()
+    for clave in ("apertura", "consideraciones", "caso"):
+        e.pop(clave)
+    for tipo in ("borrador", "fallo"):
+        _, v = generar(tmp_path / tipo, tipo, gen, e)
+        assert all(b["fuente"] is None for p in v["paginas"] for b in p["bloques"])
+
+
+@pytest.mark.parametrize("tipo,gen", TIPOS_Y_GEN)
+def test_fuente_coincide_con_ediciones_parrafos(tmp_path, tipo, gen):
+    e = estado_con_prosa_irregular()
+    _, v = generar(tmp_path, tipo, gen, e)
+    todos = bloques(v)
+    piezas = piezas_de(e)
+    for pieza, crudo in piezas.items():
+        esperados = ediciones.parrafos(crudo)
+        assert esperados, pieza
+        propios = [i for i, b in enumerate(todos) if b["fuente"] and b["fuente"]["pieza"] == pieza]
+        assert {todos[i]["fuente"]["parrafo"] for i in propios} == set(range(len(esperados))), pieza
+        for k, parrafo in enumerate(esperados):
+            indices = [i for i in propios if todos[i]["fuente"]["parrafo"] == k]
+            assert indices == list(range(indices[0], indices[0] + len(indices))), (pieza, k)
+            grupo = [todos[i] for i in indices]
+            if "[[IMAGEN" in parrafo and "[[CITA" not in parrafo:
+                partes = render._IMAGEN.split(parrafo)
+                assert [texto(b) for b in grupo] == [
+                    f"⟦INSERTAR IMAGEN: {x.strip()}⟧" if i % 2 else x.strip()
+                    for i, x in enumerate(partes)
+                    if i % 2 or x.strip()
+                ], (pieza, k)
+            elif "[[CITA" in parrafo:
+                assert len(grupo) == 1 and any(s.get("cita_id") for s in grupo[0]["segmentos"]), (pieza, k)
+                assert texto(grupo[0]).startswith(parrafo.split("[[")[0])
+                assert texto(grupo[0]).endswith(parrafo.rsplit("]]", 1)[1])
+            else:
+                assert [texto(b) for b in grupo] == [parrafo], (pieza, k)
+    secuencia = []
+    for b in con_fuente(v):
+        if not secuencia or secuencia[-1] != fuente_de(b):
+            secuencia.append(fuente_de(b))
+    assert secuencia == [(pieza, k) for pieza, crudo in piezas.items() for k in range(len(ediciones.parrafos(crudo)))]
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_parrafos_editables_coinciden_con_la_fuente_aunque_la_ia_deje_una_marca_de_imagen_rota(tmp_path, gen):
+    e = estado_para()
+    pieza = "consideraciones.bloques.0.texto"
+    e["consideraciones"]["bloques"][0]["texto"] = "Uno.\n\n[[IMAGEN captura 1\n\nde la historia clinica]]\n\nTres final."
+    _, v = generar(tmp_path, "borrador", gen, e)
+    en_vista = {b["fuente"]["parrafo"]: texto(b) for b in bloques(v) if b["fuente"] and b["fuente"]["pieza"] == pieza}
+    editables = ediciones.respuesta(e, {"version": 1, "piezas": {}, "conflictos": {}})["piezas"][pieza]["parrafos"]
+    assert editables == [en_vista[k] for k in sorted(en_vista)]
+    assert editables == ["Uno.", "[[IMAGEN captura 1", "de la historia clinica]]", "Tres final."]
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_marcas_de_imagen_comparten_la_fuente_del_parrafo_que_parten(tmp_path, gen):
+    e = estado_con_prosa_irregular()
+    _, v = generar(tmp_path, "borrador", gen, e)
+    todos = bloques(v)
+    inicio = next(i for i, b in enumerate(todos) if texto(b) == "Tercero")
+    grupo = todos[inicio : inicio + 5]
+    assert [texto(b) for b in grupo] == [
+        "Tercero",
+        "⟦INSERTAR IMAGEN: 1 p. 2 primera captura⟧",
+        "medio",
+        "⟦INSERTAR IMAGEN: 2 p. 3 segunda⟧",
+        "cierre.",
+    ]
+    assert {fuente_de(b) for b in grupo} == {("apertura.antecedentes_hechos", 2)}
+    solo = next(b for b in todos if texto(b) == "⟦INSERTAR IMAGEN: 5 p. 1 solo imagen⟧")
+    assert fuente_de(solo) == ("consideraciones.bloques.0.texto", 1)
+    for id_ in ("c1", "c2"):
+        i = next(i for i, b in enumerate(todos) if b["tipo"] == "cita_bloque" and b["segmentos"][0].get("cita_id") == id_)
+        assert todos[i]["fuente"] is None
+        assert todos[i - 1]["fuente"] is not None
+        assert any(s.get("cita_id") == id_ for s in todos[i - 1]["segmentos"])
+
+
+@pytest.mark.parametrize("gen", ["A", "B"])
+def test_titulo_de_bloque_lleva_su_fuente(tmp_path, gen):
+    _, v = generar(tmp_path, "borrador", gen, estado_con_prosa_irregular())
+    for i, titulo in enumerate(("Hábeas data", "Debido proceso")):
+        (b,) = [b for b in bloques(v) if texto(b) == titulo]
+        assert b["tipo"] == "encabezado"
+        assert b["fuente"] == {"pieza": f"consideraciones.bloques.{i}.titulo", "parrafo": 0}
+    otros = [b for b in bloques(v) if b["tipo"] == "encabezado" and texto(b) not in ("Hábeas data", "Debido proceso")]
+    assert otros and all(b["fuente"] is None for b in otros)
+
+
+def test_registro_como_fuente_se_restablece_y_se_guarda_en_la_entrada():
+    r = vista.Registro()
+    assert r.fuente is None
+    dentro = {"pieza": "apertura.impugnacion", "parrafo": 3}
+    with r.como(fuente=dentro):
+        r.segmento("a", "texto", False, False)
+        with r.como(fuente=None):
+            assert r.fuente is None
+            r.segmento("b", "texto", False, False)
+        assert r.fuente == dentro
+    r.segmento("c", "texto", False, False)
+    assert r.fuente is None
+    assert [r.parrafos[k]["fuente"] for k in "abc"] == [dentro, None, None]
+
+
+def test_openapi_declara_fuente(cliente):
+    esquemas = cliente.get("/openapi.json").json()["components"]["schemas"]
+    assert esquemas["Fuente"]["required"] == ["pieza", "parrafo"]
+    assert esquemas["Fuente"]["properties"]["parrafo"]["type"] == "integer"
+    assert "fuente" in esquemas["Bloque"]["properties"] and "fuente" not in esquemas["Bloque"]["required"]
 
 
 def test_si_falla_la_vista_el_docx_se_genera_y_no_queda_vista_vieja(tmp_path, monkeypatch):
