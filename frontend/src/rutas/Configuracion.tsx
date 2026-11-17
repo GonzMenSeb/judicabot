@@ -4,7 +4,7 @@ import { claveActiva, estadoServidor, nombreModelo } from "../estado";
 import { Cargando } from "../ui/Estados";
 import { Panel } from "../ui/Panel";
 import { claseClave, estadoClave, ID_CONFIGURACION } from "../ui/Topbar";
-import { configuracion, hashConfiguracion, hashDe, navegarDirecto, precargarSeccion, ruta, SECCIONES_CONFIGURACION, seccionesCargadas, seccionFallida } from "./router";
+import { configuracion, hashActual, hashConfiguracion, navegarDirecto, precargarSeccion, SECCIONES_CONFIGURACION, seccionesCargadas, seccionFallida } from "./router";
 import type { SeccionConfiguracion } from "./router";
 
 function EstadoIa() {
@@ -21,7 +21,7 @@ function EstadoIa() {
 
 const DETALLES: Partial<Record<SeccionConfiguracion, ComponentType>> = { ia: EstadoIa };
 
-const cerrar = () => navegarDirecto(hashDe(ruta.value));
+const cerrar = () => navegarDirecto(hashActual());
 
 export function Configuracion() {
   const seccion = configuracion.value;

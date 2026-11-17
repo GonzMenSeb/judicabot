@@ -7,6 +7,8 @@ export type { PropsChip, TonoChip } from "./Chip";
 export { cx } from "./clases";
 export { Dialogo } from "./Dialogo";
 export type { PropsDialogo } from "./Dialogo";
+export { Desplegable } from "./Desplegable";
+export type { PropsDesplegable } from "./Desplegable";
 export { Cargando, CasoNoEncontrado, Vacio } from "./Estados";
 export type { PropsCargando, PropsCasoNoEncontrado, PropsVacio } from "./Estados";
 export { Hoja } from "./Hoja";

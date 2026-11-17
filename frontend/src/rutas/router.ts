@@ -37,8 +37,13 @@ function decodificar(parte: string): string {
   }
 }
 
+export function separar(hash: string): [camino: string, consulta: string] {
+  const i = hash.indexOf("?");
+  return i < 0 ? [hash, ""] : [hash.slice(0, i), hash.slice(i + 1)];
+}
+
 export function coincidir(hash: string): RutaHash {
-  const partes = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodificar);
+  const partes = separar(hash)[0].replace(/^#\/?/, "").split("/").filter(Boolean).map(decodificar);
   const [seccion, caso, etapa] = partes;
   if (partes.length === 0) return INICIO;
   if (partes.length === 1 && esAntigua(seccion)) return { ...INICIO, configuracion: seccion };
@@ -59,6 +64,8 @@ export function hashDe({ vista, params }: Ruta): string {
   if (vista === "casos") return "#/segunda";
   return `#/segunda/${encodeURIComponent(params.caso ?? "")}/${vista}`;
 }
+
+const conConsulta = (hash: string, q: string) => (q ? `${hash}?${q}` : hash);
 
 export const claveDe = ({ vista, params }: Ruta) => `${vista}:${params.caso ?? ""}`;
 
@@ -101,9 +108,19 @@ const secciones = perezosas(
 );
 
 export const ruta = signal<Ruta>(INICIO);
+export const consulta = signal<string>("");
 export const configuracion = signal<SeccionConfiguracion | null>(null);
 export const { cargadas, fallida } = vistas;
 export const { cargadas: seccionesCargadas, fallida: seccionFallida, precargar: precargarSeccion } = secciones;
+
+export const hashActual = () => conConsulta(hashDe(ruta.value), consulta.value);
+
+export function reemplazarConsulta(q: string): void {
+  consulta.value = q;
+  if (configuracion.value !== null) return;
+  const hash = conConsulta(hashDe(ruta.value), q);
+  if (hash !== location.hash) history.replaceState(history.state, "", hash);
+}
 
 export function precargar(vista: NombreVista = ruta.value.vista): Promise<void> {
   return vistas.precargar(vista);
@@ -156,8 +173,13 @@ export function navegarDirecto(destino: string): void {
 export function navegar(destino: string): void {
   const { configuracion: seccion, ...pagina } = coincidir(destino);
   if (configuracion.value === null || seccion) navegarDirecto(destino);
-  else if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
+  else {
+    consulta.value = separar(destino)[1];
+    if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
+  }
 }
+
+const mismoHash = (a: string, b: string) => a === b || new URL(a, location.href).hash === new URL(b, location.href).hash;
 
 function marcarEntrada(abierta: boolean): void {
   const previa = configuracion.value !== null ? marca : null;
@@ -177,7 +199,7 @@ function marcarEntrada(abierta: boolean): void {
 export function sincronizar(): void {
   if (salida) {
     const { destino, reemplazar } = salida;
-    if (!reemplazar && destino !== location.hash) {
+    if (!reemplazar && !mismoHash(destino, location.hash)) {
       location.hash = destino;
       return;
     }
@@ -190,7 +212,9 @@ export function sincronizar(): void {
   marcarEntrada(seccion !== undefined);
   primera = false;
   configuracion.value = seccion ?? null;
-  if (!seccion && claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
+  if (seccion) return;
+  consulta.value = separar(location.hash)[1];
+  if (claveDe(pagina) !== claveDe(ruta.value)) ruta.value = pagina;
 }
 
 sincronizar();

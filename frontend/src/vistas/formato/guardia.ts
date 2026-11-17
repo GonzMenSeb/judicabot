@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { navegarDirecto, protegerSalida, saliendoDelPanel } from "../../rutas";
+import { navegarDirecto, protegerSalida, saliendoDelPanel, separar } from "../../rutas";
 
 export interface GuardiaSalida {
   destino: string | null;
@@ -12,6 +12,7 @@ interface EventoNavegar extends Event {
   navigationType: string;
 }
 
+const mismaPagina = (hash: string) => separar(hash)[0] === separar(location.hash)[0];
 const esPrimario = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
 export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
@@ -29,7 +30,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
       if (e.defaultPrevented || !esPrimario(e) || !(e.target instanceof Element)) return;
       const enlace = e.target.closest("a[href]");
       const href = enlace?.getAttribute("href");
-      if (!href?.startsWith("#/") || href === location.hash || enlace?.getAttribute("target") === "_blank") return;
+      if (!href?.startsWith("#/") || mismaPagina(href) || enlace?.getAttribute("target") === "_blank") return;
       e.preventDefault();
       setDestino(href);
     };
@@ -37,7 +38,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
       const { destination, navigationType } = e as EventoNavegar;
       if (libre.current || saliendoDelPanel() || !e.cancelable || !destination.sameDocument || navigationType === "replace") return;
       const hash = new URL(destination.url).hash;
-      if (hash === location.hash) return;
+      if (mismaPagina(hash)) return;
       e.preventDefault();
       setDestino(hash);
     };
@@ -47,7 +48,7 @@ export function useGuardiaSalida(sucio: boolean): GuardiaSalida {
     document.addEventListener("click", alHacerClic, true);
     navegacion?.addEventListener("navigate", alNavegar);
     const soltarGuardia = protegerSalida((hash) => {
-      if (libre.current || hash === location.hash) return false;
+      if (libre.current || mismaPagina(hash)) return false;
       setDestino(hash);
       return true;
     });
