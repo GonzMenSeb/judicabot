@@ -212,6 +212,15 @@ def test_revision_da_404_si_la_carpeta_desaparecio(cliente, caso, api, tmp_path,
     assert not (_raiz(tmp_path) / caso).exists()
 
 
+@pytest.mark.parametrize("metodo", ["put", "delete"])
+def test_editar_el_borrador_da_404_si_la_carpeta_desaparecio(cliente, caso, tmp_path, monkeypatch, metodo):
+    _eliminar_al_resolver(monkeypatch, tmp_path)
+    ruta = f"/api/casos/{caso}/ediciones/apertura.antecedentes_hechos"
+    r = cliente.put(ruta, json={"parrafo": 0, "original": "a", "texto": "b"}) if metodo == "put" else cliente.delete(ruta)
+    assert r.status_code == 404 and r.json()["detail"] == "Caso no encontrado."
+    assert not (_raiz(tmp_path) / caso).exists()
+
+
 @pytest.mark.parametrize("archivos", [{"R/a.pdf": b"%PDF-a", "R/sub/b.pdf": b"%PDF-b"}, {"a.pdf": b"%PDF-a"}], ids=["antes-del-ultimo", "tras-el-ultimo"])
 def test_eliminar_durante_la_subida_no_recrea_la_carpeta(cliente, tmp_path, monkeypatch, archivos):
     raiz = _raiz(tmp_path)

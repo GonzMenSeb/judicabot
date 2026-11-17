@@ -6,6 +6,7 @@ import { Aviso, Boton } from "../../ui";
 import { IconoProceso } from "../casos/iconos";
 import type { TipoProceso } from "../casos/iconos";
 import { ListaCasos } from "../casos/ListaCasos";
+import { useQuitados } from "../casos/quitados";
 import type { PropsVista } from "../tipos";
 import "./estilos.css";
 
@@ -39,15 +40,18 @@ export default function Inicio(_props: PropsVista) {
   const [casos, setCasos] = useState<CasoResumen[] | null>(null);
   const [falloCasos, setFalloCasos] = useState(false);
   const [despacho, setDespacho] = useState<string | null>(null);
+  const quitados = useQuitados();
 
   const cargarCasos = useCallback(async (signal?: AbortSignal) => {
+    const carga = quitados.iniciar();
     setFalloCasos(false);
     try {
-      setCasos(await api.get<CasoResumen[]>("/api/casos", { signal }));
+      const lista = await api.get<CasoResumen[]>("/api/casos", { signal });
+      setCasos(quitados.filtrar(carga, lista));
     } catch (e) {
       if (!esAbortado(e)) setFalloCasos(true);
     }
-  }, []);
+  }, [quitados]);
 
   const version = versionCasos.value;
   useEffect(() => {
@@ -65,7 +69,13 @@ export default function Inicio(_props: PropsVista) {
     return () => control.abort();
   }, []);
 
-  const quitar = useCallback((id: string) => setCasos((lista) => lista && lista.filter((c) => c.id !== id)), []);
+  const quitar = useCallback(
+    (id: string) => {
+      quitados.quitar(id);
+      setCasos((lista) => lista && lista.filter((c) => c.id !== id));
+    },
+    [quitados],
+  );
 
   const { esperan, abiertos } = useMemo(() => {
     const lista = casos ?? [];

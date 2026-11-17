@@ -132,6 +132,40 @@ describe("lista de casos", () => {
     ]);
   });
 
+  it("una recarga que salió antes de eliminar no devuelve el caso eliminado, y las siguientes mandan", async () => {
+    const arango = "Arango Londoño c. EPS Ceiba Salud";
+    const quintero = "Quintero Bedoya c. EPS Horizonte Salud";
+    const entrada = "arango-londono@20261117T150000000000Z";
+    let soltar: (r: Response) => void = () => undefined;
+    let cargas = 0;
+    simularFetch({
+      "GET /api/casos": () => (++cargas === 2 ? new Promise<Response>((ok) => (soltar = ok)) : json(casosMock)),
+      "DELETE /api/casos/arango-londono": () => json({ id: "arango-londono", papelera: entrada }),
+      "DELETE /api/casos/quintero-bedoya": () => json({ id: "quintero-bedoya", papelera: "quintero-bedoya@20261117T150001000000Z" }),
+      [`POST /api/papelera/${encodeURIComponent(entrada)}/restaurar`]: () => json({ id: "arango-londono" }),
+    });
+    render(
+      <>
+        <Casos />
+        <Toasts />
+      </>,
+    );
+    const lista = await screen.findByRole("region", { name: "Casos" });
+    const eliminar = async (nombre: string) => {
+      fireEvent.click(await within(lista).findByRole("button", { name: `Eliminar: ${nombre}` }));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "¿Eliminar este caso?" })).getByRole("button", { name: "Eliminar caso" }));
+      await waitFor(() => expect(within(lista).queryByText(nombre)).toBeNull());
+    };
+    await eliminar(arango);
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    await waitFor(() => expect(cargas).toBe(2));
+    await eliminar(quintero);
+
+    await act(async () => soltar(json(casosMock)));
+    expect(await within(lista).findByText(arango)).toBeTruthy();
+    expect(within(lista).queryByText(quintero)).toBeNull();
+  });
+
   it("409 al eliminar: recarga, el caso en curso pierde la papelera y el foco queda en el encabezado", async () => {
     const arango = "Arango Londoño c. EPS Ceiba Salud";
     let corriendo = false;

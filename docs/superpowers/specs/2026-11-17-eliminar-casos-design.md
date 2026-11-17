@@ -40,7 +40,7 @@ Fecha: 2026-11-17. Rama: `feat/eliminar-casos`. Prototipo aprobado: `docs/ui/eli
 
 ### Carreras con otras operaciones
 
-- `POST /api/casos/{id}/run` y `PUT /api/casos/{id}/revision` vuelven a comprobar, dentro de `_LOCK`, que la carpeta del caso existe; si no, 404 «Caso no encontrado.». Así no arranca un job sobre un caso que se acaba de eliminar.
+- `POST /api/casos/{id}/run`, `PUT /api/casos/{id}/revision` y las ediciones del borrador (`PUT`/`DELETE`/`POST` de `/api/casos/{id}/ediciones/…`) vuelven a comprobar, dentro de `_LOCK`, que la carpeta del caso existe; si no, 404 «Caso no encontrado.». Así no arranca un job sobre un caso que se acaba de eliminar.
 - Si el caso se elimina mientras termina de subirse (`POST /api/casos`), la subida responde 404 «Caso no encontrado.», sea cual sea la escritura que encuentre la carpeta ausente.
 - Ninguna escritura tardía puede recrear la carpeta de un caso eliminado: el calentamiento de resúmenes (`resumen_caso.calentar`), la caché (`resumen_caso._escribir`) y los demás que escriben dentro de un caso no hacen `mkdir(parents=True)` de la carpeta del caso. Si alguno lo hace, se corrige.
 
@@ -89,6 +89,8 @@ Fecha: 2026-11-17. Rama: `feat/eliminar-casos`. Prototipo aprobado: `docs/ui/eli
 
 Inicio (`vistas/inicio`) y la página del proceso (`vistas/casos/index.tsx`) pasan `alEliminado` (filtran su `casos`) y recargan `GET /api/casos` cuando cambia `versionCasos`. En Inicio, si se elimina el último caso, la lista desaparece como hoy cuando no hay casos.
 
+Una carga de `GET /api/casos` que salió antes de eliminar un caso (por ejemplo, la de Deshacer) puede responder después: la respuesta descarta los casos que el padre quitó mientras ella estaba en curso (`vistas/casos/quitados.ts`); las cargas que empiezan después mandan.
+
 ### Mocks
 
 `vistas/casos/mock.ts` responde `DELETE /api/casos/<id>` con `{id, papelera: "<id>@20261117T150000000000Z"}` y `POST /api/papelera/<entrada>/restaurar` con `{id}`.
@@ -97,7 +99,7 @@ Inicio (`vistas/inicio`) y la página del proceso (`vistas/casos/index.tsx`) pas
 
 - Backend (`backend/tests/test_server.py` o un `test_eliminar.py` nuevo): eliminar mueve la carpeta y la quita de `GET /api/casos`; 404 con id inexistente, con `.papelera` y con `..`; 409 con un job corriendo; restaurar la devuelve; 409 si el id está ocupado; 404 con entradas inválidas; `_crear_dir_caso` no reutiliza un id en la papelera, aunque su sello no se entienda; eliminar durante la subida da 404, también tras copiar el último archivo; la purga borra solo lo vencido y respeta lo que no entiende; `run` y `revision` dan 404 si la carpeta desapareció; OpenAPI exportado al día (`test_openapi_export.py`).
 - Frontend (vitest): eliminar desde fichas y desde compacta; Cancelar no llama al servidor; el foco al encabezado; Deshacer llama a restaurar, sube `versionCasos`, recarga la lista visible aunque sea de otra vista y deja el foco en el encabezado (o en `#contenido`); 409 (con el foco en el encabezado) y 404; error dentro del diálogo; sin botón con `job_activo` o sin `alEliminado`; avisos con acción (cierra, llama, no vence con foco).
-- E2E (`frontend/e2e/abierto/07-eliminar.spec.ts`): crear un caso, eliminarlo, comprobar que sale de la lista, Deshacer y comprobar que vuelve.
+- E2E (`frontend/e2e/abierto/08-eliminar.spec.ts`): crear un caso, eliminarlo, comprobar que sale de la lista, Deshacer y comprobar que vuelve.
 
 ## Riesgos
 
