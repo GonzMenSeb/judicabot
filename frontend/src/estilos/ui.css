@@ -97,6 +97,21 @@ dialog.panel:focus { outline: none; }
 .panel-cerrar:hover { background: var(--fondo-2); color: var(--tinta); }
 .panel-contenido { grid-area: contenido; container-type: size; overflow-y: auto; overscroll-behavior: contain; padding: 1.5rem 2rem 0; border-top: 1px solid var(--linea); scroll-padding-bottom: 6rem; }
 
+.desplegable { position: relative; display: inline-block; }
+.desplegable-boton { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; border: 1px solid var(--linea); border-radius: 999px; background: #fff; color: var(--tinta); font-size: 0.9rem; font-weight: 500; }
+.desplegable-boton:hover, .desplegable-boton[aria-expanded=true] { border-color: var(--acento); }
+.desplegable-boton.activo { border-color: var(--acento); background: var(--acento-fondo); color: var(--acento-2); }
+.desplegable-velo { position: fixed; inset: 0; z-index: 49; padding: 0; border: 0; background: transparent; cursor: default; }
+.desplegable-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: flex; flex-direction: column; width: 20rem; max-width: calc(100vw - 2rem); max-height: min(34rem, calc(100dvh - 8rem)); border: 1px solid var(--linea); border-radius: 12px; background: #fff; color: var(--tinta); box-shadow: 0 18px 40px -18px rgba(29, 42, 51, 0.5), 0 2px 6px rgba(29, 42, 51, 0.08); text-align: left; }
+.desplegable-panel.ancho { width: 23rem; }
+.desplegable-panel.derecha { left: auto; right: 0; }
+.desplegable-panel:focus { outline: none; }
+.desplegable-cab { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.7rem 0.6rem 0.2rem 0.9rem; font-size: 0.92rem; }
+.desplegable-x { display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--suave); }
+.desplegable-x:hover { background: var(--fondo); }
+.desplegable-cuerpo { flex: 1; min-height: 0; padding: 0.3rem 0.9rem 0.8rem; overflow-y: auto; overscroll-behavior: contain; }
+.desplegable-pie { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.65rem 0.9rem; border-top: 1px solid var(--linea); }
+
 .hoja { background: var(--papel); border: 1px solid var(--linea-papel); border-radius: 3px; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 10px 30px -18px rgba(29, 42, 51, 0.35); padding: 3rem 3.4rem; font-family: var(--serif); font-size: 1.02rem; line-height: 1.75; hyphens: auto; }
 .hoja h3 { margin: 2rem 0 0.7rem; font-size: 1.02rem; font-weight: 700; }
 .hoja h3:first-child { margin-top: 0; }
@@ -122,6 +137,8 @@ dialog.panel:focus { outline: none; }
 .toast button:hover { opacity: 1; }
 
 @media (max-width: 960px) {
+  .desplegable-velo { background: rgba(29, 42, 51, 0.35); }
+  .desplegable-panel, .desplegable-panel.ancho { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: auto; max-width: none; max-height: 80dvh; border-radius: 16px 16px 0 0; }
   .barra { padding: 0 1rem; }
   .enlace-barra .txt { display: none; }
   html:has(dialog.panel[open]) { scrollbar-gutter: auto; }

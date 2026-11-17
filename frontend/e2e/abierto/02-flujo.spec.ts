@@ -356,8 +356,12 @@ test("fallo: visor de páginas, descargas y contenido del docx y del zip", async
 test("la lista de casos y el inicio reflejan el caso terminado", async ({ page }) => {
   await page.goto("/#/segunda");
   const ficha = page.getByRole("article").filter({ hasText: NOMBRE });
-  await expect(page.getByRole("heading", { name: /Terminados/ })).toBeVisible();
+  await expect(ficha).toHaveCount(0);
+  await page.getByRole("button", { name: "Terminados", exact: true }).click();
+  await expect(page).toHaveURL(/#\/segunda\?e=/);
+  await expect(page.getByRole("heading", { name: /^Terminados/, level: 3 })).toBeVisible();
   await expect(ficha.getByRole("link", { name: /Ver fallo/ })).toHaveAttribute("href", `#/segunda/${id}/fallo`);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Elige el proceso a realizar" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Mi trabajo" })).toBeVisible();
 });

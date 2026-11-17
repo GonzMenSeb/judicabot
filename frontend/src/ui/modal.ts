@@ -9,7 +9,7 @@ const CLASE_CON_BARRA = "con-barra";
 
 let abiertos = 0;
 
-function bloquearFondo(): () => void {
+export function bloquearFondo(): () => void {
   const raiz = document.documentElement;
   if (abiertos === 0) raiz.classList.toggle(CLASE_CON_BARRA, window.innerWidth > raiz.clientWidth);
   abiertos += 1;

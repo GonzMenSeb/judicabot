@@ -253,6 +253,16 @@
       },
       "Bloque": {
         "properties": {
+          "fuente": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fuente"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -493,6 +503,28 @@
             "title": "Actualizado",
             "type": "string"
           },
+          "creado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creado"
+          },
+          "dias_restantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Restantes"
+          },
           "estado": {
             "enum": [
               "sin_iniciar",
@@ -555,6 +587,11 @@
             "title": "Nombre",
             "type": "string"
           },
+          "proceso": {
+            "const": "segunda",
+            "title": "Proceso",
+            "type": "string"
+          },
           "radicado": {
             "anyOf": [
               {
@@ -566,14 +603,46 @@
             ],
             "title": "Radicado"
           },
+          "segunda": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatosSegunda"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "siguiente_paso": {
             "title": "Siguiente Paso",
             "type": "string"
+          },
+          "termino": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Termino"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vence"
           }
         },
         "required": [
           "id",
           "nombre",
+          "proceso",
           "radicado",
           "accionante",
           "accionadas",
@@ -584,7 +653,12 @@
           "n_insumos",
           "n_alertas",
           "job_activo",
-          "actualizado"
+          "actualizado",
+          "segunda",
+          "creado",
+          "termino",
+          "vence",
+          "dias_restantes"
         ],
         "title": "CasoResumen",
         "type": "object"
@@ -655,6 +729,51 @@
           "detalle"
         ],
         "title": "CitaVista",
+        "type": "object"
+      },
+      "ConflictoEdicion": {
+        "properties": {
+          "etiqueta": {
+            "title": "Etiqueta",
+            "type": "string"
+          },
+          "huerfana": {
+            "title": "Huerfana",
+            "type": "boolean"
+          },
+          "pieza": {
+            "title": "Pieza",
+            "type": "string"
+          },
+          "trozos": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "conflicto": "#/components/schemas/TrozoConflicto",
+                  "ok": "#/components/schemas/TrozoOk"
+                },
+                "propertyName": "tipo"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TrozoOk"
+                },
+                {
+                  "$ref": "#/components/schemas/TrozoConflicto"
+                }
+              ]
+            },
+            "title": "Trozos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pieza",
+          "etiqueta",
+          "huerfana",
+          "trozos"
+        ],
+        "title": "ConflictoEdicion",
         "type": "object"
       },
       "ConsultaEstado": {
@@ -756,6 +875,134 @@
           "texto"
         ],
         "title": "Cotejo",
+        "type": "object"
+      },
+      "DatosSegunda": {
+        "description": "Datos propios de la segunda instancia para filtrar la lista de casos (ver resumen_segunda).",
+        "properties": {
+          "decision_a_quo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ampara",
+                  "niega",
+                  "improcedente",
+                  "carencia_actual_de_objeto",
+                  "otro"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision A Quo"
+          },
+          "derechos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Derechos",
+            "type": "array"
+          },
+          "impugnante": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accionante",
+                  "accionada",
+                  "vinculada",
+                  "otro",
+                  "varios"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impugnante"
+          },
+          "jev_discrepa": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Discrepa"
+          },
+          "n_citas_revisar": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Citas Revisar"
+          },
+          "pruebas_nuevas": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pruebas Nuevas"
+          },
+          "resultado": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CONFIRMAR",
+                  "REVOCAR",
+                  "MODIFICAR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultado"
+          },
+          "sustitutiva": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AMPARAR",
+                  "NEGAR",
+                  "IMPROCEDENTE",
+                  "CARENCIA_HECHO_SUPERADO",
+                  "CARENCIA_DANO_CONSUMADO",
+                  "CARENCIA_SOBREVINIENTE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sustitutiva"
+          }
+        },
+        "required": [
+          "decision_a_quo",
+          "impugnante",
+          "resultado",
+          "sustitutiva",
+          "derechos",
+          "pruebas_nuevas",
+          "n_citas_revisar",
+          "jev_discrepa"
+        ],
+        "title": "DatosSegunda",
         "type": "object"
       },
       "DecisionVistaRespuesta": {
@@ -1086,6 +1333,71 @@
         "title": "DocumentoFormato",
         "type": "object"
       },
+      "EdicionCuerpo": {
+        "properties": {
+          "original": {
+            "title": "Original",
+            "type": "string"
+          },
+          "parrafo": {
+            "minimum": 0.0,
+            "title": "Parrafo",
+            "type": "integer"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parrafo",
+          "original",
+          "texto"
+        ],
+        "title": "EdicionCuerpo",
+        "type": "object"
+      },
+      "EdicionesRespuesta": {
+        "properties": {
+          "conflictos": {
+            "items": {
+              "$ref": "#/components/schemas/ConflictoEdicion"
+            },
+            "title": "Conflictos",
+            "type": "array"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "piezas": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PiezaEdicion"
+            },
+            "title": "Piezas",
+            "type": "object"
+          }
+        },
+        "required": [
+          "editable",
+          "motivo",
+          "piezas",
+          "conflictos"
+        ],
+        "title": "EdicionesRespuesta",
+        "type": "object"
+      },
       "EntradaIndice": {
         "properties": {
           "id": {
@@ -1127,6 +1439,13 @@
           "api_key": {
             "title": "Api Key",
             "type": "boolean"
+          },
+          "festivos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Festivos",
+            "type": "array"
           },
           "gemini_key": {
             "title": "Gemini Key",
@@ -1170,7 +1489,8 @@
           "jev_key",
           "modelo",
           "modelos",
-          "modelos_gemini"
+          "modelos_gemini",
+          "festivos"
         ],
         "title": "EstadoServidor",
         "type": "object"
@@ -1496,6 +1816,24 @@
           "documentos"
         ],
         "title": "FormatoRespuesta",
+        "type": "object"
+      },
+      "Fuente": {
+        "properties": {
+          "parrafo": {
+            "title": "Parrafo",
+            "type": "integer"
+          },
+          "pieza": {
+            "title": "Pieza",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pieza",
+          "parrafo"
+        ],
+        "title": "Fuente",
         "type": "object"
       },
       "GeminiPreferencias": {
@@ -1953,6 +2291,43 @@
         "title": "ParteSinApoderadoVista",
         "type": "object"
       },
+      "PiezaEdicion": {
+        "properties": {
+          "avisos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Avisos",
+            "type": "array"
+          },
+          "editados": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Editados",
+            "type": "array"
+          },
+          "modificada": {
+            "title": "Modificada",
+            "type": "boolean"
+          },
+          "parrafos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parrafos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parrafos",
+          "editados",
+          "modificada",
+          "avisos"
+        ],
+        "title": "PiezaEdicion",
+        "type": "object"
+      },
       "PoderManualCuerpo": {
         "properties": {
           "doc_id": {
@@ -2155,6 +2530,26 @@
         "title": "Preferencias",
         "type": "object"
       },
+      "ResolverCuerpo": {
+        "properties": {
+          "elecciones": {
+            "items": {
+              "enum": [
+                "mio",
+                "nuevo"
+              ],
+              "type": "string"
+            },
+            "title": "Elecciones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "elecciones"
+        ],
+        "title": "ResolverCuerpo",
+        "type": "object"
+      },
       "RevisionBody": {
         "properties": {
           "auto": {
@@ -2282,6 +2677,154 @@
           "texto"
         ],
         "title": "Segmento",
+        "type": "object"
+      },
+      "Termino": {
+        "description": "Término para fallar de un caso: el despacho recibió el expediente el día `inicio` y cuenta con `dias`.\n\nLos días se cuentan desde el día siguiente a `inicio`, en días hábiles (sin fines de semana ni festivos\ncolombianos) o calendario (si vence en un día no hábil, pasa al siguiente hábil). Ver tutela2.termino.",
+        "properties": {
+          "dias": {
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Dias",
+            "type": "integer"
+          },
+          "inicio": {
+            "title": "Inicio",
+            "type": "string"
+          },
+          "unidad": {
+            "enum": [
+              "habiles",
+              "calendario"
+            ],
+            "title": "Unidad",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inicio",
+          "dias",
+          "unidad"
+        ],
+        "title": "Termino",
+        "type": "object"
+      },
+      "TerminoRespuesta": {
+        "description": "GET/PUT /api/casos/{id}/termino: el término vigente y su vencimiento calculado hoy.\n\ntermino es el guardado o, si no hay, el que se propone a partir de la fecha de reparto (por_defecto True).\nSin fecha de reparto ni término guardado, termino, vence y dias_restantes son None. vence y dias_restantes\ntambién son None si el caso ya terminó. dias_restantes: ver tutela2.termino.plazo.",
+        "properties": {
+          "dias_restantes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Restantes"
+          },
+          "fecha_reparto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Reparto"
+          },
+          "por_defecto": {
+            "title": "Por Defecto",
+            "type": "boolean"
+          },
+          "termino": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Termino"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vence"
+          }
+        },
+        "required": [
+          "termino",
+          "por_defecto",
+          "fecha_reparto",
+          "vence",
+          "dias_restantes"
+        ],
+        "title": "TerminoRespuesta",
+        "type": "object"
+      },
+      "TrozoConflicto": {
+        "properties": {
+          "mio": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mio",
+            "type": "array"
+          },
+          "mio_permitido": {
+            "title": "Mio Permitido",
+            "type": "boolean"
+          },
+          "nuevo": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nuevo",
+            "type": "array"
+          },
+          "tipo": {
+            "const": "conflicto",
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "mio",
+          "nuevo",
+          "mio_permitido"
+        ],
+        "title": "TrozoConflicto",
+        "type": "object"
+      },
+      "TrozoOk": {
+        "properties": {
+          "parrafos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parrafos",
+            "type": "array"
+          },
+          "tipo": {
+            "const": "ok",
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "parrafos"
+        ],
+        "title": "TrozoOk",
         "type": "object"
       },
       "ValidationError": {
@@ -3157,6 +3700,207 @@
         "summary": "Vista Decision"
       }
     },
+    "/api/casos/{caso_id}/ediciones": {
+      "get": {
+        "operationId": "leer_ediciones_api_casos__caso_id__ediciones_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Ediciones"
+      }
+    },
+    "/api/casos/{caso_id}/ediciones/{pieza}": {
+      "delete": {
+        "operationId": "restaurar_pieza_api_casos__caso_id__ediciones__pieza__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Restaurar Pieza"
+      },
+      "put": {
+        "operationId": "editar_pieza_api_casos__caso_id__ediciones__pieza__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdicionCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Editar Pieza"
+      }
+    },
+    "/api/casos/{caso_id}/ediciones/{pieza}/resolver": {
+      "post": {
+        "operationId": "resolver_pieza_api_casos__caso_id__ediciones__pieza__resolver_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pieza",
+            "required": true,
+            "schema": {
+              "title": "Pieza",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolverCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdicionesRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o pieza no encontrados."
+          },
+          "409": {
+            "description": "Hay una ejecución en curso, el caso no espera la decisión, la pieza tiene un conflicto o el párrafo cambió."
+          },
+          "422": {
+            "description": "La edición no es válida: el detalle es el motivo en español."
+          }
+        },
+        "summary": "Resolver Pieza"
+      }
+    },
     "/api/casos/{caso_id}/estado": {
       "get": {
         "operationId": "estado_caso_api_casos__caso_id__estado_get",
@@ -3543,6 +4287,92 @@
           }
         },
         "summary": "Descargar Salida"
+      }
+    },
+    "/api/casos/{caso_id}/termino": {
+      "get": {
+        "operationId": "leer_termino_api_casos__caso_id__termino_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leer Termino"
+      },
+      "put": {
+        "operationId": "fijar_termino_api_casos__caso_id__termino_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Termino"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminoRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fijar Termino"
       }
     },
     "/api/casos/{caso_id}/vista/{tipo}": {

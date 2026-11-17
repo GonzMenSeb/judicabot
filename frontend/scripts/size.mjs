@@ -8,7 +8,9 @@ const PRESUPUESTO = {
   "JS inicial": 60 * KB,
   "chunk de ruta": 25 * KB,
   "CSS inicial": 15 * KB,
-  "CSS total": 25 * KB,
+  // Suma del gzip de cada CSS por separado (incluidos los de chunks diferidos).
+  // Subido de 25 a 40 KB al juntar la edición in situ y los abogados verificados.
+  "CSS total": 40 * KB,
   fuentes: 60 * KB,
 };
 

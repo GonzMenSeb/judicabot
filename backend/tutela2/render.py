@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 from tutela2 import fallos, formato_b, formulas, normas, prompts, vista
 from tutela2.apoderados import es_particula, plegar, tokens_nombre
 from tutela2.config import Config
+from tutela2.ediciones import parrafos
 from tutela2.formulas import encabezado_decision as decision_encabezado
 from tutela2.letras import fecha_larga, numero_a_letras
 from tutela2.models import (
@@ -633,7 +634,7 @@ class _Docx:
             self.citadas.add(id_)
             cv = self.citas.get(id_)
             if cv is not None and cv.estado != "rechazada":
-                with self.reg.como(cita=id_):
+                with self.reg.como(cita=id_, fuente=None):
                     self.cita_bloque(
                         _compactar(cv.texto_citado, minimo=self.cfg.min_palabras_cita) if self.en_caso else cv.texto_citado
                     )
@@ -675,24 +676,27 @@ class _Docx:
                 salida.append((ini, fin, vista.PREFIJO_APODERADO + id_))
         return salida
 
-    def prosa(self, texto: str, *, citar: bool = False, esc: int = 100, modelo: bool = False) -> None:
+    def prosa(
+        self, texto: str, *, citar: bool = False, esc: int = 100, modelo: bool = False, pieza: str | None = None
+    ) -> None:
         with self.reg.como(origen="modelo" if modelo else self.reg.origen):
-            self._prosa(texto, citar=citar, esc=esc)
+            self._prosa(texto, citar=citar, esc=esc, pieza=pieza)
 
-    def _prosa(self, texto: str, *, citar: bool, esc: int) -> None:
-        for bloque in re.split(r"\n\s*\n", texto.strip()):
-            bloque = " ".join(bloque.split())
+    def _prosa(self, texto: str, *, citar: bool, esc: int, pieza: str | None = None) -> None:
+        for k, bloque in enumerate(parrafos(texto)):
+            fuente = {"pieza": pieza, "parrafo": k} if pieza else None
             for i, parte in enumerate(_IMAGEN.split(bloque)):
                 if i % 2:
                     marcador = f"⟦INSERTAR IMAGEN: {parte.strip()}⟧"
-                    if self.b:
-                        self.cuerpo(marcador, alinear="i")
-                    else:
-                        self.parrafo(marcador, alinear="i")
+                    with self.reg.como(fuente=fuente):
+                        if self.b:
+                            self.cuerpo(marcador, alinear="i")
+                        else:
+                            self.parrafo(marcador, alinear="i")
                 elif parte.strip():
                     limpio, spans = self._citas_en(parte.strip())
                     spans = sorted(spans + self._apoderados_en(limpio, spans))
-                    with self.reg.como(spans=spans):
+                    with self.reg.como(spans=spans, fuente=fuente):
                         if self.b:
                             self.cuerpo(limpio, esc=esc)
                         else:
@@ -904,10 +908,11 @@ def _consideraciones(d: _Docx, c: _Caso) -> None:
         d.prosa(_falta("consideraciones"))
     else:
         with d.reg.como(origen="modelo"):
-            d.prosa(cons.procedibilidad, citar=True)
-            for bloque in cons.bloques:
-                d.subtitulo(bloque.titulo)
-                d.prosa(bloque.texto, citar=True)
+            d.prosa(cons.procedibilidad, citar=True, pieza="consideraciones.procedibilidad")
+            for i, bloque in enumerate(cons.bloques):
+                with d.reg.como(fuente={"pieza": f"consideraciones.bloques.{i}.titulo", "parrafo": 0}):
+                    d.subtitulo(bloque.titulo)
+                d.prosa(bloque.texto, citar=True, pieza=f"consideraciones.bloques.{i}.texto")
     d.plantilla(formulas.TRANSICION)
 
 
@@ -921,14 +926,23 @@ def _secciones_i_a_v(d: _Docx, c: _Caso) -> None:
     if ap is None:
         d.prosa(_falta("apertura"))
     else:
-        d.prosa(ap.antecedentes_hechos, modelo=True)
-        for contestacion in ap.contestaciones:
-            d.prosa(contestacion.texto, modelo=True)
+        d.prosa(ap.antecedentes_hechos, modelo=True, pieza="apertura.antecedentes_hechos")
+        for i, contestacion in enumerate(ap.contestaciones):
+            d.prosa(contestacion.texto, modelo=True, pieza=f"apertura.contestaciones.{i}.texto")
     d.zona("III")
     d.titulo(gen["III"])
-    d.prosa(ap.sentencia_impugnada if ap else _falta("sentencia impugnada"), modelo=ap is not None)
+    d.prosa(
+        ap.sentencia_impugnada if ap else _falta("sentencia impugnada"),
+        modelo=ap is not None,
+        pieza="apertura.sentencia_impugnada" if ap else None,
+    )
     d.titulo(gen["IV"])
-    d.prosa(ap.impugnacion if ap else _falta("impugnación"), esc=104, modelo=ap is not None)
+    d.prosa(
+        ap.impugnacion if ap else _falta("impugnación"),
+        esc=104,
+        modelo=ap is not None,
+        pieza="apertura.impugnacion" if ap else None,
+    )
     _consideraciones(d, c)
 
 
@@ -1591,8 +1605,14 @@ def _anexo_prompts(d: "_Docx", c: Any, cfg: Config) -> None:
             d.parrafo(linea, alinear="i", tam=8)
 
 
-def _mapa_secciones(gen: str, hay_compulsa: bool) -> list[list[str]]:
+def _mapa_secciones(gen: str, hay_compulsa: bool, editadas: set[str] | frozenset[str] = frozenset()) -> list[list[str]]:
     t = GEN[gen]
+
+    def ia(clave: str, seccion: str, observacion: str) -> list[str]:
+        if clave not in editadas:
+            return [seccion, "IA", observacion]
+        return [seccion, "IA + edición humana", f"{observacion.rstrip('.')}. Corregido por el despacho en el borrador."]
+
     filas = [
         [
             "Encabezado (despacho, fecha y cuadro de partes)",
@@ -1605,11 +1625,15 @@ def _mapa_secciones(gen: str, hay_compulsa: bool) -> list[list[str]]:
             "plantilla + IA",
             "Fórmula fija con cláusulas redactadas por la IA (impugnantes y resultado del fallo de primera instancia)",
         ],
-        ["ANTECEDENTES DEL CASO", "IA", "Redactado a partir de los documentos del expediente"],
-        [t["III"], "IA", "Redactado a partir del fallo de primera instancia"],
-        [t["IV"], "IA", "Redactado a partir del escrito de impugnación"],
+        ia("antecedentes", "ANTECEDENTES DEL CASO", "Redactado a partir de los documentos del expediente"),
+        ia("sentencia_impugnada", t["III"], "Redactado a partir del fallo de primera instancia"),
+        ia("impugnacion", t["IV"], "Redactado a partir del escrito de impugnación"),
         [f"{t['V']}: competencia y transición", "plantilla", "Bloques fijos"],
-        [f"{t['V']}: procedibilidad y bloques temáticos", "IA", "Marco doctrinal sin aplicación al caso"],
+        ia(
+            "consideraciones",
+            f"{t['V']}: procedibilidad y bloques temáticos",
+            "Marco doctrinal sin aplicación al caso",
+        ),
         [
             f"{t['V']} y CASO CONCRETO: referencias y fragmentos de jurisprudencia",
             "plantilla",
@@ -1693,7 +1717,11 @@ def render_declaracion_ia(estado: dict, cfg: Config | dict, ruta: Path, hoy: dat
 
     d.titulo("ORIGEN DE CADA SECCIÓN")
     d.tabla(
-        _mapa_secciones(cfg.plantilla_gen, bool(c.decision and c.decision.compulsa)),
+        _mapa_secciones(
+            cfg.plantilla_gen,
+            bool(c.decision and c.decision.compulsa),
+            set(estado.get("ediciones_humanas") or []),
+        ),
         [5.6, 2.0, 8.5],
         cabecera=["Sección", "Origen", "Observación"],
         tam=9,

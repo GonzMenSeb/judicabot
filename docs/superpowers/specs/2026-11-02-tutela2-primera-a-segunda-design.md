@@ -21,7 +21,7 @@ Exigir la carpeta de segunda instancia como entrada fue un error del diseño ant
 **No objetivos**
 - No se firma nada ni se incrustan imágenes de firma: cada firma queda como espacio reservado.
 - No se envían correos ni se radica nada en plataformas.
-- No hay salida en PDF ni en LaTeX. El despacho edita en Word; se descartó LaTeX por eso.
+- No hay salida en PDF ni en LaTeX. El despacho corrige la prosa de las secciones I a V en situ, en el borrador (texto plano, con las citas e imágenes como fichas fijas; ver `2026-11-17-edicion-in-situ-design.md`) y todavía puede retocar el Word final; se descartó LaTeX por eso.
 - El fallo no lleva párrafo de declaración de uso de IA y queda idéntico a los modelos. La declaración del art. 10 del Acuerdo PCSJA24-12243 sigue como documento aparte (`declaracion_ia.docx`), por decisión del despacho del 2026-11-02.
 
 **Antiobjetivos (fracaso aunque funcione)**

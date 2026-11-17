@@ -1,5 +1,6 @@
 import { ErrorApi } from "../../api/cliente";
-import type { CasoResumen } from "../../api/contrato";
+import type { CasoResumen, DatosSegunda, Termino, TerminoRespuesta } from "../../api/contrato";
+import { FESTIVOS_MOCK } from "../../api/festivos.mock";
 import type { MockRuta } from "../../api/mock";
 import { OBLIGATORIOS } from "./tipos";
 import type { DatosAuto, DocResumen, EstadoCaso, JobEstado, ResumenIngesta, RolDoc } from "./tipos";
@@ -97,12 +98,26 @@ interface CasoMock {
   ingesta: ResumenIngesta | null;
   salidas: string[];
   job_activo?: string;
+  /** El término guardado con PUT; mientras no haya uno se propone el de 20 días hábiles desde la fecha de reparto. */
+  termino?: Termino;
 }
+
+const SEGUNDA_VACIA: DatosSegunda = {
+  decision_a_quo: null,
+  impugnante: null,
+  resultado: null,
+  sustitutiva: null,
+  derechos: [],
+  pruebas_nuevas: null,
+  n_citas_revisar: null,
+  jev_discrepa: null,
+};
 
 function resumenCaso(id: string, nombre: string, estado: CasoResumen["estado"], etapa: CasoResumen["etapa"], extra: Partial<CasoResumen> = {}): CasoResumen {
   return {
     id,
     nombre,
+    proceso: "segunda",
     radicado: "05001408800920260041200",
     accionante: null,
     accionadas: [],
@@ -114,6 +129,11 @@ function resumenCaso(id: string, nombre: string, estado: CasoResumen["estado"], 
     n_alertas: 0,
     job_activo: null,
     actualizado: "2026-11-03T14:40:00Z",
+    creado: null,
+    termino: null,
+    vence: null,
+    dias_restantes: null,
+    segunda: SEGUNDA_VACIA,
     ...extra,
   };
 }
@@ -148,7 +168,9 @@ const casos: Record<string, CasoMock> = {
     salidas: ["trabajo/requerimiento.docx"],
   },
   "quintero-bedoya": {
-    resumen: resumenCaso("quintero-bedoya", "Quintero Bedoya c. EPS Horizonte Salud", "esperando_decision", 2),
+    resumen: resumenCaso("quintero-bedoya", "Quintero Bedoya c. EPS Horizonte Salud", "esperando_decision", 2, {
+      segunda: { ...SEGUNDA_VACIA, decision_a_quo: "niega", impugnante: "accionante", pruebas_nuevas: false, n_citas_revisar: 0, jev_discrepa: false },
+    }),
     ingesta: ingesta(documentosRevision()),
     salidas: [ACTA, AUTO_DOCX, "trabajo/previo.docx"],
   },
@@ -182,6 +204,51 @@ function entrada(id: string) {
   return caso;
 }
 
+const DIA = 86_400_000;
+const aMs = (iso: string) => {
+  const [anio = 0, mes = 1, dia = 1] = iso.split("-").map(Number);
+  return Date.UTC(anio, mes - 1, dia);
+};
+const aIso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+const habil = (ms: number) => ![0, 6].includes(new Date(ms).getUTCDay()) && !FESTIVOS_MOCK.includes(aIso(ms));
+
+function habilesEntre(a: number, b: number): number {
+  let n = 0;
+  for (let t = a + DIA; t <= b; t += DIA) if (habil(t)) n += 1;
+  return n;
+}
+
+/** Lo mismo que calcula el servidor (backend/tutela2/termino.py), con la fecha del navegador como hoy. */
+function plazoMock({ inicio, dias, unidad }: Termino): { vence: string; dias_restantes: number } {
+  let vence = aMs(inicio);
+  for (let restan = unidad === "habiles" ? dias : 0; restan > 0; ) {
+    vence += DIA;
+    if (habil(vence)) restan -= 1;
+  }
+  if (unidad === "calendario") vence += dias * DIA;
+  while (!habil(vence)) vence += DIA;
+  const ahora = new Date();
+  const hoy = Date.UTC(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  const cuenta = (desde: number, hasta: number) => (unidad === "habiles" ? Math.max(1, habilesEntre(desde, hasta)) : (hasta - desde) / DIA);
+  const restantes = hoy === vence ? 0 : hoy < vence ? cuenta(hoy, vence) : -cuenta(vence, hoy);
+  return { vence: aIso(vence), dias_restantes: restantes };
+}
+
+function respuestaTermino(id: string): TerminoRespuesta {
+  const caso = entrada(id);
+  const reparto = caso.ingesta?.auto.fecha_reparto ?? null;
+  const guardado = caso.termino ?? null;
+  const termino = guardado ?? (reparto ? { inicio: reparto, dias: 20, unidad: "habiles" as const } : null);
+  const plazo = termino && caso.resumen.estado !== "terminado" ? plazoMock(termino) : null;
+  return {
+    termino,
+    por_defecto: guardado === null && termino !== null,
+    fecha_reparto: reparto,
+    vence: plazo?.vence ?? null,
+    dias_restantes: plazo?.dias_restantes ?? null,
+  };
+}
+
 function estadoDe(id: string): EstadoCaso {
   const { resumen, ingesta: datos, salidas, job_activo } = entrada(id);
   const conHilo = resumen.estado === "esperando_decision" || resumen.estado === "terminado";
@@ -201,6 +268,20 @@ export const mocks: MockRuta[] = [
   ...Object.entries(casos).map(([id, caso]): MockRuta => ({ metodo: "GET", ruta: `/api/casos/${id}/resumen`, respuesta: caso.resumen })),
   { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/estado$/, respuesta: ({ ruta }) => estadoDe(idDe(ruta)) },
   { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/config$/, respuesta: () => ({ llm: { proveedor: "anthropic" } }) },
+  { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/termino$/, respuesta: ({ ruta }) => respuestaTermino(idDe(ruta)) },
+  {
+    metodo: "PUT",
+    ruta: /^\/api\/casos\/[^/]+\/termino$/,
+    respuesta: ({ ruta, cuerpo }) => {
+      const id = idDe(ruta);
+      const caso = entrada(id);
+      const { inicio, dias, unidad } = (cuerpo ?? {}) as Partial<Termino>;
+      const valido = typeof inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(inicio) && Number.isInteger(dias) && (dias ?? 0) >= 1 && (dias ?? 0) <= 365;
+      if (!valido || (unidad !== "habiles" && unidad !== "calendario")) throw new ErrorApi(422, [{ msg: "término inválido" }], "Error 422");
+      caso.termino = { inicio, dias: dias as number, unidad };
+      return respuestaTermino(id);
+    },
+  },
   {
     metodo: "PUT",
     ruta: /^\/api\/casos\/[^/]+\/revision$/,

@@ -17,6 +17,7 @@ import type {
   MetadatosCaso,
   NivelRevision,
   Redaccion,
+  UnidadEdicion,
 } from "./tipos";
 
 export const ETIQUETA_ESTADO_CITA: Record<CitaVista["estado"], string> = {
@@ -352,7 +353,7 @@ export function construirRevision(
     const motivos = dividirMotivos(cita.detalle);
     const seccion = secciones[cita.id];
     items.push({
-      clave: `cita-${cita.id}`,
+      clave: `cita-${cita.id}-${cita.estado}-${cita.fuente}`,
       nivel: cita.estado === "rechazada" ? "mal" : cita.estado === "revisar" ? "alerta" : "ok",
       origen: seccion ? `Cita · ${seccion}` : "Cita",
       titulo: mayuscula(cita.fuente) || cita.id,
@@ -378,40 +379,48 @@ export function construirRevision(
     });
   }
 
-  normalizarAlertas(alertas).forEach(([nodo, mensaje], i) => {
+  normalizarAlertas(alertas).forEach(([nodo, mensaje]) => {
     const bloquea = /^BLOQUEA:\s*/.test(mensaje);
     const texto = mensaje.replace(/^(ALERTA|BLOQUEA):\s*/, "");
     const rechazo = /^La cita (\S+) \(.*\) (?:fue rechazada|requiere revisión):/.exec(texto);
     if (rechazo?.[1] && idsCitas.has(rechazo[1])) return;
     if (jev.length > 0 && /^Jev lee /.test(texto)) return;
     const grupo = nodo === NODO_APODERADOS ? "apoderados" : "citas";
-    items.push({ clave: `alerta-${nodo}-${i}`, ...humanizarAlerta(nodo, texto, bloquea), marca: null, grupo });
+    items.push({ clave: `alerta-${nodo}-${mensaje}`, ...humanizarAlerta(nodo, texto, bloquea), marca: null, grupo });
   });
 
-  return ORDEN_NIVEL.flatMap((nivel) => items.filter((item) => item.nivel === nivel));
+  const vistos = new Set<string>();
+  const unicos = items.filter((item) => !vistos.has(item.clave) && vistos.add(item.clave));
+  return ORDEN_NIVEL.flatMap((nivel) => unicos.filter((item) => item.nivel === nivel));
 }
 
-export const claveRevisados = (caso: string, sha: string): string => `judicabot:revisados:${caso}:${sha}`;
+export const claveRevisados = (caso: string): string => `judicabot:revisados:${caso}`;
 
-export function leerRevisados(clave: string): Set<string> {
+const SHA_LEGADO = /^[0-9a-f]{64}$/i;
+
+function podar(revisados: Iterable<string>, vigentes: ReadonlySet<string> | undefined): Set<string> {
+  return new Set(vigentes ? [...revisados].filter((k) => vigentes.has(k)) : revisados);
+}
+
+export function leerRevisados(clave: string, vigentes?: ReadonlySet<string>): Set<string> {
   try {
     const crudo = localStorage.getItem(clave);
     if (!crudo) return new Set();
     const valor: unknown = JSON.parse(crudo);
-    return Array.isArray(valor) && valor.every((v) => typeof v === "string") ? new Set<string>(valor) : new Set();
+    return Array.isArray(valor) && valor.every((v) => typeof v === "string") ? podar(valor, vigentes) : new Set();
   } catch {
     return new Set();
   }
 }
 
-export function guardarRevisados(clave: string, revisados: ReadonlySet<string>): void {
+export function guardarRevisados(clave: string, revisados: ReadonlySet<string>, vigentes?: ReadonlySet<string>): void {
   try {
-    const prefijo = clave.slice(0, clave.lastIndexOf(":") + 1);
+    const legado = `${clave}:`;
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const otra = localStorage.key(i);
-      if (otra && otra !== clave && otra.startsWith(prefijo)) localStorage.removeItem(otra);
+      if (otra?.startsWith(legado) && SHA_LEGADO.test(otra.slice(legado.length))) localStorage.removeItem(otra);
     }
-    localStorage.setItem(clave, JSON.stringify([...revisados]));
+    localStorage.setItem(clave, JSON.stringify([...podar(revisados, vigentes)]));
   } catch {
     return;
   }
@@ -435,6 +444,27 @@ export function agruparBloques(bloques: Bloque[]): GrupoBloque[] {
     }
   }
   return grupos;
+}
+
+export function unidadesDe(vista: Vista): Map<string, UnidadEdicion> {
+  const unidades = new Map<string, UnidadEdicion>();
+  let actual = null as UnidadEdicion | null;
+  for (const pagina of vista.paginas) {
+    for (const bloque of pagina.bloques) {
+      if (bloque.tipo === "pie") continue;
+      const fuente = bloque.fuente;
+      if (fuente) {
+        const clave = `${fuente.pieza}#${fuente.parrafo}`;
+        if (actual?.clave !== clave) actual = { clave, pieza: fuente.pieza, parrafo: fuente.parrafo, ids: [] };
+      } else if (bloque.tipo !== "cita_bloque") {
+        actual = null;
+      }
+      if (!actual) continue;
+      actual.ids.push(bloque.id);
+      unidades.set(bloque.id, actual);
+    }
+  }
+  return unidades;
 }
 
 export function casoOracion(titulo: string): string {

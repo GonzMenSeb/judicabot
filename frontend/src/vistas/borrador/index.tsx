@@ -1,10 +1,11 @@
 import type { ComponentType } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api, ErrorApi, esAbortado, esCasoNoEncontrado } from "../../api";
-import type { AjusteCuerpo, Vista } from "../../api/contrato";
+import type { AjusteCuerpo, EdicionesRespuesta, Vista } from "../../api/contrato";
 import { casoActual, jobActual, mostrarToast, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
-import { Aviso, Boton, Cargando, CasoNoEncontrado, Chip, cx, Migas, Pasos, Vacio } from "../../ui";
+import { Aviso, Boton, Cargando, CasoNoEncontrado, Chip, cx, Dialogo, Migas, Pasos, Vacio } from "../../ui";
+import { useGuardiaSalida } from "../formato/guardia";
 import type { PropsVista } from "../tipos";
 import "./estilos.css";
 import {
@@ -37,12 +38,14 @@ import {
   seccionesDeCitas,
   tituloDelCaso,
 } from "./datos";
-import { DialogoCorrecciones } from "./DialogoCorrecciones";
+import type { PropsDialogoConflictos } from "./DialogoConflictos";
+import type { PropsDialogoCorrecciones } from "./DialogoCorrecciones";
+import "./dialogo.css";
 import { Dock } from "./Dock";
 import { Documento } from "./Documento";
 import { Indice } from "./Indice";
 import { PanelRevision } from "./PanelRevision";
-import { PopoverApoderado } from "./PopoverApoderado";
+import type { PropsPopoverApoderado } from "./PopoverApoderado";
 import { PopoverCita } from "./PopoverCita";
 import type { EstadoCaso, PedidoAjuste, PedidoVisor, Pestana, Seleccion } from "./tipos";
 import { useApoderados } from "./useApoderados";
@@ -59,31 +62,23 @@ const MARCAS_TEXTO = "[data-cita],[data-apoderado]";
 
 const mismaSeleccion = (a: Seleccion | null, b: Seleccion): boolean => a !== null && a.tipo === b.tipo && a.id === b.id;
 
-// El visor de evidencia viaja en su propio chunk (con su hoja de estilos): solo se descarga la primera vez que se abre.
-let visorPerezoso: Promise<ComponentType<PropsVisorEvidencia>> | null = null;
-function cargarVisor(): Promise<ComponentType<PropsVisorEvidencia>> {
-  visorPerezoso ??= import("./VisorEvidencia").then(
-    (m) => m.default,
-    (e: unknown) => {
-      visorPerezoso = null;
+/** Un componente que viaja en su propio chunk: se descarga la primera vez que se pide y, si falla, el próximo intento lo vuelve a pedir. */
+function perezoso<P>(importar: () => Promise<ComponentType<P>>): () => Promise<ComponentType<P>> {
+  let pendiente: Promise<ComponentType<P>> | null = null;
+  return () =>
+    (pendiente ??= importar().catch((e: unknown) => {
+      pendiente = null;
       throw e;
-    },
-  );
-  return visorPerezoso;
+    }));
 }
 
-// Las correcciones a mano de un apoderado también viajan aparte: solo se descargan al pedir la primera.
-let ajustePerezoso: Promise<ComponentType<PropsDialogoAjuste>> | null = null;
-function cargarAjuste(): Promise<ComponentType<PropsDialogoAjuste>> {
-  ajustePerezoso ??= import("./DialogoAjuste").then(
-    (m) => m.default,
-    (e: unknown) => {
-      ajustePerezoso = null;
-      throw e;
-    },
-  );
-  return ajustePerezoso;
-}
+// El visor de evidencia (con su hoja de estilos), el detalle de un abogado y los diálogos de corregir viajan aparte:
+// solo se descargan al abrirlos (el detalle, en cuanto el texto tiene nombres marcados).
+const cargarDetalleApoderado = perezoso(() => import("./PopoverApoderado").then((m) => m.PopoverApoderado));
+const cargarVisor = perezoso(() => import("./VisorEvidencia").then((m) => m.default));
+const cargarAjuste = perezoso(() => import("./DialogoAjuste").then((m) => m.default));
+const cargarCorrecciones = perezoso(() => import("./DialogoCorrecciones").then((m) => m.DialogoCorrecciones));
+const cargarConflictos = perezoso(() => import("./DialogoConflictos").then((m) => m.DialogoConflictos));
 
 function motivoNoCorregir(estado: EstadoCaso | null, cargado: boolean): string | null {
   if (!cargado) return "No se pudo comprobar el estado del caso.";
@@ -131,27 +126,39 @@ export default function Borrador({ caso }: PropsVista) {
   const [errorVisor, setErrorVisor] = useState(false);
   const [ajuste, setAjuste] = useState<PedidoAjuste | null>(null);
   const [DialogoAjuste, setDialogoAjuste] = useState<ComponentType<PropsDialogoAjuste> | null>(null);
-  const casoVigente = useRef(caso);
-  casoVigente.current = caso;
-  // Identificar a los apoderados de un caso anterior vuelve a escribir el borrador previo (con los nombres marcados)
-  // y las alertas: se leen de nuevo sin pasar por la pantalla de carga.
-  const releer = useCallback(() => {
+  const [DialogoCorrecciones, setDialogoCorrecciones] = useState<ComponentType<PropsDialogoCorrecciones> | null>(null);
+  const [DialogoConflictos, setDialogoConflictos] = useState<ComponentType<PropsDialogoConflictos> | null>(null);
+  const [PopoverApoderado, setPopoverApoderado] = useState<ComponentType<PropsPopoverApoderado> | null>(null);
+  const [ediciones, setEdiciones] = useState<EdicionesRespuesta | null>(null);
+  const [editando, setEditando] = useState(false);
+  const [resolviendo, setResolviendo] = useState(false);
+  const [sucio, setSucio] = useState(false);
+  const [apagando, setApagando] = useState(false);
+  const guardia = useGuardiaSalida(sucio);
+  const recarga = useRef<AbortController | null>(null);
+  // Vuelve a leer el borrador previo, las ediciones y el estado sin pasar por la pantalla de carga: tras guardar una
+  // edición, resolver un conflicto o identificar a los apoderados de un caso anterior (el previo sale con los nombres marcados).
+  const recargar = useCallback(async () => {
     if (!caso) return;
     const base = `/api/casos/${encodeURIComponent(caso)}`;
-    api.get<Vista>(`${base}/vista/borrador`).then(
-      (datos) => {
-        if (casoVigente.current === caso) setVista(datos);
-      },
-      () => undefined,
-    );
-    api.get<EstadoCaso>(`${base}/estado`).then(
-      (datos) => {
-        if (casoVigente.current === caso) setEstado(datos);
-      },
-      () => undefined,
-    );
+    recarga.current?.abort();
+    const control = new AbortController();
+    recarga.current = control;
+    const { signal } = control;
+    const [nueva, edicion, actual] = await Promise.allSettled([
+      api.get<Vista>(`${base}/vista/borrador`, { signal }),
+      api.get<EdicionesRespuesta>(`${base}/ediciones`, { signal }),
+      api.get<EstadoCaso>(`${base}/estado`, { signal }),
+    ]);
+    if (signal.aborted) return;
+    if (nueva.status === "fulfilled") setVista(nueva.value);
+    if (edicion.status === "fulfilled") setEdiciones(edicion.value);
+    if (actual.status === "fulfilled") {
+      setEstado(actual.value);
+      setEstadoFallo(false);
+    }
   }, [caso]);
-  const apoderados = useApoderados(caso, releer);
+  const apoderados = useApoderados(caso, recargar);
   const abridorAjuste = useRef<HTMLElement | null>(null);
   const documentosVistos = useRef(new Map<string, DocumentoConocido>());
   const tituloDetalle = useRef<HTMLHeadingElement>(null);
@@ -166,6 +173,7 @@ export default function Borrador({ caso }: PropsVista) {
     if (!caso) return;
     const control = new AbortController();
     const base = `/api/casos/${encodeURIComponent(caso)}`;
+    recarga.current?.abort();
     setFase("cargando");
     setEstado(null);
     setEstadoFallo(false);
@@ -176,6 +184,11 @@ export default function Borrador({ caso }: PropsVista) {
     setVisor(null);
     setAjuste(null);
     documentosVistos.current = new Map();
+    setEdiciones(null);
+    setEditando(false);
+    setResolviendo(false);
+    setApagando(false);
+    setSucio(false);
     api.get<Vista>(`${base}/vista/borrador`, { signal: control.signal }).then(
       (datos) => {
         setVista(datos);
@@ -200,10 +213,42 @@ export default function Borrador({ caso }: PropsVista) {
         else setEstadoFallo(true);
       },
     );
-    return () => control.abort();
+    api.get<EdicionesRespuesta>(`${base}/ediciones`, { signal: control.signal }).then(
+      (datos) => setEdiciones(datos),
+      () => undefined,
+    );
+    return () => {
+      control.abort();
+      recarga.current?.abort();
+    };
   }, [caso, intento]);
 
   useEffect(() => () => window.clearTimeout(espera.current), []);
+
+  useEffect(() => {
+    if (!corrigiendo || DialogoCorrecciones) return;
+    cargarCorrecciones().then(
+      (componente) => setDialogoCorrecciones(() => componente),
+      () => {
+        setCorrigiendo(false);
+        mostrarToast("No se pudo abrir el pedido de correcciones. Revise la conexión y vuelva a intentarlo.", { tipo: "error" });
+      },
+    );
+  }, [corrigiendo, DialogoCorrecciones]);
+
+  // Con conflictos pendientes el diálogo para resolverlos se descarga de antemano: el aviso invita a abrirlo.
+  const hayConflictos = ediciones?.editable === true && ediciones.conflictos.length > 0;
+  useEffect(() => {
+    if ((!hayConflictos && !resolviendo) || DialogoConflictos) return;
+    cargarConflictos().then(
+      (componente) => setDialogoConflictos(() => componente),
+      () => {
+        if (!resolviendo) return;
+        setResolviendo(false);
+        mostrarToast("No se pudo abrir la resolución de conflictos. Revise la conexión y vuelva a intentarlo.", { tipo: "error" });
+      },
+    );
+  }, [hayConflictos, resolviendo, DialogoConflictos]);
 
   const resumen = estado?.resumen ?? null;
   const metadatos = resumen?.metadatos ?? null;
@@ -229,10 +274,12 @@ export default function Borrador({ caso }: PropsVista) {
   );
   const redaccion = useMemo(() => redaccionPorNodo(resumen?.bitacora), [resumen]);
 
-  const clave = caso && vista ? claveRevisados(caso, vista.sha256) : null;
+  const clave = caso ? claveRevisados(caso) : null;
+  const alertasLeidas = estado?.resumen?.alertas != null;
+  const vigentes = useMemo(() => (alertasLeidas ? new Set(items.map((i) => i.clave)) : undefined), [alertasLeidas, items]);
   const locales = useMemo(
-    () => (guardados && guardados.clave === clave ? guardados.revisados : clave ? leerRevisados(clave) : VACIO),
-    [guardados, clave],
+    () => (guardados && guardados.clave === clave ? guardados.revisados : clave ? leerRevisados(clave, vigentes) : VACIO),
+    [guardados, clave, vigentes],
   );
   const revisados = useMemo(() => {
     const delServidor = revisadosDelServidor(datosApoderados);
@@ -245,7 +292,7 @@ export default function Borrador({ caso }: PropsVista) {
   const cita = seleccionada?.tipo === "cita" ? (citasPorId.get(seleccionada.id) ?? null) : null;
   const abogado = seleccionada?.tipo === "apoderado" ? (apoderadosPorId.get(seleccionada.id) ?? null) : null;
   const motivos = useMemo(() => dividirMotivos(cita?.detalle ?? null), [cita]);
-  const editable = datosApoderados?.editable ?? false;
+  const apoderadosEditables = datosApoderados?.editable ?? false;
 
   const revisarApoderado = apoderados.revisar;
   const subirCertificado = apoderados.subir;
@@ -263,10 +310,10 @@ export default function Borrador({ caso }: PropsVista) {
       if (!clave) return;
       const siguiente = new Set(locales);
       if (!siguiente.delete(k)) siguiente.add(k);
-      guardarRevisados(clave, siguiente);
+      guardarRevisados(clave, siguiente, vigentes);
       setGuardados({ clave, revisados: siguiente });
     },
-    [clave, locales, datosApoderados, revisarApoderado],
+    [clave, locales, vigentes, datosApoderados, revisarApoderado],
   );
 
   const elegirMarca = useCallback(
@@ -401,9 +448,23 @@ export default function Borrador({ caso }: PropsVista) {
     if (abridor?.isConnected) abridor.focus({ preventScroll: true });
   }, [visor]);
 
+  // Con nombres marcados el detalle se descarga de antemano; si falla, se vuelve a intentar al pulsar un nombre.
+  const apoderadoElegido = seleccionada?.tipo === "apoderado";
+  useEffect(() => {
+    if ((!conMarcas && !apoderadoElegido) || PopoverApoderado) return;
+    cargarDetalleApoderado().then(
+      (componente) => setPopoverApoderado(() => componente),
+      () => {
+        if (!apoderadoElegido) return;
+        setSeleccionada((actual) => (actual?.tipo === "apoderado" ? null : actual));
+        mostrarToast("No se pudo abrir el detalle del abogado. Revise la conexión y vuelva a intentarlo.", { tipo: "error" });
+      },
+    );
+  }, [conMarcas, apoderadoElegido, PopoverApoderado]);
+
   // El título se enfoca al abrir el detalle, no cada vez que el sondeo de /apoderados trae un objeto nuevo.
   const claveSeleccion = seleccionada ? `${seleccionada.tipo}:${seleccionada.id}` : null;
-  const hayDetalle = cita !== null || abogado !== null;
+  const hayDetalle = cita !== null || (abogado !== null && PopoverApoderado !== null);
   useEffect(() => {
     if (hayDetalle && ancla) tituloDetalle.current?.focus({ preventScroll: true });
   }, [claveSeleccion, hayDetalle, ancla]);
@@ -466,6 +527,9 @@ export default function Borrador({ caso }: PropsVista) {
   const motivo = motivoNoCorregir(estado, !estadoFallo);
   const corrigible = !sinEstado && motivo === null;
   const enCurso = Boolean(estado?.job_activo) || estado?.estado === "corriendo";
+  const editable = ediciones?.editable === true;
+  const modoEdicion = editando && editable;
+  const conflictos = editable ? (ediciones?.conflictos ?? []) : [];
   const radicado = metadatos?.cui_2a || metadatos?.cui_1a;
 
   const cabecera = (
@@ -571,6 +635,21 @@ export default function Borrador({ caso }: PropsVista) {
           No se pudo abrir el visor de evidencia. Revise la conexión y vuelva a intentarlo.
         </Aviso>
       )}
+      {conflictos.length > 0 && (
+        <Aviso
+          tipo="alerta"
+          class="bor-aviso"
+          acciones={
+            <Boton variante="primario" onClick={() => setResolviendo(true)}>
+              Resolver
+            </Boton>
+          }
+        >
+          {conflictos.length === 1
+            ? "Hay 1 conflicto entre sus ediciones y la corrección de la IA"
+            : `Hay ${conflictos.length} conflictos entre sus ediciones y la corrección de la IA`}
+        </Aviso>
+      )}
       <div class="bor-mesa">
         <Indice entradas={entradas} marcas={marcas} activa={activa} alSeccion={alSeccion} redaccion={redaccion} abierto={indiceAbierto} />
         <div class="bor-col-doc" ref={columna}>
@@ -602,6 +681,26 @@ export default function Borrador({ caso }: PropsVista) {
                 <span class="bor-txt-largo">Marcar texto de</span> plantilla
               </span>
             </label>
+            {editable && (
+              <label class="bor-interruptor" title="Permite corregir a mano el texto que redactó el modelo. Las citas, las imágenes y la plantilla no se pueden cambiar.">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Editar texto"
+                  checked={editando}
+                  onChange={(e) => {
+                    if (!e.currentTarget.checked && sucio) {
+                      e.currentTarget.checked = true;
+                      setApagando(true);
+                      return;
+                    }
+                    setEditando(e.currentTarget.checked);
+                  }}
+                />
+                <span class="bor-pista" aria-hidden="true" />
+                <span>Editar texto</span>
+              </label>
+            )}
             <button
               type="button"
               class="bor-boton-icono bor-solo-angosto"
@@ -636,6 +735,7 @@ export default function Borrador({ caso }: PropsVista) {
             plantilla={plantilla}
             alCita={alCita}
             alApoderado={alApoderado}
+            edicion={ediciones && editable ? { caso, activa: modoEdicion, piezas: ediciones.piezas, conflictos: conflictos.map((c) => c.pieza), recargar, alSucio: setSucio } : undefined}
           />
           {cita && ancla && columna.current && (
             <PopoverCita
@@ -647,10 +747,10 @@ export default function Borrador({ caso }: PropsVista) {
               onCerrar={() => cerrarDetalle(true)}
             />
           )}
-          {abogado && ancla && columna.current && (
+          {abogado && ancla && columna.current && PopoverApoderado && (
             <PopoverApoderado
               apoderado={abogado}
-              editable={editable}
+              editable={apoderadosEditables}
               ancla={ancla}
               contenedor={columna.current}
               titulo={tituloDetalle}
@@ -698,6 +798,7 @@ export default function Borrador({ caso }: PropsVista) {
         puedeCorregir={corrigible}
         motivoNoCorregir={motivo}
         alCorregir={() => setCorrigiendo(true)}
+        conflictos={conflictos.length}
       />
       {visor &&
         visorAbierto &&
@@ -708,7 +809,7 @@ export default function Borrador({ caso }: PropsVista) {
             evidencia={visor.evidencia}
             titulo={visor.titulo}
             subtitulo={visor.subtitulo}
-            editable={editable}
+            editable={apoderadosEditables}
             revisado={visorAbierto.revisado}
             alRevisar={(revisado) => revisarApoderado(visorAbierto.id, revisado)}
             alNoEsCorrecto={() => {
@@ -738,17 +839,56 @@ export default function Borrador({ caso }: PropsVista) {
             alCerrar={cerrarAjuste}
           />
         )}
-      <DialogoCorrecciones
-        abierto={corrigiendo}
-        caso={caso}
-        onCerrar={() => setCorrigiendo(false)}
-        onEnviado={(jobId) => {
-          casoActual.value = caso;
-          jobActual.value = jobId;
-          setCorrigiendo(false);
-          navegar(enlaceEtapa(caso, "proceso"));
+      <Dialogo
+        abierto={apagando || guardia.destino !== null}
+        titulo="Hay texto sin guardar"
+        onCerrar={() => {
+          setApagando(false);
+          guardia.quedarse();
         }}
-      />
+        acciones={
+          <>
+            <Boton
+              data-enfoque
+              onClick={() => {
+                setApagando(false);
+                guardia.quedarse();
+              }}
+            >
+              Seguir editando
+            </Boton>
+            <Boton
+              variante="peligro"
+              onClick={() => {
+                if (apagando) {
+                  setApagando(false);
+                  setEditando(false);
+                } else guardia.salir();
+              }}
+            >
+              Descartar el texto
+            </Boton>
+          </>
+        }
+      >
+        <p>Tiene un párrafo con cambios sin guardar. Si continúa, pierde lo que escribió.</p>
+      </Dialogo>
+      {DialogoConflictos && (
+        <DialogoConflictos abierto={resolviendo} caso={caso} conflictos={conflictos} recargar={recargar} onCerrar={() => setResolviendo(false)} />
+      )}
+      {DialogoCorrecciones && (
+        <DialogoCorrecciones
+          abierto={corrigiendo}
+          caso={caso}
+          onCerrar={() => setCorrigiendo(false)}
+          onEnviado={(jobId) => {
+            casoActual.value = caso;
+            jobActual.value = jobId;
+            setCorrigiendo(false);
+            navegar(enlaceEtapa(caso, "proceso"));
+          }}
+        />
+      )}
     </div>
   );
 }

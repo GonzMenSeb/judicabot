@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mapa de filtros</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#e6ebec}
+a{color:#1e5a6e}a:hover{color:#174757}
+.mapa{width:1280px;box-sizing:border-box;padding:64px;background:#fdfcf9;color:#1d2a33;font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:15px;line-height:1.5}
+.mapa h1,.mapa h2,.mapa h3,.mapa p{margin:0}
+.mapa code,.mapa pre{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.mapa code{padding:0 .3em;border-radius:4px;background:#eef2f3;font-size:.86em;color:#174757}
+.leyenda{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;font-size:13px;color:#4a5760}
+.leyenda span{display:inline-flex;align-items:center;gap:8px}
+.marca-dato{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.existe{background:#d9ebe1;color:#2c6a4b}
+.extrae{background:#d6e6eb;color:#174757}
+.nuevo{background:#f6e8c8;color:#8f5a00}
+.tabla{width:100%;border-collapse:collapse;font-size:14px}
+.tabla th{padding:10px 14px;border-bottom:2px solid #1d2a33;text-align:left;font-size:12px;font-weight:600;letter-spacing:.02em;color:#4a5760}
+.tabla td{padding:11px 14px;border-bottom:1px solid #e2ddd1;vertical-align:top}
+.tabla td:first-child{font-weight:600;white-space:nowrap}
+.tabla .op{color:#4a5760}
+.tabla .fuente{color:#4a5760;font-size:13px}
+.proc{display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid #c8d1d5;border-radius:12px;background:#fff}
+.proc-cab{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid #e3e8ea}
+.proc-ico{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:#d6e6eb;color:#1e5a6e}
+.proc-cab h3{font-size:16px;font-weight:600;line-height:1.25}
+.filtro{display:flex;flex-direction:column;gap:3px}
+.filtro b{font-size:14px;font-weight:600;line-height:1.3}
+.filtro .op{color:#4a5760;font-size:13px;line-height:1.4}
+.filtro .marca-dato{align-self:flex-start;margin-top:2px}
+.fila{margin-top:auto;padding:12px;border-radius:8px;background:#f4f8f9;font-size:13px;color:#4a5760}
+.fila b{display:block;margin-bottom:6px;font-size:12px;color:#1d2a33}
+.fila span{display:inline-block;margin:0 4px 4px 0;padding:0 7px;border:1px solid #d5dde0;border-radius:5px;background:#fff;font-size:12px;font-weight:500;white-space:nowrap}
+.codigo{margin:0;padding:22px 24px;overflow:hidden;border-radius:12px;background:#1d2a33;color:#e8eef0;font-size:13px;line-height:1.6;white-space:pre}
+.codigo .c{color:#9fb2bb}
+.codigo .k{color:#8fc3d8}
+.reglas{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:12px;font-size:14px}
+.pendientes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.pend{display:flex;flex-direction:column;gap:6px;padding:18px 20px;border:1px solid #e6cf9c;border-radius:12px;background:#fdf6e6}
+.pend h3{font-size:15px;font-weight:600;line-height:1.35}
+.pend p{color:#4a5760;font-size:14px}
+</style>
+</helmet>
+<div class="mapa" style="display: flex; flex-direction: column; gap: 52px">
+  <header style="display: flex; flex-direction: column; gap: 14px">
+    <p style="font-size: 13px; font-weight: 600; color: #1e5a6e">Rediseño · Mi trabajo</p>
+    <h1 style="font-size: 40px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em">Mapa de filtros</h1>
+    <p style="max-width: 760px; font-size: 17px; color: #4a5760">Qué filtra cada proceso, con qué dato y si ese dato ya existe. Un solo componente, <code>ListaTrabajo</code>, arma la lista de Inicio y la de cada proceso: los filtros comunes son los mismos y cada proceso suma los suyos.</p>
+    <div class="leyenda" style="margin-top: 6px">
+      <span><span class="marca-dato existe">Existe hoy</span> ya llega a la lista de casos</span>
+      <span><span class="marca-dato extrae">Se extrae</span> está en el caso; falta llevarlo a <code>CasoResumen</code></span>
+      <span><span class="marca-dato nuevo">Dato nuevo</span> hay que capturarlo</span>
+    </div>
+  </header>
+
+  <section style="display: flex; flex-direction: column; gap: 16px">
+    <h2 style="font-size: 22px; font-weight: 600">Comunes a todos los procesos</h2>
+    <table class="tabla">
+      <thead>
+        <tr><th scope="col">Filtro</th><th scope="col">Opciones</th><th scope="col">Dato</th><th scope="col">Estado del dato</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Proceso</td><td class="op">Todos · 1ª instancia · 2ª instancia · Desacato · Penal</td><td class="fuente"><code>proceso</code> en <code>CasoResumen</code>; hoy <code>hrefCaso</code> fija <code>#/segunda</code>. Se oculta mientras un solo proceso tenga casos.</td><td><span class="marca-dato nuevo">Dato nuevo</span></td></tr>
+        <tr><td>Estado</td><td class="op">Por decidir · Faltan documentos · Con error · Por preparar · En redacción · Terminados (fuera por defecto)</td><td class="fuente"><code>estado</code>: los 7 valores de la API en 6 grupos (<code>sin_iniciar</code> y <code>revision</code> son «Por preparar»).</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Trabajado</td><td class="op">Cualquier fecha · Hoy · Ayer · Últimos 7 días · Este mes · Mes pasado · Desde / Hasta</td><td class="fuente"><code>actualizado</code>: última modificación de los archivos del caso. Se compara en hora de Colombia, no en UTC.</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Término</td><td class="op">Vencido · Vence hoy o mañana · 2 a 5 días hábiles · 6 o más · Sin término calculado</td><td class="fuente"><code>vence</code> en días hábiles con festivos. Hoy solo existe <code>fechas.reparto_2a</code> dentro de <code>caso.json</code>.</td><td><span class="marca-dato nuevo">Dato nuevo</span></td></tr>
+        <tr><td>Juzgado de origen</td><td class="op">Los juzgados de los casos, por número de casos</td><td class="fuente"><code>juzgado_a_quo</code>. En 2ª instancia se llama «Juzgado de primera instancia».</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Entidad accionada</td><td class="op">Las accionadas de los casos, por número de casos</td><td class="fuente"><code>accionadas[]</code>, normalizadas sin tildes ni mayúsculas.</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Alertas</td><td class="op">Con alertas · Sin alertas</td><td class="fuente"><code>n_alertas</code></td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Buscar</td><td class="op">Radicado, partes, juzgado y accionadas</td><td class="fuente"><code>filtrar()</code> de <code>agrupar.ts</code>, sin tildes y con radicado compacto.</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Ordenar</td><td class="op">Lo que me toca primero · Vence primero · Trabajado más reciente · Más tiempo sin movimiento · Radicado</td><td class="fuente">«Lo que me toca primero» amplía <code>ordenar()</code>: vencidos y los que vencen hoy, luego por decidir, faltantes y errores. «Vence primero» necesita <code>vence</code>.</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+        <tr><td>Agrupar</td><td class="op">Sin agrupar · Por estado · Por plazo · Por proceso; y vista Fichas o Compacta</td><td class="fuente">Inicio: sin agrupar. Página del proceso: por estado, como hoy.</td><td><span class="marca-dato existe">Existe hoy</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 16px">
+    <h2 style="font-size: 22px; font-weight: 600">Propios de cada proceso</h2>
+    <p style="color: #4a5760; max-width: 820px">Aparecen en la página del proceso y en Inicio al elegir ese proceso. Cada fila de la lista muestra, además, los datos que más pesan en ese proceso.</p>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: stretch">
+      <article class="proc">
+        <div class="proc-cab">
+          <span class="proc-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10v18h14"></path><path d="M11 4h10l5 5v15H11z"></path><path d="M21 4v5h5"></path><path d="M18.5 19v-7M15.5 15l3-3 3 3"></path></svg></span>
+          <h3>2ª instancia</h3>
+        </div>
+        <div class="filtro"><b>Decisión de primera instancia</b><span class="op">Amparó · Negó el amparo · Declaró improcedente · Carencia actual de objeto · Aún sin leer</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Quién impugnó</b><span class="op">Accionante · Accionada · Vinculada · Varios impugnantes</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Sentido del fallo de 2ª instancia</b><span class="op">Confirma · Revoca · Modifica · Sin decidir</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Derecho invocado</b><span class="op">Salud · Vida digna · Mínimo vital · Seguridad social · Debido proceso · Petición…</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Pruebas nuevas en 2ª instancia</b><span class="op">Con pruebas nuevas · Sin pruebas nuevas</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Por revisar antes de decidir</b><span class="op">Citas por revisar · Jev discrepa</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="fila"><b>En cada fila</b><span>1ª inst.: Negó el amparo</span><span>Impugna: accionante</span><span>Fallo: revoca y ampara</span><span>2 citas por revisar</span></div>
+      </article>
+      <article class="proc">
+        <div class="proc-cab">
+          <span class="proc-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h11l6 6v18H8z"></path><path d="M19 4v6h6"></path><path d="M12 16h9M12 20h9M12 24h5"></path></svg></span>
+          <h3>1ª instancia</h3>
+        </div>
+        <div class="filtro"><b>Medida provisional</b><span class="op">Solicitada, sin resolver · Decretada · Negada · No solicitada</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Informes de las accionadas</b><span class="op">Todos recibidos · Faltan por recibir · Plazo vencido sin respuesta</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Tipo de accionada</b><span class="op">Entidad pública nacional · Entidad territorial · EPS o IPS · Administradora de pensiones · Particular</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Derecho invocado</b><span class="op">El mismo filtro de 2ª instancia</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="filtro"><b>Sujeto de especial protección</b><span class="op">Niño, niña o adolescente · Persona mayor · Persona con discapacidad · Víctima del conflicto armado · Ninguno alegado</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Terceros vinculados</b><span class="op">Con terceros vinculados · Sin terceros vinculados</span><span class="marca-dato extrae">Se extrae</span></div>
+        <div class="fila"><b>En cada fila</b><span>Medida provisional sin resolver</span><span>Informes 1 de 2</span><span>Salud +1</span><span>Persona mayor</span></div>
+      </article>
+      <article class="proc">
+        <div class="proc-cab">
+          <span class="proc-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 28H8V4h11l6 6v5"></path><path d="M19 4v6h6"></path><path d="M12 15h7M12 19h4"></path><circle cx="23.5" cy="23" r="5.5"></circle><path d="M23.5 20.3v3.2l2 1.3"></path></svg></span>
+          <h3>Desacato</h3>
+        </div>
+        <div class="filtro"><b>Fase del incidente</b><span class="op">Requerimiento al responsable · Requerimiento al superior · Incidente abierto · Por resolver · En consulta · Archivado por cumplimiento</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Cumplimiento del fallo</b><span class="op">Sin acreditar · Parcial · Cumplido</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Sanción</b><span class="op">Sin decisión · No se sancionó · Arresto · Multa · Arresto y multa</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Consulta ante el superior</b><span class="op">Sin enviar · Enviada, sin decisión · Sanción confirmada · Sanción revocada</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Días desde el requerimiento</b><span class="op">Hasta 10 días · De 11 a 30 días · Más de 30 días</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="fila"><b>En cada fila</b><span>Por resolver</span><span>Incumple: entidad (cargo)</span><span>Arresto 3 días y multa 5 SMLMV</span><span>Requerido hace 34 días</span></div>
+      </article>
+      <article class="proc">
+        <div class="proc-cab">
+          <span class="proc-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5v22M10 27h12M7 9h18"></path><path d="M7 9l-4 9a4 4 0 0 0 8 0z"></path><path d="M25 9l-4 9a4 4 0 0 0 8 0z"></path></svg></span>
+          <h3>Penal</h3>
+        </div>
+        <div class="filtro"><b>Situación de libertad</b><span class="op">Privado de la libertad · Detención domiciliaria · En libertad</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Tipo de actuación</b><span class="op">Preacuerdo · Allanamiento a cargos · Preclusión · Juicio oral · Sentencia · Solicitud de libertad</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Próxima audiencia</b><span class="op">Hoy · Mañana · En los próximos 7 días · Más adelante · Sin fecha fijada</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Delito (título del Código Penal)</b><span class="op">Contra la vida e integridad personal · Contra la familia · Contra el patrimonio económico · Contra la salud pública…</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Ley procesal</b><span class="op">Ley 906 de 2004 · Ley 600 de 2000</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="filtro"><b>Menor de edad</b><span class="op">Víctima menor de edad · Adolescente procesado</span><span class="marca-dato nuevo">Dato nuevo</span></div>
+        <div class="fila"><b>En cada fila</b><span>Privado de la libertad</span><span>Audiencia: jue. 19 nov., 9:00 a. m.</span><span>Ley 906 de 2004</span><span>Delito · actuación en lugar de partes</span></div>
+      </article>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 16px">
+    <h2 style="font-size: 22px; font-weight: 600">Cómo se arma</h2>
+    <div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: start">
+      <pre class="codigo"><span class="c">// Inicio: todos los procesos</span>
+&lt;ListaTrabajo /&gt;
+<span class="c">// Página del proceso: el proceso queda fijo</span>
+&lt;ListaTrabajo proceso="segunda" /&gt;
+
+<span class="k">interface</span> Faceta {
+  clave: string;
+  etiqueta: string;
+  opciones: Opcion[];
+  valor(caso: CasoResumen): string | string[] | null;
+}
+
+<span class="k">const</span> COMUNES: Faceta[] =
+  [estado, termino, juzgado, entidad, alertas];
+
+<span class="k">const</span> PROPIAS: Record&lt;TipoProceso, Faceta[]&gt; = {
+  segunda:  [decisionAQuo, impugnante, sentido2a,
+             derecho, pruebasNuevas, porRevisar],
+  primera:  [medidaProvisional, informes, tipoAccionada,
+             derecho, especialProteccion, vinculados],
+  desacato: [fase, cumplimiento, sancion, consulta,
+             diasRequerimiento],
+  penal:    [libertad, actuacion, audiencia, delito,
+             ley, menor],
+};
+
+<span class="c">// Datos propios en la fila, por proceso</span>
+<span class="k">const</span> FILA: Record&lt;TipoProceso, (c: CasoResumen) =&gt; Dato[]&gt;;</pre>
+      <ol class="reglas">
+        <li>Con el proceso fijo, por la prop o al tocar su pestaña en Inicio, sus filtros propios aparecen en un carril teñido junto a los generales, nunca debajo, y cada fila muestra sus datos. Inicio y la página del proceso muestran la misma lista.</li>
+        <li>Cada filtro es una pastilla plegada que muestra su valor y su ✕. Al tocarla abre el control que le corresponde: lista con conteos, lista con buscador, pasos en orden procesal, o rango de fechas con presets e histograma de actividad. Los filtros de sí o no son interruptores de un toque.</li>
+        <li>Estado y Plazos no son pastillas: la franja de estados (proporcional a los conteos) y las baldosas de plazo resumen y filtran a la vez.</li>
+        <li>Cada opción cuenta los casos que quedarían con los demás filtros aplicados. Las opciones en 0 se atenúan pero no desaparecen, para que la lista de opciones no salte.</li>
+        <li>Por defecto se ven los casos abiertos; el tramo rayado «Terminados · ocultos» de la franja los agrega con un toque.</li>
+        <li>Un filtro sin datos para los casos visibles se oculta; por ejemplo, Juzgado de origen en penal.</li>
+        <li>Los filtros van en la URL (<code>#/?proceso=segunda&amp;estado=decidir</code>), así que una vista filtrada se puede guardar como marcador y el botón Atrás la conserva.</li>
+        <li>En pantallas angostas los carriles se apilan y cada control sale como una hoja desde abajo. «Limpiar filtros» se puede deshacer, y si nada coincide la lista propone quitar el filtro que más casos devuelve.</li>
+        <li>Reemplaza «Para continuar» de <code>inicio/index.tsx</code> y la lista de <code>casos/index.tsx</code>; <code>Ficha</code> recibe los datos propios del proceso como una lista más.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 16px">
+    <h2 style="font-size: 22px; font-weight: 600">Decisiones pendientes del despacho</h2>
+    <div class="pendientes">
+      <div class="pend"><h3>¿Desde cuándo corre el término?</h3><p>Reparto o recibo en el despacho, y si se cuentan los festivos judiciales. Hasta decidirlo, «Término» y «Vence primero» no deben mostrarse.</p></div>
+      <div class="pend"><h3>¿«Trabajado» basta con la última actividad?</h3><p><code>actualizado</code> también cambia cuando el sistema termina una redacción. Separar «lo que yo trabajé» exige un registro de actividad por persona.</p></div>
+      <div class="pend"><h3>¿Qué plazo usa el desacato?</h3><p>El de 10 días hábiles es una referencia jurisprudencial, no un término legal: debe ser configurable por despacho y la interfaz no debe presentarlo como término legal.</p></div>
+      <div class="pend"><h3>¿Cómo se clasifica el texto libre?</h3><p><code>decision_a_quo</code> y <code>derechos_invocados</code> son frases del modelo. Para filtrarlas hay que llevarlas a las categorías del filtro (palabras clave, con Jev como apoyo).</p></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

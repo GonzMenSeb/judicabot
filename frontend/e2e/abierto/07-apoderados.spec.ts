@@ -87,7 +87,9 @@ test("apoderados: la consulta simulada la deja en verde, las correcciones a mano
   await expect(page.getByText(`${ABOGADA} no pudo verificarse. Márquelo como revisado`)).toBeVisible();
   await expect(fila.getByRole("link", { name: /Certificado PDF/ })).toBeVisible();
   await expect(fila.getByRole("group", { name: `Subir el certificado de vigencia de ${ABOGADA}` })).toBeVisible();
-  await capturar(page, "14-apoderados-ayuda", panel);
+  // A 390 px el panel es un cajón cerrado (visibility: hidden tras su transición de 0,22 s) y sale del árbol accesible:
+  // se lo ubica por id para no depender de que la captura llegue antes de que termine la transición.
+  await capturar(page, "14-apoderados-ayuda", page.locator("#bor-panel"));
   const bloqueada = await request.post(`/api/casos/${id}/run`, { data: { cmd: "decidir", decision: decisionSintetica() } });
   expect(bloqueada.status()).toBe(409);
 
@@ -142,4 +144,31 @@ test("apoderados: la consulta simulada la deja en verde, las correcciones a mano
   await expect(detalle).toContainText("Certificado subido por el despacho");
   await expect(detalle.getByText("Poder señalado a mano", { exact: true })).toBeVisible();
   await capturar(page, "16-apoderada-verificada");
+  await page.keyboard.press("Escape");
+  await expect(detalle).toBeHidden();
+
+  // Con «Editar texto», el nombre sigue abriendo su detalle (no el editor) y, al guardar el párrafo que la nombra,
+  // el borrador la vuelve a subrayar.
+  await page.getByRole("switch", { name: "Editar texto" }).check();
+  const conNombre = texto.locator("[data-unidad]").filter({ has: page.getByRole("button", { name: /Andrea Paola Giraldo Montoya/ }) });
+  await expect(conNombre).toHaveCount(1);
+  // Mientras se edita, el nombre deja de ser una marca: la unidad se sigue por su clave.
+  const unidad = texto.locator(`[data-unidad="${await conNombre.getAttribute("data-unidad")}"]`);
+  await abogada.click();
+  await expect(detalle).toBeVisible();
+  await expect(texto.getByRole("textbox", { name: "Texto del párrafo" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(detalle).toBeHidden();
+  await unidad.getByRole("button", { name: "Editar párrafo" }).click();
+  const campo = unidad.getByRole("textbox", { name: "Texto del párrafo" });
+  const original = await campo.inputValue();
+  expect(original).toContain("Andrea Paola Giraldo Montoya");
+  const corregido = original.replace(/dio respuesta a la acción de tutela/, "contestó la acción de tutela");
+  expect(corregido).not.toBe(original);
+  await campo.fill(corregido);
+  await campo.press("Control+Enter");
+  await expect(campo).toBeHidden();
+  const editada = texto.locator("[data-unidad]").filter({ hasText: "contestó la acción de tutela" });
+  await expect(editada.getByText("Editado", { exact: true })).toBeVisible();
+  await expect(editada.getByRole("button", { name: /Andrea Paola Giraldo Montoya/ })).toHaveClass(/\bverificada\b/);
 });

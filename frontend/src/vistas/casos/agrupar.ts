@@ -1,22 +1,9 @@
 import type { CasoResumen, EstadoCasoApi } from "../../api/contrato";
 import type { VarianteBoton } from "../../ui";
 
-export type GrupoCaso = "atencion" | "trabajando" | "terminados";
 export type TonoFicha = "" | "sello" | "alerta" | "ok" | "trabajando";
 
-export const GRUPOS: readonly { id: GrupoCaso; titulo: string }[] = [
-  { id: "atencion", titulo: "Requieren su atención" },
-  { id: "trabajando", titulo: "En redacción" },
-  { id: "terminados", titulo: "Terminados" },
-];
-
 export const TRAMOS = ["Documentos", "Borrador", "Decisión", "Fallo"] as const;
-
-export function grupoDe(estado: EstadoCasoApi): GrupoCaso {
-  if (estado === "corriendo") return "trabajando";
-  if (estado === "terminado") return "terminados";
-  return "atencion";
-}
 
 export function tonoDe(estado: EstadoCasoApi): TonoFicha {
   switch (estado) {
@@ -76,18 +63,8 @@ export function descripcionAvance(etapa: number): string {
   return `Avance: paso ${etapa + 1} de ${TRAMOS.length}, ${TRAMOS[etapa]}`;
 }
 
-const prioridad = (c: CasoResumen) => (c.estado === "esperando_decision" ? 0 : c.estado === "error" || c.estado === "incompleto" ? 1 : 2);
-
-export function ordenar(casos: CasoResumen[]): CasoResumen[] {
-  return [...casos].sort((a, b) => prioridad(a) - prioridad(b) || b.actualizado.localeCompare(a.actualizado));
-}
-
-export const agrupar = (casos: CasoResumen[]): { id: GrupoCaso; titulo: string; casos: CasoResumen[] }[] => {
-  const ordenados = ordenar(casos);
-  return GRUPOS.map((g) => ({ ...g, casos: ordenados.filter((c) => grupoDe(c.estado) === g.id) })).filter((g) => g.casos.length > 0);
-};
-
-const plano = (texto: string) =>
+/** Texto sin tildes y en minúsculas, para comparar sin importar cómo se escribió. */
+export const plano = (texto: string) =>
   texto
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -95,14 +72,18 @@ const plano = (texto: string) =>
 
 const compacto = (texto: string) => texto.replace(/[^a-z0-9]/g, "");
 
-export function filtrar(casos: CasoResumen[], consulta: string): CasoResumen[] {
+/**
+ * ¿El caso coincide con la búsqueda? Busca en nombre, id, radicado, accionante, juzgado y accionadas,
+ * sin tildes ni mayúsculas; si no aparece tal cual, compara solo letras y números ("2026-00412" = "202600412").
+ * Una consulta vacía coincide con todo.
+ */
+export function coincideBusqueda(caso: CasoResumen, consulta: string): boolean {
   const q = plano(consulta.trim());
-  if (!q) return casos;
+  if (!q) return true;
+  const texto = plano([caso.nombre, caso.id, caso.radicado, caso.accionante, caso.juzgado_a_quo, ...caso.accionadas].filter(Boolean).join(" "));
+  if (texto.includes(q)) return true;
   const qCompacto = compacto(q);
-  return casos.filter((c) => {
-    const texto = plano([c.nombre, c.id, c.radicado, c.accionante, c.juzgado_a_quo, ...c.accionadas].filter(Boolean).join(" "));
-    return texto.includes(q) || (qCompacto !== "" && compacto(texto).includes(qCompacto));
-  });
+  return qCompacto !== "" && compacto(texto).includes(qCompacto);
 }
 
 export function partesDe(caso: Pick<CasoResumen, "nombre" | "accionante" | "accionadas">): string | null {

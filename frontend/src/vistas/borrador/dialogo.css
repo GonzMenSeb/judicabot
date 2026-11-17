@@ -1,6 +1,7 @@
 dialog.dialogo.bor-dialogo { width: min(34rem, calc(100vw - 2rem)); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3); }
 .bor-dialogo .dialogo-cuerpo { padding: 1.5rem 1.6rem 1.4rem; }
 .bor-dialogo-intro { margin-bottom: 1rem; font-size: 0.93rem; }
+.bor-dialogo-intro + .bor-dialogo-intro { margin-top: -0.6rem; }
 .bor-dlg-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0 0 1.1rem; padding: 0; border: 0; min-width: 0; }
 .bor-dlg-opciones legend { margin-bottom: 0.5rem; padding: 0; font-size: 0.88rem; font-weight: 500; }
 .bor-dlg-opciones > .bor-error { grid-column: 1 / -1; }

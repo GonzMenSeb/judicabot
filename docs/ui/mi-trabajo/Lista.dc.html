@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Lista de trabajo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+:root{--fondo:#e6ebec;--fondo-2:#dce3e5;--tinta:#1d2a33;--suave:#4a5760;--tenue:#55646e;--tenue-deco:#748188;--linea:#c8d1d5;--acento:#1e5a6e;--acento-2:#174757;--acento-fondo:#d6e6eb;--sello:#7a2634;--sello-2:#611c28;--ok:#2c6a4b;--ok-fondo:#d9ebe1;--alerta:#8f5a00;--alerta-fondo:#f6e8c8;--mal:#a8281f;--mal-fondo:#f5dcd9;--foco:#2a7fa0;--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fondo);color:var(--tinta);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--foco);outline-offset:2px}
+a{color:#1e5a6e}a:hover{color:#174757}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem 1.1rem;border:1px solid var(--linea);border-radius:6px;background:#fff;color:var(--tinta);font-weight:500;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--acento)}
+.btn.primario{background:var(--acento);border-color:var(--acento);color:#fff}
+.btn.primario:hover{background:var(--acento-2);border-color:var(--acento-2)}
+.btn.sello{background:var(--sello);border-color:var(--sello);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.08),0 6px 16px -8px rgba(122,38,52,.7)}
+.btn.sello:hover{background:var(--sello-2);border-color:var(--sello-2)}
+.btn.chico{padding:.32rem .8rem;font-size:.86rem}
+.chip{display:inline-block;padding:.05rem .6rem;border-radius:999px;background:var(--fondo-2);color:var(--suave);font-size:.8rem;font-weight:500;white-space:nowrap}
+.chip.alerta{background:var(--alerta-fondo);color:var(--alerta)}
+.chip.mal{background:var(--mal-fondo);color:var(--mal)}
+input[type=search],input[type=date],select{width:100%;padding:.45rem .6rem;background:#fff;border:1px solid var(--linea);border-radius:6px}
+.enlace{padding:.1rem .25rem;border:0;background:none;color:var(--acento);font-size:.88rem;font-weight:500;text-decoration:underline;text-underline-offset:2px}
+.trabajo-raiz.suelta{max-width:1180px;margin:0 auto;padding:1.75rem 1.5rem 4rem}
+.cabeza-trabajo{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem 1.5rem;margin-bottom:.85rem}
+.cabeza-trabajo h2{font-size:1.35rem;font-weight:600;line-height:1.25}
+.buscar{position:relative;width:21rem;max-width:100%}
+.buscar svg{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);color:var(--tenue);pointer-events:none}
+.buscar input{padding-left:2.2rem}
+.pestanas{display:flex;gap:.2rem;padding:0 .6rem;overflow-x:auto;scrollbar-width:none}
+.pestana{position:relative;display:inline-flex;flex:none;align-items:center;gap:.45rem;margin-bottom:-1px;padding:.5rem .9rem .55rem;border:1px solid transparent;border-bottom:0;border-radius:10px 10px 0 0;background:transparent;color:var(--suave);font-size:.9rem;font-weight:500;white-space:nowrap}
+.pestana:hover{background:rgba(255,255,255,.6);color:var(--tinta)}
+.pestana[aria-pressed=true]{z-index:1;background:#fff;border-color:var(--linea);color:var(--tinta);font-weight:600}
+.pestana svg{flex:none;color:var(--acento)}
+.pestana .n{min-width:1.45rem;padding:0 .4rem;border-radius:999px;background:var(--fondo-2);color:var(--suave);font-size:.76rem;font-weight:600;text-align:center;font-variant-numeric:tabular-nums}
+.pestana[aria-pressed=true] .n{background:var(--acento-fondo);color:var(--acento-2)}
+.tablero{position:relative;background:#fff;border:1px solid var(--linea);border-radius:12px}
+.triage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem 2rem;padding:.9rem 1.15rem .95rem;border-bottom:1px solid #e3e8ea}
+.rotulo{display:flex;flex-wrap:wrap;align-items:baseline;gap:.15rem .6rem;margin-bottom:.4rem;font-size:.78rem;font-weight:600;color:var(--suave);letter-spacing:.02em}
+.rotulo small{font-size:.76rem;font-weight:400}
+.rotulo .enlace{padding:0;font-size:.78rem}
+.franja{display:flex;gap:4px}
+.seg-estado{--c:var(--acento);flex:1 1 0;min-width:5.6rem;display:grid;align-content:start;gap:.1rem;padding:.35rem .5rem .4rem;border:1px solid transparent;border-radius:8px;background:none;color:var(--tinta);text-align:left}
+.seg-estado::before{content:"";display:block;height:6px;margin-bottom:.3rem;border-radius:3px;background:var(--c);opacity:.25}
+.seg-estado.on::before{opacity:1}
+.seg-estado:hover{background:var(--fondo)}
+.seg-estado b{font-size:1.1rem;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.seg-estado span{font-size:.78rem;line-height:1.25;color:var(--suave)}
+.seg-estado:not(.on) b{font-weight:500;color:var(--suave)}
+.seg-estado.decidir{--c:var(--sello)}
+.seg-estado.faltan{--c:#d19a2c}
+.seg-estado.error{--c:var(--mal)}
+.seg-estado.redaccion{--c:#7fa9b8}
+.seg-estado.terminado{--c:var(--ok)}
+.seg-estado.terminado:not(.on)::before{background:repeating-linear-gradient(135deg,var(--ok) 0 3px,transparent 3px 6px);opacity:.55}
+.plazos{display:flex;gap:.4rem}
+.plazo{display:grid;align-content:start;gap:.1rem;min-width:6.8rem;max-width:9rem;padding:.4rem .7rem;border:1px solid var(--linea);border-radius:8px;background:#fff;color:var(--tinta);text-align:left}
+.plazo:hover{border-color:var(--acento)}
+.plazo b{font-size:1.1rem;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.plazo span{font-size:.78rem;line-height:1.25;color:var(--suave)}
+.plazo.mal b{color:var(--mal)}
+.plazo.alerta b{color:var(--alerta)}
+.plazo.cero b{color:var(--tenue);font-weight:500}
+.plazo[aria-pressed=true]{border-color:var(--acento);background:var(--acento-fondo);box-shadow:inset 0 0 0 1px var(--acento)}
+.carriles{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:.8rem;padding:.8rem 1.15rem 1rem}
+.carril{display:flex;flex-direction:column;gap:.45rem;min-width:0}
+.carril.propio{padding:.55rem .65rem .65rem;border:1px solid #b9d3dc;border-radius:10px;background:#eef5f7}
+.carril.hueco{justify-content:center;padding:.6rem .8rem;border:1px dashed var(--linea);border-radius:10px;background:#fafbfb}
+.carril.hueco p{color:var(--suave);font-size:.86rem}
+.carril-cab{display:flex;align-items:center;gap:.5rem;font-size:.78rem;font-weight:600;color:var(--suave);letter-spacing:.02em}
+.carril.propio .carril-cab{color:var(--acento-2)}
+.carril-ico{display:grid;place-items:center;flex:none;width:1.45rem;height:1.45rem;border-radius:6px;background:#fff;color:var(--acento)}
+.carril-cab .cuantos{display:inline-grid;place-items:center;min-width:1.2rem;height:1.2rem;padding:0 .3rem;border-radius:999px;background:var(--acento);color:#fff;font-size:.7rem}
+.pastillas{display:flex;flex-wrap:wrap;gap:.4rem}
+.pastilla-caja{position:relative;max-width:100%}
+.pastilla{display:inline-flex;align-items:stretch;max-width:100%;border:1px dashed var(--tenue-deco);border-radius:999px;background:#fff;font-size:.86rem}
+.pastilla:hover{border-color:var(--acento)}
+.pastilla.con-valor{border-style:solid;border-color:var(--acento);background:var(--acento-fondo)}
+.pastilla.abierta{border-style:solid;border-color:var(--acento);box-shadow:0 0 0 3px rgba(30,90,110,.16)}
+.pastilla-cuerpo{display:inline-flex;align-items:center;gap:.3rem;min-width:0;padding:.3rem .55rem .3rem .8rem;border:0;border-radius:999px;background:none;color:var(--tinta);font-weight:500;white-space:nowrap}
+.con-valor .pastilla-etq::after{content:":"}
+.pastilla-valor{overflow:hidden;max-width:12rem;color:var(--acento-2);font-weight:600;text-overflow:ellipsis}
+.pastilla-cuerpo svg{flex:none;color:var(--tenue)}
+.pastilla-x{display:grid;place-items:center;padding:0 .6rem 0 .15rem;border:0;border-radius:0 999px 999px 0;background:none;color:var(--acento-2)}
+.pastilla-x:hover{color:var(--mal)}
+.interruptor{display:inline-flex;align-items:center;gap:.45rem;padding:.3rem .8rem;border:1px dashed var(--tenue-deco);border-radius:999px;background:#fff;color:var(--tinta);font-size:.86rem;font-weight:500;white-space:nowrap}
+.interruptor:hover{border-color:var(--acento)}
+.interruptor .casilla{display:grid;place-items:center;width:.95rem;height:.95rem;border:1.5px solid var(--tenue);border-radius:3px;background:#fff;color:#fff}
+.interruptor[aria-pressed=true]{border-style:solid;border-color:var(--acento);background:var(--acento-fondo);color:var(--acento-2)}
+.interruptor[aria-pressed=true] .casilla{border-color:var(--acento);background:var(--acento)}
+.interruptor .n{color:var(--suave);font-size:.78rem;font-variant-numeric:tabular-nums}
+.velo{position:fixed;inset:0;z-index:40;padding:0;border:0;background:transparent;cursor:default}
+.pop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;width:20rem;max-width:calc(100vw - 2rem);padding:.8rem .9rem .8rem;border:1px solid var(--linea);border-radius:12px;background:#fff;box-shadow:0 18px 40px -18px rgba(29,42,51,.5),0 2px 6px rgba(29,42,51,.08);text-align:left}
+.pop.derecha{left:auto;right:0}
+.pop.ancho{width:23rem}
+.pop-cab{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem}
+.pop-cab b{font-size:.92rem;font-weight:600;line-height:1.3}
+.pop-cerrar{display:grid;place-items:center;flex:none;width:2rem;height:2rem;border:0;border-radius:6px;background:none;color:var(--suave)}
+.pop-cerrar:hover{background:var(--fondo)}
+.pop-buscar{margin-bottom:.5rem}
+.ops{display:grid;gap:.05rem;max-height:15.5rem;margin:0 -.4rem;padding:0 .4rem;overflow:auto}
+.op{display:flex;align-items:center;gap:.55rem;margin:0 -.4rem;padding:.3rem .4rem;border-radius:6px;font-size:.9rem;line-height:1.3;cursor:pointer}
+.op:hover{background:var(--fondo)}
+.op input{flex:none;width:1rem;height:1rem;margin:0;accent-color:var(--acento)}
+.op .txt{min-width:0;overflow-wrap:anywhere}
+.op .n{margin-left:auto;padding-left:.5rem;color:var(--suave);font-size:.8rem;font-variant-numeric:tabular-nums}
+.op.cero .txt,.op.cero .n{color:var(--tenue)}
+.op.on .txt{font-weight:500}
+.ops.pasos{background:linear-gradient(#c3d0d5,#c3d0d5) no-repeat calc(.9rem - 1px) .95rem / 2px calc(100% - 1.9rem)}
+.ops.pasos .op input{position:relative}
+.pop-nada{padding:.5rem 0;color:var(--suave);font-size:.86rem}
+.pop-pie{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-top:.7rem;padding-top:.65rem;border-top:1px solid #e3e8ea}
+.presets-f{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.3rem}
+.pre-f{display:flex;align-items:center;justify-content:space-between;gap:.4rem;padding:.35rem .55rem;border:1px solid var(--linea);border-radius:7px;background:#fff;font-size:.84rem;text-align:left}
+.pre-f:hover{border-color:var(--acento)}
+.pre-f[aria-pressed=true]{border-color:var(--acento);background:var(--acento-fondo);color:var(--acento-2);font-weight:500}
+.pre-f small{color:var(--suave);font-size:.74rem}
+.pre-f .n{color:var(--suave);font-size:.78rem;font-variant-numeric:tabular-nums}
+.histo{margin-top:.85rem}
+.histo-cab{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;margin-bottom:.35rem;font-size:.78rem;font-weight:600;color:var(--suave)}
+.histo-cab small{font-weight:400}
+.barras{display:flex;align-items:flex-end;gap:2px;height:3.6rem;border-bottom:1px solid #b9c6cb}
+.barra-d{flex:1 1 0;min-width:0;padding:0;border:0;border-radius:2px 2px 0 0;background:#9fbcc6}
+.barra-d:hover{background:var(--acento-2)}
+.barra-d.vacia{background:#dfe5e7}
+.barra-d.inhabil{background:repeating-linear-gradient(135deg,#c9d2d6 0 2px,transparent 2px 4px)}
+.barra-d.en{background:var(--acento)}
+.barra-d.en.vacia,.barra-d.en.inhabil{background:#7fa9b8}
+.histo-eje{display:flex;justify-content:space-between;margin-top:.25rem;font-size:.72rem;color:var(--suave)}
+.histo-nota{margin-top:.3rem;font-size:.75rem;color:var(--suave)}
+.rango{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin-top:.7rem}
+.rango label{display:grid;gap:.2rem;font-size:.78rem;color:var(--suave)}
+.rango input{padding:.35rem .4rem;font-size:.84rem;color:var(--tinta)}
+.resultados-barra{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.6rem 1rem;margin:1.1rem 0 .8rem}
+.cuenta{display:flex;flex-wrap:wrap;align-items:baseline;gap:.2rem .6rem;color:var(--suave);font-size:.92rem}
+.cuenta b{color:var(--tinta);font-weight:600}
+.orden{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem}
+.sel{display:flex;align-items:center;gap:.45rem;font-size:.86rem;color:var(--suave);white-space:nowrap}
+.sel select{width:auto;padding:.35rem .5rem;color:var(--tinta);font-size:.88rem}
+.densidad{display:inline-flex;padding:2px;border:1px solid var(--linea);border-radius:8px;background:#fff}
+.densidad button{display:grid;place-items:center;width:2.2rem;height:1.95rem;border:0;border-radius:6px;background:none;color:var(--suave)}
+.densidad button[aria-pressed=true]{background:var(--acento-fondo);color:var(--acento-2)}
+.grupo{margin-bottom:1.5rem}
+.titulo-grupo{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.55rem;font-size:.95rem;font-weight:600;color:var(--suave)}
+.titulo-grupo span{font-weight:400;font-variant-numeric:tabular-nums}
+.fichas{display:grid;gap:.6rem}
+.ficha{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 14rem 12.5rem;gap:1.5rem;align-items:center;padding:.95rem 1.2rem .95rem 1.35rem;background:#fff;border:1px solid var(--linea);border-radius:12px}
+.ficha::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:4px;border-radius:0 3px 3px 0;background:var(--acento)}
+.ficha.sello::before{background:var(--sello)}
+.ficha.alerta::before{background:#d19a2c}
+.ficha.ok::before{background:var(--ok)}
+.ficha.trabajando::before{background:#7fa9b8}
+.datos{min-width:0}
+.ceja{display:flex;align-items:center;gap:.35rem;margin-bottom:.15rem;color:var(--acento);font-size:.78rem;font-weight:600}
+.ficha h3,.ficha h4{font-size:1.02rem;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.meta{display:flex;gap:.1rem 1.2rem;margin-top:.15rem;min-width:0;color:var(--suave);font-size:.88rem}
+.meta span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta .radicado{flex:none;font-variant-numeric:tabular-nums}
+.partes{margin-top:.1rem;overflow:hidden;color:var(--suave);font-size:.88rem;text-overflow:ellipsis;white-space:nowrap}
+.extras{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem}
+.dato{display:inline-block;padding:.02rem .5rem;border:1px solid #d5dde0;border-radius:5px;background:#f7f9fa;color:var(--suave);font-size:.78rem;font-weight:500;white-space:nowrap}
+.dato.ok{border-color:#b9d8c7;background:var(--ok-fondo);color:var(--ok)}
+.dato.alerta{border-color:#e6cf9c;background:var(--alerta-fondo);color:var(--alerta)}
+.dato.mal{border-color:#e5b8b3;background:var(--mal-fondo);color:var(--mal)}
+.dato.eco{border-color:var(--acento);background:#e2f0f4;color:var(--acento-2);box-shadow:inset 0 0 0 1px var(--acento);font-weight:600}
+.avance{display:grid;gap:.4rem}
+.seg4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.seg4 i{height:5px;border-radius:3px;background:var(--fondo-2)}
+.seg4 i.h{background:var(--acento)}
+.seg4 i.a{background:var(--acento);opacity:.45}
+.ficha.sello .seg4 i.a{background:var(--sello);opacity:1}
+.ficha.alerta .seg4 i.a{background:#d19a2c;opacity:1}
+.ficha.trabajando .seg4 i.a{background:linear-gradient(90deg,var(--acento-fondo),var(--acento),var(--acento-fondo));background-size:200% 100%;opacity:1;animation:barrido 1.6s linear infinite}
+@keyframes barrido{from{background-position:200% 0}to{background-position:0 0}}
+.siguiente{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem}
+.siguiente small{color:var(--suave);font-size:.86rem;line-height:1.35}
+.ficha.sello .siguiente small{color:var(--sello);font-weight:500}
+.ficha.alerta .siguiente small{color:var(--alerta);font-weight:500}
+.termino-tenue{color:var(--suave);font-size:.8rem}
+.accion{display:grid;justify-items:end;gap:.25rem;min-width:0}
+.accion .btn{max-width:100%;white-space:normal;text-align:center}
+.accion small{color:var(--suave);font-size:.82rem}
+.fichas.compacta{gap:0;overflow:hidden;border:1px solid var(--linea);border-radius:12px;background:#fff}
+.fila-c{display:grid;grid-template-columns:.55rem minmax(0,2.3fr) minmax(0,1.4fr) 11rem 6.5rem 10rem;gap:1rem;align-items:center;padding:.6rem 1rem;border-top:1px solid #e3e8ea}
+.fila-c:first-child{border-top:0}
+.fila-c:hover{background:#f7f9fa}
+.punto-estado{flex:none;width:.55rem;height:.55rem;border-radius:50%;background:var(--acento)}
+.punto-estado.decidir{background:var(--sello)}
+.punto-estado.faltan{background:#d19a2c}
+.punto-estado.error{background:var(--mal)}
+.punto-estado.redaccion{background:#7fa9b8}
+.punto-estado.terminado{background:var(--ok)}
+.c-nombre{min-width:0}
+.fila-c h3,.fila-c h4{overflow:hidden;font-size:.95rem;font-weight:600;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
+.c-nombre small{display:block;overflow:hidden;color:var(--suave);font-size:.8rem;text-overflow:ellipsis;white-space:nowrap}
+.c-sig{color:var(--suave);font-size:.86rem;line-height:1.3}
+.fila-c.sello .c-sig{color:var(--sello);font-weight:500}
+.fila-c.alerta .c-sig{color:var(--alerta);font-weight:500}
+.c-marcas{display:flex;flex-wrap:wrap;gap:.25rem}
+.c-cuando{color:var(--suave);font-size:.82rem;text-align:right}
+.fila-c .btn{justify-self:end}
+.vacio{display:grid;justify-items:center;gap:.8rem;padding:2.5rem 2rem;border:1px dashed var(--linea);border-radius:12px;color:var(--suave);text-align:center}
+.vacio .acciones-vacio{display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem}
+.mas{display:flex;justify-content:center;margin-top:.4rem}
+@media (max-width:960px){
+.triage{grid-template-columns:minmax(0,1fr)}
+.carriles{grid-template-columns:minmax(0,1fr)}
+.franja{flex-wrap:wrap}
+.seg-estado{flex-basis:30%}
+.plazos{flex-wrap:wrap}
+.pop,.pop.derecha,.pop.ancho{position:fixed;top:auto;right:0;bottom:0;left:0;width:auto;max-width:none;max-height:78vh;overflow:auto;border-radius:16px 16px 0 0}
+.velo{background:rgba(29,42,51,.35)}
+.ficha{grid-template-columns:minmax(0,1fr);gap:.7rem}
+.accion{grid-auto-flow:column;align-items:center;justify-content:start;gap:.8rem}
+.meta{flex-wrap:wrap}
+.meta span,.partes{overflow:visible;white-space:normal}
+.fila-c{grid-template-columns:.55rem minmax(0,1fr) auto;row-gap:.3rem}
+.fila-c .c-sig,.fila-c .c-marcas,.fila-c .c-cuando{grid-column:2 / -1}
+.fila-c .c-cuando{text-align:left}
+.fila-c .btn{grid-column:3;grid-row:1}
+}
+@media (max-width:640px){
+.buscar{width:100%}
+.seg-estado{flex-basis:45%}
+}
+@media (prefers-reduced-motion:reduce){.ficha.trabajando .seg4 i.a{animation:none}}
+</style>
+</helmet>
+<section class="{{claseRaiz}}" aria-labelledby="trabajo-titulo">
+  <sc-if value="{{hayAbierto}}" hint-placeholder-val="{{ false }}">
+    <button type="button" class="velo" tabindex="-1" aria-label="Cerrar el filtro" onClick="{{cerrar}}"></button>
+  </sc-if>
+
+  <div class="cabeza-trabajo">
+    <h2 id="trabajo-titulo">{{titulo}}</h2>
+    <label class="buscar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input type="search" autocomplete="off" placeholder="Radicado, partes o juzgado" aria-label="Buscar en {{tituloMin}}" value="{{q}}" onInput="{{onQ}}" onChange="{{onQ}}">
+    </label>
+  </div>
+
+  <sc-if value="{{hayPestanas}}" hint-placeholder-val="{{ true }}">
+    <div class="pestanas" role="group" aria-label="Proceso">
+      <sc-for list="{{pestanas}}" as="t" hint-placeholder-count="5">
+        <button type="button" class="pestana" aria-pressed="{{t.on}}" onClick="{{t.pick}}">
+          <sc-if value="{{t.ico.primera}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11l6 6v18H8z"></path><path d="M19 4v6h6"></path><path d="M12 16h9M12 20h9M12 24h5"></path></svg></sc-if>
+          <sc-if value="{{t.ico.segunda}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 10v18h14"></path><path d="M11 4h10l5 5v15H11z"></path><path d="M21 4v5h5"></path><path d="M18.5 19v-7M15.5 15l3-3 3 3"></path></svg></sc-if>
+          <sc-if value="{{t.ico.desacato}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 28H8V4h11l6 6v5"></path><path d="M19 4v6h6"></path><path d="M12 15h7M12 19h4"></path><circle cx="23.5" cy="23" r="5.5"></circle><path d="M23.5 20.3v3.2l2 1.3"></path></svg></sc-if>
+          <sc-if value="{{t.ico.penal}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5v22M10 27h12M7 9h18"></path><path d="M7 9l-4 9a4 4 0 0 0 8 0z"></path><path d="M25 9l-4 9a4 4 0 0 0 8 0z"></path></svg></sc-if>
+          <span>{{t.etq}}</span>
+          <span class="n">{{t.n}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <div class="tablero">
+    <div class="triage">
+      <div role="group" aria-labelledby="rotulo-estado">
+        <p class="rotulo"><span id="rotulo-estado">Estado</span>
+          <sc-if value="{{estDefecto}}" hint-placeholder-val="{{ true }}"><small>Toque uno para ver solo ese; luego sume otros.</small></sc-if>
+          <sc-if value="{{estCambiado}}" hint-placeholder-val="{{ false }}"><button type="button" class="enlace" onClick="{{estRestablecer}}">Ver todos los abiertos</button></sc-if>
+        </p>
+        <div class="franja">
+          <sc-for list="{{estados}}" as="e" hint-placeholder-count="6">
+            <button type="button" class="{{e.cls}}" style="flex-grow: {{e.crecer}}" aria-pressed="{{e.on}}" aria-label="{{e.aria}}" onClick="{{e.pick}}"><b>{{e.n}}</b><span>{{e.etq}}</span></button>
+          </sc-for>
+        </div>
+      </div>
+      <div role="group" aria-labelledby="rotulo-plazos">
+        <p class="rotulo"><span id="rotulo-plazos">Plazos</span></p>
+        <div class="plazos">
+          <sc-for list="{{plazos}}" as="z" hint-placeholder-count="3">
+            <button type="button" class="{{z.cls}}" aria-pressed="{{z.on}}" aria-label="{{z.aria}}" onClick="{{z.pick}}"><b>{{z.n}}</b><span>{{z.etq}}</span></button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div class="carriles">
+      <sc-for list="{{carriles}}" as="k" hint-placeholder-count="2">
+        <div class="{{k.cls}}" role="group" aria-label="{{k.titulo}}">
+          <div class="carril-cab">
+            <sc-if value="{{k.esPropio}}" hint-placeholder-val="{{ false }}">
+              <span class="carril-ico" aria-hidden="true">
+                <sc-if value="{{k.ico.primera}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h11l6 6v18H8z"></path><path d="M19 4v6h6"></path><path d="M12 16h9M12 20h9M12 24h5"></path></svg></sc-if>
+                <sc-if value="{{k.ico.segunda}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10v18h14"></path><path d="M11 4h10l5 5v15H11z"></path><path d="M21 4v5h5"></path><path d="M18.5 19v-7M15.5 15l3-3 3 3"></path></svg></sc-if>
+                <sc-if value="{{k.ico.desacato}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 28H8V4h11l6 6v5"></path><path d="M19 4v6h6"></path><path d="M12 15h7M12 19h4"></path><circle cx="23.5" cy="23" r="5.5"></circle><path d="M23.5 20.3v3.2l2 1.3"></path></svg></sc-if>
+                <sc-if value="{{k.ico.penal}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5v22M10 27h12M7 9h18"></path><path d="M7 9l-4 9a4 4 0 0 0 8 0z"></path><path d="M25 9l-4 9a4 4 0 0 0 8 0z"></path></svg></sc-if>
+              </span>
+            </sc-if>
+            <span>{{k.titulo}}</span>
+            <sc-if value="{{k.hayCuantos}}" hint-placeholder-val="{{ false }}"><span class="cuantos" aria-label="{{k.cuantosAria}}">{{k.cuantos}}</span></sc-if>
+          </div>
+          <sc-if value="{{k.esHueco}}" hint-placeholder-val="{{ false }}"><p>{{k.texto}}</p></sc-if>
+          <div class="pastillas">
+            <sc-for list="{{k.pastillas}}" as="p" hint-placeholder-count="4">
+              <div class="pastilla-caja">
+                <sc-if value="{{p.esToggle}}" hint-placeholder-val="{{ false }}">
+                  <button type="button" class="interruptor" aria-pressed="{{p.on}}" onClick="{{p.alternar}}">
+                    <span class="casilla" aria-hidden="true"><sc-if value="{{p.on}}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2l2.3 2.3 4.7-5"></path></svg></sc-if></span>
+                    <span>{{p.etq}}</span>
+                    <span class="n">{{p.n}}</span>
+                  </button>
+                </sc-if>
+                <sc-if value="{{p.esMenu}}" hint-placeholder-val="{{ true }}">
+                  <div class="{{p.cls}}">
+                    <button type="button" class="pastilla-cuerpo" aria-expanded="{{p.abierto}}" aria-haspopup="dialog" onClick="{{p.abrir}}">
+                      <span class="pastilla-etq">{{p.etq}}</span>
+                      <sc-if value="{{p.hayValor}}" hint-placeholder-val="{{ false }}"><span class="pastilla-valor" title="{{p.valorTitulo}}">{{p.valorTxt}}</span></sc-if>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+                    </button>
+                    <sc-if value="{{p.hayValor}}" hint-placeholder-val="{{ false }}">
+                      <button type="button" class="pastilla-x" aria-label="Quitar el filtro {{p.etqLarga}}" onClick="{{p.quitar}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{p.abierto}}" hint-placeholder-val="{{ false }}">
+                    <div class="{{p.popCls}}" role="dialog" aria-label="{{p.etqLarga}}" onKeyDown="{{p.teclas}}">
+                      <div class="pop-cab">
+                        <b>{{p.etqLarga}}</b>
+                        <button type="button" class="pop-cerrar" aria-label="Cerrar" onClick="{{p.cerrar}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+                      </div>
+                      <sc-if value="{{p.esLista}}" hint-placeholder-val="{{ true }}">
+                        <sc-if value="{{p.buscable}}" hint-placeholder-val="{{ false }}">
+                          <input type="search" class="pop-buscar" autocomplete="off" placeholder="Buscar…" aria-label="Buscar en {{p.etqLarga}}" value="{{p.filtroPop}}" onInput="{{p.onFiltro}}" onChange="{{p.onFiltro}}">
+                        </sc-if>
+                        <div class="{{p.opsCls}}">
+                          <sc-for list="{{p.opciones}}" as="o" hint-placeholder-count="4">
+                            <label class="{{o.cls}}">
+                              <input type="checkbox" checked="{{o.on}}" onChange="{{o.toggle}}">
+                              <span class="{{o.punto}}" aria-hidden="true"></span>
+                              <span class="txt">{{o.etq}}</span>
+                              <span class="n">{{o.n}}</span>
+                            </label>
+                          </sc-for>
+                        </div>
+                        <sc-if value="{{p.sinCoincidencias}}" hint-placeholder-val="{{ false }}"><p class="pop-nada">Ninguna opción coincide.</p></sc-if>
+                      </sc-if>
+                      <sc-if value="{{p.esFecha}}" hint-placeholder-val="{{ false }}">
+                        <div class="presets-f">
+                          <sc-for list="{{p.presets}}" as="r" hint-placeholder-count="6">
+                            <button type="button" class="pre-f" aria-pressed="{{r.on}}" onClick="{{r.pick}}"><span>{{r.etq}} <small>{{r.nota}}</small></span><span class="n">{{r.n}}</span></button>
+                          </sc-for>
+                        </div>
+                        <div class="histo">
+                          <p class="histo-cab"><span>Actividad por día</span><small>{{p.histoResumen}}</small></p>
+                          <div class="barras">
+                            <sc-for list="{{p.dias}}" as="d" hint-placeholder-count="30">
+                              <button type="button" class="{{d.cls}}" style="height: {{d.alto}}" aria-label="{{d.aria}}" title="{{d.aria}}" onClick="{{d.pick}}"></button>
+                            </sc-for>
+                          </div>
+                          <p class="histo-eje"><span>19 oct.</span><span>2 nov.</span><span>17 nov.</span></p>
+                          <p class="histo-nota">{{p.histoNota}}</p>
+                        </div>
+                        <div class="rango">
+                          <label>Desde<input type="date" value="{{p.desde}}" max="{{p.hoy}}" onInput="{{p.onDesde}}" onChange="{{p.onDesde}}"></label>
+                          <label>Hasta<input type="date" value="{{p.hasta}}" max="{{p.hoy}}" onInput="{{p.onHasta}}" onChange="{{p.onHasta}}"></label>
+                        </div>
+                      </sc-if>
+                      <div class="pop-pie">
+                        <button type="button" class="enlace" onClick="{{p.quitar}}">Quitar</button>
+                        <button type="button" class="btn primario chico" onClick="{{p.cerrar}}">{{p.listoTxt}}</button>
+                      </div>
+                    </div>
+                  </sc-if>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div class="resultados-barra">
+    <p class="cuenta">
+      <span role="status"><b>{{nVisibles}}</b> {{cuentaResto}}</span>
+      <sc-if value="{{hayLimpiar}}" hint-placeholder-val="{{ false }}"><button type="button" class="enlace" onClick="{{limpiar}}">Limpiar filtros</button></sc-if>
+      <sc-if value="{{hayDeshacer}}" hint-placeholder-val="{{ false }}"><span>Filtros limpiados.</span><button type="button" class="enlace" onClick="{{deshacer}}">Deshacer</button></sc-if>
+    </p>
+    <div class="orden">
+      <label class="sel">Ordenar
+        <select value="{{orden}}" onChange="{{onOrden}}">
+          <option value="prioridad">Lo que me toca primero</option>
+          <option value="vence">Vence primero</option>
+          <option value="reciente">Trabajado más reciente</option>
+          <option value="antiguo">Más tiempo sin movimiento</option>
+          <option value="radicado">Radicado</option>
+        </select>
+      </label>
+      <label class="sel">Agrupar
+        <select value="{{agrupar}}" onChange="{{onAgrupar}}">
+          <option value="ninguno">Sin agrupar</option>
+          <option value="estado">Por estado</option>
+          <option value="plazo">Por plazo</option>
+          <option value="proceso" hidden="{{fijoBool}}">Por proceso</option>
+        </select>
+      </label>
+      <div class="densidad" role="group" aria-label="Densidad de la lista">
+        <button type="button" aria-pressed="{{esFichas}}" aria-label="Fichas" title="Fichas" onClick="{{verFichas}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="13" width="18" height="7" rx="2"></rect></svg></button>
+        <button type="button" aria-pressed="{{esCompacta}}" aria-label="Compacta" title="Compacta" onClick="{{verCompacta}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{hayVacio}}" hint-placeholder-val="{{ false }}">
+    <div class="vacio">
+      <p>Ningún caso coincide con estos filtros.</p>
+      <div class="acciones-vacio">
+        <sc-if value="{{haySugerencia}}" hint-placeholder-val="{{ false }}"><button type="button" class="btn primario" onClick="{{sugerir}}">{{sugerenciaTxt}}</button></sc-if>
+        <button type="button" class="btn" onClick="{{limpiar}}">Limpiar filtros</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-for list="{{grupos}}" as="g" hint-placeholder-count="1">
+    <section class="grupo" aria-label="{{g.aria}}">
+      <sc-if value="{{g.hayTitulo}}" hint-placeholder-val="{{ false }}"><h3 class="titulo-grupo">{{g.titulo}} <span>{{g.n}}</span></h3></sc-if>
+      <div class="{{clasesLista}}">
+        <sc-for list="{{g.casos}}" as="c" hint-placeholder-count="5">
+          <sc-if value="{{c.esFicha}}" hint-placeholder-val="{{ true }}">
+            <article class="{{c.cls}}">
+              <div class="datos">
+                <sc-if value="{{c.mostrarProceso}}" hint-placeholder-val="{{ true }}">
+                  <p class="ceja">
+                    <sc-if value="{{c.ico.primera}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11l6 6v18H8z"></path><path d="M19 4v6h6"></path><path d="M12 16h9M12 20h9M12 24h5"></path></svg></sc-if>
+                    <sc-if value="{{c.ico.segunda}}" hint-placeholder-val="{{ true }}"><svg width="15" height="15" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 10v18h14"></path><path d="M11 4h10l5 5v15H11z"></path><path d="M21 4v5h5"></path><path d="M18.5 19v-7M15.5 15l3-3 3 3"></path></svg></sc-if>
+                    <sc-if value="{{c.ico.desacato}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 28H8V4h11l6 6v5"></path><path d="M19 4v6h6"></path><path d="M12 15h7M12 19h4"></path><circle cx="23.5" cy="23" r="5.5"></circle><path d="M23.5 20.3v3.2l2 1.3"></path></svg></sc-if>
+                    <sc-if value="{{c.ico.penal}}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5v22M10 27h12M7 9h18"></path><path d="M7 9l-4 9a4 4 0 0 0 8 0z"></path><path d="M25 9l-4 9a4 4 0 0 0 8 0z"></path></svg></sc-if>
+                    <span>{{c.procesoEtq}}</span>
+                  </p>
+                </sc-if>
+                <sc-if value="{{c.h3}}" hint-placeholder-val="{{ true }}"><h3>{{c.nombre}}</h3></sc-if>
+                <sc-if value="{{c.h4}}" hint-placeholder-val="{{ false }}"><h4>{{c.nombre}}</h4></sc-if>
+                <div class="meta">
+                  <span class="radicado">Radicado {{c.rad}}</span>
+                  <sc-if value="{{c.hayJuz}}" hint-placeholder-val="{{ true }}"><span title="{{c.juz}}">{{c.juz}}</span></sc-if>
+                </div>
+                <p class="partes" title="{{c.partes}}">{{c.partes}}</p>
+                <sc-if value="{{c.hayExtras}}" hint-placeholder-val="{{ false }}">
+                  <div class="extras">
+                    <sc-for list="{{c.extras}}" as="x" hint-placeholder-count="2"><span class="{{x.cls}}">{{x.t}}</span></sc-for>
+                  </div>
+                </sc-if>
+              </div>
+              <div class="avance">
+                <div class="seg4" role="img" aria-label="{{c.avance}}">
+                  <sc-for list="{{c.tramos}}" as="t" hint-placeholder-count="4"><i class="{{t.cls}}"></i></sc-for>
+                </div>
+                <div class="siguiente">
+                  <small>{{c.sig}}</small>
+                  <sc-if value="{{c.hayTermino}}" hint-placeholder-val="{{ false }}"><span class="{{c.terminoCls}}">{{c.terminoTxt}}</span></sc-if>
+                  <sc-if value="{{c.hayAlertas}}" hint-placeholder-val="{{ false }}"><span class="chip alerta" title="Alertas detectadas al leer el expediente">{{c.alertasTxt}}</span></sc-if>
+                </div>
+              </div>
+              <div class="accion">
+                <button type="button" class="{{c.btnCls}}" aria-label="{{c.accionLabel}}">{{c.accion}}</button>
+                <small title="{{c.cuandoTitulo}}">{{c.cuando}}</small>
+              </div>
+            </article>
+          </sc-if>
+          <sc-if value="{{c.esCompacta}}" hint-placeholder-val="{{ false }}">
+            <article class="{{c.clsC}}">
+              <span class="{{c.punto}}" title="{{c.estadoEtq}}" aria-hidden="true"></span>
+              <div class="c-nombre">
+                <sc-if value="{{c.h3}}" hint-placeholder-val="{{ true }}"><h3 title="{{c.nombre}}">{{c.nombre}}</h3></sc-if>
+                <sc-if value="{{c.h4}}" hint-placeholder-val="{{ false }}"><h4 title="{{c.nombre}}">{{c.nombre}}</h4></sc-if>
+                <small>{{c.subC}}</small>
+              </div>
+              <p class="c-sig">{{c.sig}}</p>
+              <div class="c-marcas">
+                <sc-if value="{{c.hayTermino}}" hint-placeholder-val="{{ false }}"><span class="{{c.terminoCls}}">{{c.terminoTxt}}</span></sc-if>
+                <sc-if value="{{c.hayAlertas}}" hint-placeholder-val="{{ false }}"><span class="chip alerta">{{c.alertasTxt}}</span></sc-if>
+              </div>
+              <small class="c-cuando" title="{{c.cuandoTitulo}}">{{c.cuando}}</small>
+              <button type="button" class="{{c.btnClsC}}" aria-label="{{c.accionLabel}}">{{c.accion}}</button>
+            </article>
+          </sc-if>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+  <sc-if value="{{hayMas}}" hint-placeholder-val="{{ false }}">
+    <div class="mas"><button type="button" class="btn" onClick="{{mostrarMas}}">{{masTxt}}</button></div>
+  </sc-if>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"proceso":{"editor":"enum","options":["todos","primera","segunda","desacato","penal"],"default":"primera","section":"Componente"},"incrustada":{"editor":null,"default":false},"$preview":{"width":1280,"height":1700}}'>
+var AHORA = new Date(2026, 10, 17, 15, 0).getTime();
+var HOY = '2026-11-17';
+var MESES = ['ene.', 'feb.', 'mar.', 'abr.', 'may.', 'jun.', 'jul.', 'ago.', 'sep.', 'oct.', 'nov.', 'dic.'];
+var MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+var DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+var FESTIVOS = { '2026-11-02': true, '2026-11-16': true };
+
+var PROCESOS = {
+  primera: { corto: '1ª instancia', largo: 'Fallos de tutela de primera instancia', verFinal: 'Ver fallo' },
+  segunda: { corto: '2ª instancia', largo: 'Fallos de tutela de segunda instancia', verFinal: 'Ver fallo' },
+  desacato: { corto: 'Desacato', largo: 'Incidentes de desacato', verFinal: 'Ver decisión' },
+  penal: { corto: 'Penal', largo: 'Penal', verFinal: 'Ver decisión' }
+};
+var ORDEN_PROCESOS = ['primera', 'segunda', 'desacato', 'penal'];
+
+var ESTADOS = [
+  { id: 'decidir', etq: 'Por decidir', tono: 'sello', accion: 'Decidir' },
+  { id: 'faltan', etq: 'Faltan documentos', tono: 'alerta', accion: 'Completar' },
+  { id: 'error', etq: 'Con error', tono: 'alerta', accion: 'Ver el error' },
+  { id: 'preparar', etq: 'Por preparar', tono: '', accion: 'Revisar documentos' },
+  { id: 'redaccion', etq: 'En redacción', tono: 'trabajando', accion: 'Ver avance' },
+  { id: 'terminado', etq: 'Terminados', tono: 'ok', accion: '' }
+];
+var ESTADO = {};
+ESTADOS.forEach(function (e) { ESTADO[e.id] = e; });
+var PRIORIDAD = { decidir: 0, faltan: 1, error: 1, preparar: 2, redaccion: 3, terminado: 4 };
+var ESTADOS_DEFECTO = { decidir: true, faltan: true, error: true, preparar: true, redaccion: true };
+
+var TERMINOS = [
+  { id: 'vencido', etq: 'Vencidos', tono: 'mal' },
+  { id: 'pronto', etq: 'Vencen hoy o mañana', tono: 'alerta' },
+  { id: 'semana', etq: 'Vencen en 2 a 5 días hábiles', tono: '' },
+  { id: 'despues', etq: 'Vencen en 6 días hábiles o más', tono: '' },
+  { id: 'sin', etq: 'Sin término calculado', tono: '' }
+];
+var FECHAS = [
+  { id: 'hoy', etq: 'Hoy', nota: '', d: '2026-11-17', h: '2026-11-17' },
+  { id: 'ayer', etq: 'Ayer', nota: 'festivo', d: '2026-11-16', h: '2026-11-16' },
+  { id: 'semana', etq: 'Últimos 7 días', nota: '', d: '2026-11-11', h: '2026-11-17' },
+  { id: 'mes', etq: 'Este mes', nota: '', d: '2026-11-01', h: '2026-11-17' },
+  { id: 'mespasado', etq: 'Mes pasado', nota: '', d: '2026-10-01', h: '2026-10-31' },
+  { id: 'todo', etq: 'Cualquier fecha', nota: '', d: '', h: '' }
+];
+var TRAMOS = ['Documentos', 'Borrador', 'Decisión', 'Fallo'];
+
+function dos(n) { return n < 10 ? '0' + n : String(n); }
+var DIAS = (function () {
+  var r = [];
+  var d = new Date(2026, 9, 19);
+  for (var i = 0; i < 30; i++) {
+    r.push({ iso: d.getFullYear() + '-' + dos(d.getMonth() + 1) + '-' + dos(d.getDate()), dia: d.getDate(), mes: d.getMonth(), sem: d.getDay() });
+    d.setDate(d.getDate() + 1);
+  }
+  return r;
+})();
+
+function plural(n, uno, varios) { return n + ' ' + (n === 1 ? uno : (varios || uno + 's')); }
+function norm(t) { return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+function lista(v) { return v == null ? [] : Array.isArray(v) ? v.filter(function (x) { return x != null; }) : [v]; }
+function claves(o) { return Object.keys(o || {}).filter(function (k) { return o[k]; }); }
+function fechaCorta(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '…'; }
+function relativa(t) {
+  var ms = AHORA - new Date(t).getTime();
+  var min = Math.round(ms / 60000);
+  if (min < 1) return 'ahora mismo';
+  if (min < 60) return 'hace ' + min + ' min';
+  var h = Math.round(min / 60);
+  if (h < 24) return 'hace ' + h + ' h';
+  var d = Math.floor(ms / 86400000);
+  if (d < 2) return 'ayer';
+  if (d < 7) return 'hace ' + d + ' días';
+  var f = new Date(t);
+  return f.getDate() + ' de ' + MESES[f.getMonth()];
+}
+function fechaLarga(t) { var f = new Date(t); return f.getDate() + ' de ' + MESES_LARGOS[f.getMonth()] + ' de ' + f.getFullYear() + ', ' + dos(f.getHours()) + ':' + dos(f.getMinutes()); }
+function vigente(c) { return c.v == null || c.est === 'terminado' ? null : c.v; }
+function cubeta(c) {
+  var v = vigente(c);
+  if (v == null) return 'sin';
+  if (v < 0) return 'vencido';
+  if (v <= 1) return 'pronto';
+  if (v <= 5) return 'semana';
+  return 'despues';
+}
+function terminoDe(c) {
+  var v = vigente(c);
+  if (v == null) return null;
+  if (v < 0) return { t: 'Vencido hace ' + plural(-v, 'día hábil', 'días hábiles'), cls: 'chip mal' };
+  if (v === 0) return { t: 'Vence hoy', cls: 'chip mal' };
+  if (v === 1) return { t: 'Vence mañana', cls: 'chip alerta' };
+  if (v <= 5) return { t: 'Vence en ' + v + ' días hábiles', cls: 'chip alerta' };
+  return { t: 'Vence en ' + v + ' días hábiles', cls: 'termino-tenue' };
+}
+function audCubeta(c) {
+  if (!c.x.aud) return 'Sin fecha fijada';
+  var d = c.x.aud.slice(0, 10);
+  if (d === '2026-11-17') return 'Hoy';
+  if (d === '2026-11-18') return 'Mañana';
+  if (d <= '2026-11-24') return 'En los próximos 7 días';
+  return 'Más adelante';
+}
+function reqCubeta(c) {
+  if (c.x.diasReq == null) return null;
+  if (c.x.diasReq <= 10) return 'Hasta 10 días';
+  if (c.x.diasReq <= 30) return 'De 11 a 30 días';
+  return 'Más de 30 días';
+}
+function dinamicas(casos, fn) {
+  var m = {};
+  casos.forEach(function (c) { lista(fn(c)).forEach(function (v) { if (v) m[v] = (m[v] || 0) + 1; }); });
+  return Object.keys(m).sort(function (a, b) { return m[b] - m[a] || a.localeCompare(b, 'es'); }).map(function (v) { return { id: v, etq: v }; });
+}
+function icos(p) { return { primera: p === 'primera', segunda: p === 'segunda', desacato: p === 'desacato', penal: p === 'penal' }; }
+function enRango(c, d, h) { var f = c.t.slice(0, 10); return (!d || f >= d) && (!h || f <= h); }
+
+// Filtros propios de cada proceso: el único lugar que cambia entre procesos.
+// tipo: 'varias' (por defecto), 'buscable' (lista larga con buscador), 'pasos' (orden procesal), 'interruptor' (un toque).
+var DERECHO = { clave: 'derecho', etq: 'Derecho invocado', corto: 'Derecho', tipo: 'buscable', opciones: ['Salud', 'Vida digna', 'Mínimo vital', 'Seguridad social', 'Debido proceso', 'Petición', 'Educación', 'Habeas data'], valor: function (c) { return c.x.der; } };
+var PROPIAS = {
+  segunda: [
+    { clave: 'aquo', etq: 'Decisión de primera instancia', corto: 'Decisión 1ª inst.', opciones: ['Amparó', 'Negó el amparo', 'Declaró improcedente', 'Carencia actual de objeto', 'Aún sin leer'], valor: function (c) { return c.x.aquo || 'Aún sin leer'; } },
+    { clave: 'impugna', etq: 'Quién impugnó', corto: 'Impugnó', opciones: ['Accionante', 'Accionada', 'Vinculada', 'Varios impugnantes'], valor: function (c) { return c.x.imp; } },
+    { clave: 'sentido', etq: 'Sentido del fallo de segunda instancia', corto: 'Sentido 2ª inst.', opciones: ['Confirma', 'Revoca', 'Modifica', 'Sin decidir'], valor: function (c) { return c.x.sen || 'Sin decidir'; } },
+    DERECHO,
+    { clave: 'revisar', etq: 'Por revisar antes de decidir', corto: 'Por revisar', opciones: ['Citas por revisar', 'Jev discrepa'], valor: function (c) { return [c.x.citas > 0 ? 'Citas por revisar' : null, c.x.jev ? 'Jev discrepa' : null]; } },
+    { clave: 'pruebas', etq: 'Pruebas nuevas en segunda instancia', corto: 'Con pruebas nuevas', tipo: 'interruptor', on: 'Con pruebas nuevas', opciones: ['Con pruebas nuevas', 'Sin pruebas nuevas'], valor: function (c) { return c.x.aquo ? (c.x.pruebas ? 'Con pruebas nuevas' : 'Sin pruebas nuevas') : null; } }
+  ],
+  primera: [
+    { clave: 'medida', etq: 'Medida provisional', corto: 'Medida provisional', opciones: ['Solicitada, sin resolver', 'Decretada', 'Negada', 'No solicitada'], valor: function (c) { return c.x.medida; } },
+    { clave: 'informes', etq: 'Informes de las accionadas', corto: 'Informes', opciones: ['Todos recibidos', 'Faltan por recibir', 'Plazo vencido sin respuesta'], valor: function (c) { return c.x.infEst; } },
+    { clave: 'tipo', etq: 'Tipo de accionada', corto: 'Tipo de accionada', opciones: ['Entidad pública nacional', 'Entidad territorial', 'EPS o IPS', 'Administradora de pensiones', 'Particular'], valor: function (c) { return c.x.tipo; } },
+    DERECHO,
+    { clave: 'especial', etq: 'Sujeto de especial protección', corto: 'Especial protección', opciones: ['Niño, niña o adolescente', 'Persona mayor', 'Persona con discapacidad', 'Víctima del conflicto armado', 'Ninguno alegado'], valor: function (c) { return c.x.esp || 'Ninguno alegado'; } },
+    { clave: 'vinculados', etq: 'Terceros vinculados', corto: 'Con vinculados', tipo: 'interruptor', on: 'Con terceros vinculados', opciones: ['Con terceros vinculados', 'Sin terceros vinculados'], valor: function (c) { return c.x.vinc; } }
+  ],
+  desacato: [
+    { clave: 'fase', etq: 'Fase del incidente', corto: 'Fase', tipo: 'pasos', opciones: ['Requerimiento al responsable', 'Requerimiento al superior', 'Incidente abierto', 'Por resolver', 'En consulta', 'Archivado por cumplimiento'], valor: function (c) { return c.x.fase; } },
+    { clave: 'cumplimiento', etq: 'Cumplimiento del fallo', corto: 'Cumplimiento', opciones: ['Sin acreditar', 'Parcial', 'Cumplido'], valor: function (c) { return c.x.cumpl; } },
+    { clave: 'sancion', etq: 'Sanción', corto: 'Sanción', opciones: ['Sin decisión', 'No se sancionó', 'Arresto', 'Multa', 'Arresto y multa'], valor: function (c) { return c.x.sancion; } },
+    { clave: 'consulta', etq: 'Consulta ante el superior', corto: 'Consulta', opciones: ['Sin enviar', 'Enviada, sin decisión', 'Sanción confirmada', 'Sanción revocada'], valor: function (c) { return c.x.consulta; } },
+    { clave: 'requerimiento', etq: 'Días desde el requerimiento', corto: 'Requerido hace', opciones: ['Hasta 10 días', 'De 11 a 30 días', 'Más de 30 días'], valor: reqCubeta }
+  ],
+  penal: [
+    { clave: 'libertad', etq: 'Situación de libertad', corto: 'Libertad', opciones: ['Privado de la libertad', 'Detención domiciliaria', 'En libertad'], valor: function (c) { return c.x.lib; } },
+    { clave: 'actuacion', etq: 'Tipo de actuación', corto: 'Actuación', opciones: ['Preacuerdo', 'Allanamiento a cargos', 'Preclusión', 'Juicio oral', 'Sentencia', 'Solicitud de libertad'], valor: function (c) { return c.x.act; } },
+    { clave: 'audiencia', etq: 'Próxima audiencia', corto: 'Audiencia', opciones: ['Hoy', 'Mañana', 'En los próximos 7 días', 'Más adelante', 'Sin fecha fijada'], valor: audCubeta },
+    { clave: 'delito', etq: 'Delito (título del Código Penal)', corto: 'Delito', tipo: 'buscable', opciones: ['Contra la vida e integridad personal', 'Contra la libertad, integridad y formación sexuales', 'Contra la familia', 'Contra el patrimonio económico', 'Contra la salud pública', 'Contra la administración pública'], valor: function (c) { return c.x.delito; } },
+    { clave: 'ley', etq: 'Ley procesal', corto: 'Ley', opciones: ['Ley 906 de 2004', 'Ley 600 de 2000'], valor: function (c) { return c.x.ley; } },
+    { clave: 'menor', etq: 'Menor de edad', corto: 'Menor de edad', opciones: ['Víctima menor de edad', 'Adolescente procesado'], valor: function (c) { return c.x.menor; } }
+  ]
+};
+
+// Datos propios en la fila; clave + val dicen qué filtro reflejan (se resaltan si ese filtro está activo).
+var FILA = {
+  segunda: function (c) {
+    return [
+      c.x.aquo ? { t: '1ª inst.: ' + c.x.aquo, clave: 'aquo', val: c.x.aquo } : null,
+      c.x.imp ? { t: 'Impugna: ' + c.x.imp.toLowerCase(), clave: 'impugna', val: c.x.imp } : null,
+      c.x.sen ? { t: 'Fallo: ' + c.x.sen.toLowerCase() + (c.x.sust ? ' y ' + c.x.sust : ''), tono: 'ok', clave: 'sentido', val: c.x.sen } : null,
+      c.x.pruebas ? { t: 'Pruebas nuevas en 2ª', clave: 'pruebas', val: 'Con pruebas nuevas' } : null,
+      c.x.citas > 0 ? { t: plural(c.x.citas, 'cita') + ' por revisar', tono: 'alerta', clave: 'revisar', val: 'Citas por revisar' } : null,
+      c.x.jev ? { t: 'Jev discrepa', tono: 'alerta', clave: 'revisar', val: 'Jev discrepa' } : null
+    ];
+  },
+  primera: function (c) {
+    return [
+      c.x.medida === 'Solicitada, sin resolver' ? { t: 'Medida provisional sin resolver', tono: 'alerta', clave: 'medida', val: c.x.medida } : c.x.medida === 'Decretada' ? { t: 'Medida provisional decretada', clave: 'medida', val: c.x.medida } : null,
+      { t: 'Informes ' + c.x.inf, tono: c.x.infEst === 'Plazo vencido sin respuesta' ? 'alerta' : '', clave: 'informes', val: c.x.infEst },
+      c.x.der.length ? { t: c.x.der[0] + (c.x.der.length > 1 ? ' +' + (c.x.der.length - 1) : ''), clave: 'derecho', val: c.x.der } : null,
+      c.x.esp ? { t: c.x.esp, clave: 'especial', val: c.x.esp } : null
+    ];
+  },
+  desacato: function (c) {
+    return [
+      { t: c.x.fase, clave: 'fase', val: c.x.fase },
+      { t: 'Incumple: ' + c.x.incumple },
+      c.x.sancionTxt ? { t: c.x.sancionTxt, clave: 'sancion', val: c.x.sancion } : null,
+      c.x.diasReq != null && c.est !== 'terminado' ? { t: 'Requerido hace ' + c.x.diasReq + ' días', clave: 'requerimiento', val: reqCubeta(c) } : null
+    ];
+  },
+  penal: function (c) {
+    return [
+      c.x.lib !== 'En libertad' ? { t: c.x.lib, tono: c.x.lib === 'Privado de la libertad' ? 'mal' : 'alerta', clave: 'libertad', val: c.x.lib } : null,
+      c.x.aud ? { t: 'Audiencia: ' + c.x.audTxt, tono: c.x.aud.slice(0, 10) <= '2026-11-18' ? 'alerta' : '', clave: 'audiencia', val: audCubeta(c) } : (c.est !== 'terminado' ? { t: 'Sin audiencia fijada', clave: 'audiencia', val: 'Sin fecha fijada' } : null),
+      { t: c.x.ley, clave: 'ley', val: c.x.ley },
+      c.x.menor ? { t: c.x.menor, clave: 'menor', val: c.x.menor } : null
+    ];
+  }
+};
+
+// Datos de ejemplo (ficticios), al martes 17 de noviembre de 2026, 3:00 p. m.
+var J9 = 'Juzgado 9 Penal Municipal con Función de Control de Garantías';
+var J3C = 'Juzgado 3 Civil Municipal de Oralidad';
+var J5 = 'Juzgado 5 Penal Municipal con Función de Conocimiento';
+var J2 = 'Juzgado 2 Penal Municipal con Función de Conocimiento';
+var J14 = 'Juzgado 14 Penal Municipal con Función de Control de Garantías';
+var J1SR = 'Juzgado 1 Promiscuo Municipal de San Rafael';
+var HORIZONTE = 'EPS Horizonte Salud S.A.S.';
+var CEIBA = 'EPS Ceiba Salud';
+var ALTAMIRA = 'Fondo Pensional Altamira';
+var MONTANA = 'Aseguradora Montaña Azul';
+var SANRAFAEL = 'Municipio de San Rafael';
+
+var CASOS = [
+  { p: 'segunda', nombre: 'Quintero Bedoya c. EPS Horizonte Salud', rad: '05001408800920260041201', partes: 'Marta Inés Quintero Bedoya c. EPS Horizonte Salud S.A.S.', juz: J9, ent: [HORIZONTE], est: 'decidir', etapa: 2, sig: 'Revisar el borrador y decidir', al: 1, t: '2026-11-17T14:35', v: 4, x: { aquo: 'Negó el amparo', imp: 'Accionante', der: ['Salud', 'Vida digna'], pruebas: false, citas: 2 } },
+  { p: 'segunda', nombre: 'Zuluaga Henao c. Secretaría de Salud de San Rafael', rad: '05001408800320260039801', partes: 'Jorge Zuluaga Henao c. Secretaría de Salud de San Rafael, EPS Ceiba Salud', juz: J3C, ent: ['Secretaría de Salud de San Rafael', CEIBA], est: 'decidir', etapa: 2, sig: 'Revisar el borrador y decidir', al: 3, t: '2026-11-13T17:20', v: 1, x: { aquo: 'Amparó', imp: 'Accionada', der: ['Salud'], pruebas: true, citas: 0, jev: true } },
+  { p: 'segunda', nombre: 'Londoño Ruiz c. EPS Ceiba Salud', rad: '05001408800520260040701', partes: 'Sofía Londoño Ruiz c. EPS Ceiba Salud', juz: J5, ent: [CEIBA], est: 'decidir', etapa: 2, sig: 'Revisar el borrador y decidir', al: 0, t: '2026-11-12T16:00', v: 3, x: { aquo: 'Amparó', imp: 'Varios impugnantes', der: ['Salud', 'Mínimo vital'], pruebas: false, citas: 1 } },
+  { p: 'segunda', nombre: 'Restrepo Gil c. Fondo Pensional Altamira', rad: '05001408800520260039001', partes: 'Carlos Restrepo Gil c. Fondo Pensional Altamira', juz: J5, ent: [ALTAMIRA], est: 'redaccion', etapa: 1, sig: 'Redactando las consideraciones', al: 0, t: '2026-11-17T14:57', v: 9, x: { aquo: 'Declaró improcedente', imp: 'Accionante', der: ['Seguridad social', 'Mínimo vital'], pruebas: false, citas: 0 } },
+  { p: 'segunda', nombre: 'Cárdenas Ospina c. Aseguradora Montaña Azul', rad: '05001408800220260037401', partes: 'Luis Cárdenas Ospina c. Aseguradora Montaña Azul', juz: J2, ent: [MONTANA], est: 'faltan', etapa: 0, sig: 'Completar los documentos', al: 2, t: '2026-11-12T09:10', v: 12, x: { der: [] } },
+  { p: 'segunda', nombre: 'Arango Londoño c. EPS Ceiba Salud', rad: '05001408801420260037701', partes: 'Ana Arango Londoño c. EPS Ceiba Salud', juz: J14, ent: [CEIBA], est: 'preparar', etapa: 0, sig: 'Revisar los documentos', al: 0, t: '2026-11-17T08:40', v: 16, x: { der: [] } },
+  { p: 'segunda', nombre: 'Gaviria Toro c. Municipio de San Rafael', rad: '05667408900120260021201', partes: 'Rosa Gaviria Toro c. Municipio de San Rafael', juz: J1SR, ent: [SANRAFAEL], est: 'error', etapa: 1, sig: 'La redacción se detuvo; reanúdela', al: 1, t: '2026-11-10T11:02', v: -1, x: { aquo: 'Carencia actual de objeto', imp: 'Accionante', der: ['Petición'], pruebas: false, citas: 0 } },
+  { p: 'segunda', nombre: 'Mejía Ríos c. Fondo Pensional Altamira', rad: '05001408800920260030101', partes: 'Elena Mejía Ríos c. Fondo Pensional Altamira', juz: J9, ent: [ALTAMIRA], est: 'terminado', etapa: 4, sig: 'Fallo generado', al: 0, t: '2026-11-04T16:20', v: null, x: { aquo: 'Negó el amparo', imp: 'Accionante', sen: 'Revoca', sust: 'ampara', der: ['Seguridad social', 'Mínimo vital'], pruebas: false } },
+  { p: 'segunda', nombre: 'Patiño Cano c. Banco Cafetero del Sur', rad: '05001400300320260031501', partes: 'Felipe Patiño Cano c. Banco Cafetero del Sur S.A.', juz: J3C, ent: ['Banco Cafetero del Sur S.A.'], est: 'terminado', etapa: 4, sig: 'Fallo generado', al: 0, t: '2026-11-11T15:45', v: null, x: { aquo: 'Declaró improcedente', imp: 'Accionante', sen: 'Confirma', der: ['Debido proceso', 'Habeas data'], pruebas: false } },
+  { p: 'segunda', nombre: 'Ocampo Villa c. EPS Horizonte Salud', rad: '05001408801420260028601', partes: 'Diana Ocampo Villa c. EPS Horizonte Salud S.A.S.', juz: J14, ent: [HORIZONTE], est: 'terminado', etapa: 4, sig: 'Fallo generado', al: 0, t: '2026-10-28T10:15', v: null, x: { aquo: 'Amparó', imp: 'Accionada', sen: 'Confirma', der: ['Salud'], pruebas: true } },
+
+  { p: 'primera', nombre: 'Herrera Castaño c. EPS Ceiba Salud', rad: '05001310900320260051200', partes: 'Gloria Herrera Castaño c. EPS Ceiba Salud', ent: [CEIBA], est: 'decidir', etapa: 2, sig: 'Revisar el borrador y decidir', al: 1, t: '2026-11-17T10:30', v: 2, x: { medida: 'Decretada', inf: '2 de 2', infEst: 'Todos recibidos', tipo: ['EPS o IPS'], der: ['Salud', 'Vida digna'], esp: 'Persona mayor', vinc: 'Con terceros vinculados' } },
+  { p: 'primera', nombre: 'Salazar Mora c. Fondo Pensional Altamira', rad: '05001310900320260050300', partes: 'Iván Salazar Mora c. Fondo Pensional Altamira', ent: [ALTAMIRA], est: 'redaccion', etapa: 1, sig: 'Redactando las consideraciones', al: 0, t: '2026-11-17T13:12', v: 5, x: { medida: 'Solicitada, sin resolver', inf: '1 de 2', infEst: 'Plazo vencido sin respuesta', tipo: ['Administradora de pensiones'], der: ['Mínimo vital', 'Seguridad social'], esp: 'Persona con discapacidad', vinc: 'Con terceros vinculados' } },
+  { p: 'primera', nombre: 'Vargas Rincón c. Unidad Nacional de Atención a Víctimas', rad: '05001310900320260053300', partes: 'Nelly Vargas Rincón c. Unidad Nacional de Atención a Víctimas', ent: ['Unidad Nacional de Atención a Víctimas'], est: 'faltan', etapa: 0, sig: 'Completar los documentos', al: 1, t: '2026-11-10T14:00', v: 0, x: { medida: 'No solicitada', inf: '0 de 1', infEst: 'Faltan por recibir', tipo: ['Entidad pública nacional'], der: ['Petición'], esp: 'Víctima del conflicto armado', vinc: 'Sin terceros vinculados' } },
+  { p: 'primera', nombre: 'Rendón Vélez c. Secretaría de Educación de San Rafael', rad: '05001310900320260052800', partes: 'Luz Marina Vélez, en representación de su hijo, c. Secretaría de Educación de San Rafael', ent: ['Secretaría de Educación de San Rafael'], est: 'preparar', etapa: 0, sig: 'Revisar los documentos', al: 0, t: '2026-11-13T09:00', v: 7, x: { medida: 'No solicitada', inf: '0 de 1', infEst: 'Faltan por recibir', tipo: ['Entidad territorial'], der: ['Educación', 'Petición'], esp: 'Niño, niña o adolescente', vinc: 'Sin terceros vinculados' } },
+  { p: 'primera', nombre: 'Duque Arias c. Aseguradora Montaña Azul', rad: '05001310900320260047100', partes: 'Camilo Duque Arias c. Aseguradora Montaña Azul', ent: [MONTANA], est: 'terminado', etapa: 4, sig: 'Fallo generado', al: 0, t: '2026-11-06T12:00', v: null, x: { medida: 'Negada', inf: '1 de 1', infEst: 'Todos recibidos', tipo: ['Particular'], der: ['Debido proceso'], esp: null, vinc: 'Sin terceros vinculados' } },
+
+  { p: 'desacato', nombre: 'Desacato: Quintana Mejía c. EPS Horizonte Salud', rad: '05001310900320260031200', partes: 'Fallo del 2 de septiembre de 2026 · Incidentante: Óscar Quintana Mejía', ent: [HORIZONTE], est: 'decidir', etapa: 2, sig: 'Revisar el proyecto de sanción y decidir', al: 0, t: '2026-11-12T11:30', v: 2, x: { fase: 'Por resolver', cumpl: 'Sin acreditar', sancion: 'Sin decisión', consulta: 'Sin enviar', incumple: 'EPS Horizonte Salud (gerente regional)', diasReq: 34 } },
+  { p: 'desacato', nombre: 'Desacato: Ruiz Pérez c. Fondo Pensional Altamira', rad: '05001310900320260036700', partes: 'Fallo del 6 de octubre de 2026 · Incidentante: Beatriz Ruiz Pérez', ent: [ALTAMIRA], est: 'preparar', etapa: 0, sig: 'Revisar la respuesta al requerimiento', al: 0, t: '2026-11-09T10:00', v: null, x: { fase: 'Requerimiento al superior', cumpl: 'Parcial', sancion: 'Sin decisión', consulta: 'Sin enviar', incumple: 'Fondo Pensional Altamira (director de prestaciones)', diasReq: 8 } },
+  { p: 'desacato', nombre: 'Desacato: Gómez Arango c. Municipio de San Rafael', rad: '05001310900320260024500', partes: 'Fallo del 14 de julio de 2026 · Incidentante: Martín Gómez Arango', ent: [SANRAFAEL], est: 'terminado', etapa: 4, sig: 'Auto de sanción generado', al: 0, t: '2026-10-30T16:10', v: null, x: { fase: 'En consulta', cumpl: 'Sin acreditar', sancion: 'Arresto y multa', sancionTxt: 'Arresto 3 días y multa 5 SMLMV', consulta: 'Enviada, sin decisión', incumple: 'Municipio de San Rafael (alcalde)', diasReq: 61 } },
+
+  { p: 'penal', nombre: 'Andrés Felipe Gómez Ruiz', rad: '050016000206202512345', partes: 'Hurto calificado y agravado · Aprobación de preacuerdo', est: 'decidir', etapa: 2, sig: 'Revisar el proyecto y decidir', al: 0, t: '2026-11-17T11:05', v: null, x: { act: 'Preacuerdo', lib: 'Privado de la libertad', aud: '2026-11-19T09:00', audTxt: 'jue. 19 nov., 9:00 a. m.', delito: 'Contra el patrimonio económico', ley: 'Ley 906 de 2004' } },
+  { p: 'penal', nombre: 'Jhon Jairo Arboleda Ríos', rad: '050016000248202509211', partes: 'Violencia intrafamiliar agravada · Sentencia', est: 'redaccion', etapa: 1, sig: 'Redactando la sentencia', al: 0, t: '2026-11-17T12:20', v: null, x: { act: 'Sentencia', lib: 'Privado de la libertad', aud: '2026-11-18T08:30', audTxt: 'mañana, 8:30 a. m.', delito: 'Contra la familia', ley: 'Ley 906 de 2004', menor: 'Víctima menor de edad' } },
+  { p: 'penal', nombre: 'Luis Eduardo Cardona Mesa', rad: '050016099166202500874', partes: 'Tráfico, fabricación o porte de estupefacientes · Juicio oral', est: 'preparar', etapa: 0, sig: 'Revisar los documentos', al: 0, t: '2026-11-13T15:30', v: null, x: { act: 'Juicio oral', lib: 'Detención domiciliaria', aud: '2026-11-24T14:00', audTxt: 'mar. 24 nov., 2:00 p. m.', delito: 'Contra la salud pública', ley: 'Ley 906 de 2004' } },
+  { p: 'penal', nombre: 'Rubén Darío Ochoa Pineda', rad: '05001310400320180012300', partes: 'Peculado por apropiación · Preclusión', est: 'terminado', etapa: 4, sig: 'Decisión generada', al: 0, t: '2026-11-05T17:00', v: null, x: { act: 'Preclusión', lib: 'En libertad', delito: 'Contra la administración pública', ley: 'Ley 600 de 2000' } }
+];
+
+class Component extends DCLogic {
+  inicial() {
+    return { q: '', proceso: 'todos', fecha: 'todo', desde: '', hasta: '', pend: null, sel: { estado: Object.assign({}, ESTADOS_DEFECTO) }, orden: 'prioridad', agrupar: '', limite: 10, abierto: null, filtroPop: '', densidad: 'fichas', deshacer: null };
+  }
+  st() { return Object.assign(this.inicial(), this.state || {}); }
+  fijo() { return PROCESOS[this.props.proceso] ? this.props.proceso : null; }
+  cambiar(parcial) { this.setState(Object.assign({ limite: 10, deshacer: null }, parcial)); }
+  alternar(clave, id) {
+    var s = this.st();
+    var actual = Object.assign({}, s.sel[clave] || {});
+    if (actual[id]) delete actual[id]; else actual[id] = true;
+    this.fijarSel(clave, actual);
+  }
+  fijarSel(clave, valor) {
+    var sel = Object.assign({}, this.st().sel);
+    sel[clave] = valor;
+    this.cambiar({ sel: sel });
+  }
+  elegirEstado(id) {
+    var est = this.st().sel.estado || {};
+    var esDefecto = ESTADOS.every(function (e) { return !!est[e.id] === !!ESTADOS_DEFECTO[e.id]; });
+    var nuevo;
+    if (esDefecto && id !== 'terminado') { nuevo = {}; nuevo[id] = true; }
+    else { nuevo = Object.assign({}, est); if (nuevo[id]) delete nuevo[id]; else nuevo[id] = true; }
+    if (!claves(nuevo).length) nuevo = Object.assign({}, ESTADOS_DEFECTO);
+    this.fijarSel('estado', nuevo);
+  }
+  rango(s) {
+    if (s.fecha === 'rango') return { d: s.desde, h: s.hasta };
+    var p = FECHAS.find(function (x) { return x.id === s.fecha; }) || FECHAS[FECHAS.length - 1];
+    return { d: p.d, h: p.h };
+  }
+  fila(c, s, proc, mostrarProceso, agrupado, compacta) {
+    var e = ESTADO[c.est];
+    var P = PROCESOS[c.p];
+    var accion = c.est === 'terminado' ? P.verFinal : e.accion;
+    var ter = terminoDe(c);
+    var extras = proc ? FILA[c.p](c).filter(Boolean).map(function (x) {
+      var elegido = x.clave ? (s.sel['ex:' + c.p + ':' + x.clave] || {}) : {};
+      var eco = lista(x.val).some(function (v) { return elegido[v]; });
+      return { t: x.t, cls: 'dato' + (eco ? ' eco' : x.tono ? ' ' + x.tono : '') };
+    }) : [];
+    var btnCls = c.est === 'decidir' ? 'btn sello' : 'btn';
+    return {
+      esFicha: !compacta, esCompacta: compacta,
+      nombre: c.nombre, rad: c.rad, juz: c.juz || '', hayJuz: !!c.juz, partes: c.partes,
+      cls: 'ficha' + (e.tono ? ' ' + e.tono : ''), clsC: 'fila-c' + (e.tono ? ' ' + e.tono : ''),
+      punto: 'punto-estado ' + c.est, estadoEtq: e.etq,
+      subC: (mostrarProceso ? P.corto + ' · ' : '') + 'Radicado ' + c.rad + (c.juz ? ' · ' + c.juz : ''),
+      mostrarProceso: mostrarProceso, procesoEtq: P.corto, ico: icos(c.p),
+      h3: !agrupado, h4: agrupado,
+      tramos: TRAMOS.map(function (_, i) { return { cls: i < c.etapa ? 'h' : i === c.etapa ? 'a' : '' }; }),
+      avance: c.etapa >= 4 ? 'Avance: completo' : 'Avance: paso ' + (c.etapa + 1) + ' de 4, ' + TRAMOS[c.etapa],
+      sig: c.sig, hayTermino: !!ter, terminoTxt: ter ? ter.t : '', terminoCls: ter ? ter.cls : '',
+      hayAlertas: c.al > 0, alertasTxt: plural(c.al, 'alerta'),
+      hayExtras: extras.length > 0, extras: extras,
+      accion: accion, btnCls: btnCls, btnClsC: btnCls + ' chico', accionLabel: accion + ': ' + c.nombre,
+      cuando: relativa(c.t), cuandoTitulo: 'Última actividad: ' + fechaLarga(c.t)
+    };
+  }
+  renderVals() {
+    var self = this;
+    var s = this.st();
+    var fijo = this.fijo();
+    var proc = fijo || (s.proceso !== 'todos' ? s.proceso : null);
+    var base = fijo ? CASOS.filter(function (c) { return c.p === fijo; }) : CASOS;
+    var enAlcance = proc ? base.filter(function (c) { return c.p === proc; }) : base;
+    var agrupar = s.agrupar || (fijo ? 'estado' : 'ninguno');
+    var rango = this.rango(s);
+    var q = norm(s.q.trim());
+
+    // Especificación de filtros: comunes + propios del proceso fijado (prop o pestaña).
+    var fEstado = { clave: 'estado', etq: 'Estado', opciones: ESTADOS.map(function (e) { return { id: e.id, etq: e.etq }; }), valor: function (c) { return c.est; } };
+    var fTermino = { clave: 'termino', etq: 'Plazo', opciones: TERMINOS.map(function (t) { return { id: t.id, etq: t.etq }; }), valor: cubeta };
+    var generales = [];
+    var juzgados = dinamicas(enAlcance, function (c) { return c.juz; });
+    if (juzgados.length) generales.push({ clave: 'juzgado', etq: proc === 'segunda' ? 'Juzgado de primera instancia' : 'Juzgado de origen', corto: proc === 'segunda' ? 'Juzgado de 1ª inst.' : 'Juzgado de origen', tipo: 'buscable', opciones: juzgados, valor: function (c) { return c.juz; } });
+    var entidades = dinamicas(enAlcance, function (c) { return c.ent; });
+    if (entidades.length) generales.push({ clave: 'entidad', etq: proc === 'desacato' ? 'Entidad requerida' : 'Entidad accionada', corto: proc === 'desacato' ? 'Entidad requerida' : 'Entidad accionada', tipo: 'buscable', opciones: entidades, valor: function (c) { return c.ent; } });
+    generales.push({ clave: 'alertas', etq: 'Alertas', corto: 'Con alertas', tipo: 'interruptor', on: 'con', opciones: [{ id: 'con', etq: 'Con alertas' }, { id: 'sin', etq: 'Sin alertas' }], valor: function (c) { return c.al > 0 ? 'con' : 'sin'; } });
+    var propias = proc ? PROPIAS[proc].map(function (f) {
+      return { clave: 'ex:' + proc + ':' + f.clave, etq: f.etq, corto: f.corto, tipo: f.tipo || 'varias', on: f.on, opciones: f.opciones.map(function (o) { return { id: o, etq: o }; }), valor: f.valor };
+    }) : [];
+    var todas = [fEstado, fTermino].concat(generales, propias);
+
+    var preds = [];
+    if (!fijo && s.proceso !== 'todos') preds.push({ clave: 'proceso', pasa: function (c) { return c.p === s.proceso; } });
+    if (rango.d || rango.h) preds.push({ clave: 'fecha', pasa: function (c) { return enRango(c, rango.d, rango.h); } });
+    if (q) preds.push({ clave: 'q', pasa: function (c) { return norm([c.nombre, c.rad, c.partes, c.juz, lista(c.ent).join(' ')].join(' ')).indexOf(q) >= 0; } });
+    todas.forEach(function (f) {
+      var elegido = s.sel[f.clave] || {};
+      if (claves(elegido).length) preds.push({ clave: f.clave, pasa: function (c) { return lista(f.valor(c)).some(function (v) { return elegido[v]; }); } });
+    });
+    function pasa(c, omitir) { return preds.every(function (p) { return omitir(p.clave) || p.pasa(c); }); }
+    function contar(omitir, prueba) { return base.filter(function (c) { return pasa(c, omitir) && prueba(c); }).length; }
+    var visibles = base.filter(function (c) { return pasa(c, function () { return false; }); });
+    var listoTxt = 'Listo · ' + plural(visibles.length, 'caso');
+    var cerrar = function () { self.setState({ abierto: null, pend: null }); };
+    var teclas = function (e) { if (e.key === 'Escape') { e.stopPropagation(); cerrar(); } };
+
+    // Pestañas de proceso (solo en Inicio): son el filtro Proceso.
+    var pestanas = fijo ? [] : [{ id: 'todos', etq: 'Todos' }].concat(ORDEN_PROCESOS.map(function (id) { return { id: id, etq: PROCESOS[id].corto }; })).map(function (o) {
+      return {
+        etq: o.etq, on: s.proceso === o.id, ico: icos(o.id),
+        n: contar(function (k) { return k === 'proceso' || k.indexOf('ex:') === 0; }, function (c) { return o.id === 'todos' || c.p === o.id; }),
+        pick: function () { self.setState({ proceso: o.id, abierto: null, limite: 10 }); }
+      };
+    });
+
+    // Franja de estados: proporcional a los conteos y es el filtro Estado.
+    var est = s.sel.estado || {};
+    var estDefecto = ESTADOS.every(function (e) { return !!est[e.id] === !!ESTADOS_DEFECTO[e.id]; });
+    var estados = ESTADOS.map(function (e) {
+      var n = contar(function (k) { return k === 'estado'; }, function (c) { return c.est === e.id; });
+      var on = !!est[e.id];
+      return {
+        n: n, on: on, crecer: Math.max(n, 1),
+        etq: e.id === 'terminado' && !on ? 'Terminados · ocultos' : e.etq,
+        cls: 'seg-estado ' + e.id + (on ? ' on' : ''),
+        aria: e.etq + ': ' + plural(n, 'caso') + (on ? ', se muestran' : ', no se muestran'),
+        pick: function () { self.elegirEstado(e.id); }
+      };
+    });
+
+    // Plazos: los tres cubos que piden acción.
+    var selTer = s.sel.termino || {};
+    var plazos = TERMINOS.slice(0, 3).map(function (t) {
+      var n = contar(function (k) { return k === 'termino'; }, function (c) { return cubeta(c) === t.id; });
+      var on = !!selTer[t.id];
+      return { n: n, on: on, etq: t.etq, cls: 'plazo' + (t.tono ? ' ' + t.tono : '') + (n === 0 && !on ? ' cero' : ''), aria: t.etq + ': ' + plural(n, 'caso'), pick: function () { self.alternar('termino', t.id); } };
+    });
+
+    // Pastillas: plegadas; al tocarlas abren el control que corresponde.
+    function pastilla(f, derecha) {
+      var elegido = s.sel[f.clave] || {};
+      var omitir = function (k) { return k === f.clave; };
+      var cuenta = function (id) { return contar(omitir, function (c) { return lista(f.valor(c)).indexOf(id) >= 0; }); };
+      var base0 = { cerrar: cerrar, teclas: teclas, listoTxt: listoTxt, etqLarga: f.etq };
+      if (f.tipo === 'interruptor') {
+        var on = !!elegido[f.on];
+        return Object.assign(base0, { esToggle: true, esMenu: false, etq: f.corto, on: on, n: cuenta(f.on), alternar: function () { self.alternar(f.clave, f.on); } });
+      }
+      var abierto = s.abierto === f.clave;
+      var nombres = f.opciones.filter(function (o) { return elegido[o.id]; }).map(function (o) { return o.etq; });
+      var filtro = f.tipo === 'buscable' ? norm(s.filtroPop) : '';
+      var ops = f.opciones.filter(function (o) { return !filtro || norm(o.etq).indexOf(filtro) >= 0; }).map(function (o) {
+        var n = abierto ? cuenta(o.id) : 0;
+        var marcada = !!elegido[o.id];
+        return { etq: o.etq, n: n, on: marcada, punto: 'sin-punto', cls: 'op' + (marcada ? ' on' : '') + (n === 0 && !marcada ? ' cero' : ''), toggle: function () { self.alternar(f.clave, o.id); } };
+      });
+      return Object.assign(base0, {
+        esToggle: false, esMenu: true, esLista: true, esFecha: false,
+        etq: f.corto, hayValor: nombres.length > 0,
+        valorTxt: nombres.length ? nombres[0] + (nombres.length > 1 ? ' +' + (nombres.length - 1) : '') : '', valorTitulo: nombres.join(', '),
+        cls: 'pastilla' + (nombres.length ? ' con-valor' : '') + (abierto ? ' abierta' : ''),
+        abierto: abierto, abrir: function () { self.setState({ abierto: abierto ? null : f.clave, filtroPop: '', pend: null }); },
+        quitar: function () { self.fijarSel(f.clave, {}); },
+        popCls: 'pop' + (derecha ? ' derecha' : '') + (f.tipo === 'buscable' ? ' ancho' : ''),
+        buscable: f.tipo === 'buscable', filtroPop: s.filtroPop, onFiltro: function (e) { self.setState({ filtroPop: e.target.value }); },
+        opsCls: 'ops' + (f.tipo === 'pasos' ? ' pasos' : ''), opciones: ops, sinCoincidencias: ops.length === 0
+      });
+    }
+    var fechaAbierta = s.abierto === 'fecha';
+    var preset = FECHAS.find(function (p) { return p.id === s.fecha; });
+    var omitirF = function (k) { return k === 'fecha'; };
+    var porDia = {};
+    if (fechaAbierta) base.forEach(function (c) { if (pasa(c, omitirF)) { var k = c.t.slice(0, 10); porDia[k] = (porDia[k] || 0) + 1; } });
+    var maxDia = Math.max.apply(null, [1].concat(Object.keys(porDia).map(function (k) { return porDia[k]; })));
+    var enVentana = DIAS.reduce(function (a, d) { return a + (porDia[d.iso] || 0); }, 0);
+    var pillFecha = {
+      cerrar: cerrar, teclas: teclas, listoTxt: listoTxt, etqLarga: 'Trabajado (última actividad en el caso)',
+      esToggle: false, esMenu: true, esLista: false, esFecha: true,
+      etq: 'Trabajado', hayValor: s.fecha !== 'todo',
+      valorTxt: preset ? preset.etq : fechaCorta(rango.d) + (rango.h && rango.h !== rango.d ? ' – ' + fechaCorta(rango.h) : ''), valorTitulo: rango.d + ' a ' + rango.h,
+      cls: 'pastilla' + (s.fecha !== 'todo' ? ' con-valor' : '') + (fechaAbierta ? ' abierta' : ''),
+      abierto: fechaAbierta, abrir: function () { self.setState({ abierto: fechaAbierta ? null : 'fecha', pend: null }); },
+      quitar: function () { self.cambiar({ fecha: 'todo', desde: '', hasta: '', pend: null }); },
+      popCls: 'pop ancho',
+      presets: FECHAS.map(function (p) {
+        return { etq: p.etq, nota: p.nota, on: s.fecha === p.id, n: fechaAbierta ? contar(omitirF, function (c) { return enRango(c, p.d, p.h); }) : 0, pick: function () { self.cambiar({ fecha: p.id, desde: '', hasta: '', pend: null }); } };
+      }),
+      dias: DIAS.map(function (d) {
+        var n = porDia[d.iso] || 0;
+        var inhabil = d.sem === 0 || d.sem === 6 || !!FESTIVOS[d.iso];
+        var dentro = (rango.d || rango.h) && (!rango.d || d.iso >= rango.d) && (!rango.h || d.iso <= rango.h);
+        return {
+          alto: (n === 0 ? 4 : Math.round(10 + (n / maxDia) * 46)) + 'px',
+          cls: 'barra-d' + (n === 0 ? ' vacia' : '') + (inhabil ? ' inhabil' : '') + (dentro ? ' en' : ''),
+          aria: DIAS_SEMANA[d.sem] + ' ' + d.dia + ' de ' + MESES_LARGOS[d.mes] + (FESTIVOS[d.iso] ? ', festivo' : '') + ': ' + plural(n, 'caso'),
+          pick: function () {
+            var pend = self.st().pend;
+            if (pend) self.cambiar({ fecha: 'rango', desde: pend < d.iso ? pend : d.iso, hasta: pend < d.iso ? d.iso : pend, pend: null });
+            else self.cambiar({ fecha: 'rango', desde: d.iso, hasta: d.iso, pend: d.iso });
+          }
+        };
+      }),
+      histoResumen: plural(enVentana, 'caso') + ' en 30 días',
+      histoNota: s.pend ? 'Ahora toque el último día del rango.' : 'Toque un día, o dos para un rango. Rayado: fin de semana o festivo.',
+      desde: rango.d, hasta: rango.h, hoy: HOY,
+      onDesde: function (e) { self.cambiar({ fecha: 'rango', desde: e.target.value, hasta: rango.h, pend: null }); },
+      onHasta: function (e) { self.cambiar({ fecha: 'rango', desde: rango.d, hasta: e.target.value, pend: null }); }
+    };
+
+    var carriles = [{ esPropio: false, esHueco: false, cls: 'carril', titulo: 'Generales', hayCuantos: false, pastillas: [pillFecha].concat(generales.map(function (f) { return pastilla(f, false); })) }];
+    if (proc) {
+      var nProp = propias.filter(function (f) { return claves(s.sel[f.clave]).length; }).length;
+      carriles.push({ esPropio: true, esHueco: false, cls: 'carril propio', titulo: 'Propios de ' + PROCESOS[proc].corto, ico: icos(proc), hayCuantos: nProp > 0, cuantos: nProp, cuantosAria: plural(nProp, 'filtro propio aplicado', 'filtros propios aplicados'), pastillas: propias.map(function (f) { return pastilla(f, true); }) });
+    } else {
+      carriles.push({ esPropio: false, esHueco: true, cls: 'carril hueco', titulo: 'Filtros propios del proceso', hayCuantos: false, texto: 'Elija un proceso en las pestañas y aquí aparecen sus filtros; en 2ª instancia, por ejemplo, la decisión de primera instancia o quién impugnó.', pastillas: [] });
+    }
+
+    // Filtros aplicados (para el conteo, Limpiar y la sugerencia del estado vacío).
+    var activos = [];
+    if (!estDefecto) activos.push({ clave: 'estado', texto: 'Estado', quitar: function () { self.fijarSel('estado', Object.assign({}, ESTADOS_DEFECTO)); }, prueba: function (c) { return ESTADOS_DEFECTO[c.est]; } });
+    if (s.fecha !== 'todo') activos.push({ clave: 'fecha', texto: 'Trabajado: ' + pillFecha.valorTxt, quitar: pillFecha.quitar });
+    todas.slice(1).forEach(function (f) {
+      var ks = claves(s.sel[f.clave]);
+      if (ks.length) activos.push({ clave: f.clave, texto: f.etq + ': ' + f.opciones.filter(function (o) { return ks.indexOf(o.id) >= 0; }).map(function (o) { return o.etq; }).join(', '), quitar: function () { self.fijarSel(f.clave, {}); } });
+    });
+    if (q) activos.push({ clave: 'q', texto: 'Búsqueda «' + s.q.trim() + '»', quitar: function () { self.cambiar({ q: '' }); } });
+    var sugerencia = null;
+    if (!visibles.length) activos.forEach(function (a) {
+      var n = contar(function (k) { return k === a.clave; }, a.prueba || function () { return true; });
+      if (n > 0 && (!sugerencia || n > sugerencia.n)) sugerencia = { n: n, a: a };
+    });
+
+    // Orden, página y grupos.
+    function cmpT(a, b) { return a.t < b.t ? 1 : a.t > b.t ? -1 : 0; }
+    function vence(c) { var v = vigente(c); return v == null ? 9999 : v; }
+    function urgente(c) { return vence(c) <= 0 ? 0 : 1; }
+    var ordenes = {
+      prioridad: function (a, b) { return urgente(a) - urgente(b) || PRIORIDAD[a.est] - PRIORIDAD[b.est] || vence(a) - vence(b) || cmpT(a, b); },
+      vence: function (a, b) { return (a.est === 'terminado') - (b.est === 'terminado') || vence(a) - vence(b) || cmpT(a, b); },
+      reciente: cmpT,
+      antiguo: function (a, b) { return -cmpT(a, b); },
+      radicado: function (a, b) { return a.rad.localeCompare(b.rad); }
+    };
+    var ordenados = visibles.slice().sort(ordenes[s.orden] || ordenes.prioridad);
+    var mostrados = ordenados.slice(0, s.limite);
+    var agrupado = agrupar !== 'ninguno';
+    var mostrarProceso = !proc && agrupar !== 'proceso';
+    var compacta = s.densidad === 'compacta';
+    var crudos;
+    function porGrupo(defs, prueba) { return defs.map(function (d) { return { titulo: d.titulo, lista: mostrados.filter(function (c) { return prueba(c, d); }), total: visibles.filter(function (c) { return prueba(c, d); }).length }; }); }
+    if (agrupar === 'estado') crudos = porGrupo(ESTADOS.map(function (e) { return { id: e.id, titulo: e.etq }; }), function (c, d) { return c.est === d.id; });
+    else if (agrupar === 'plazo') crudos = porGrupo(TERMINOS.map(function (t) { return { id: t.id, titulo: t.etq }; }), function (c, d) { return cubeta(c) === d.id; });
+    else if (agrupar === 'proceso') crudos = porGrupo(ORDEN_PROCESOS.map(function (id) { return { id: id, titulo: PROCESOS[id].largo }; }), function (c, d) { return c.p === d.id; });
+    else crudos = [{ titulo: '', lista: mostrados, total: visibles.length }];
+    var grupos = crudos.filter(function (g) { return g.lista.length; }).map(function (g) {
+      return { hayTitulo: agrupado, titulo: g.titulo, n: g.total, aria: agrupado ? g.titulo : 'Casos', casos: g.lista.map(function (c) { return self.fila(c, s, proc, mostrarProceso, agrupado, compacta); }) };
+    });
+    var restantes = ordenados.length - mostrados.length;
+
+    return {
+      claseRaiz: 'trabajo-raiz' + (this.props.incrustada ? '' : ' suelta'),
+      titulo: fijo ? 'Casos' : 'Mi trabajo', tituloMin: fijo ? 'los casos' : 'mi trabajo',
+      q: s.q, onQ: function (e) { self.cambiar({ q: e.target.value }); },
+      hayPestanas: !fijo, pestanas: pestanas,
+      estados: estados, estDefecto: estDefecto, estCambiado: !estDefecto, estRestablecer: function () { self.fijarSel('estado', Object.assign({}, ESTADOS_DEFECTO)); },
+      plazos: plazos, carriles: carriles,
+      hayAbierto: !!s.abierto, cerrar: cerrar,
+      nVisibles: visibles.length,
+      cuentaResto: activos.length ? 'de ' + base.length + ' casos' : (visibles.length === 1 ? 'caso abierto' : 'casos abiertos'),
+      hayLimpiar: activos.length > 0, hayDeshacer: !!s.deshacer && !activos.length,
+      limpiar: function () { var cur = self.st(); self.setState({ deshacer: { q: cur.q, fecha: cur.fecha, desde: cur.desde, hasta: cur.hasta, sel: cur.sel }, q: '', fecha: 'todo', desde: '', hasta: '', pend: null, sel: { estado: Object.assign({}, ESTADOS_DEFECTO) }, abierto: null, limite: 10 }); },
+      deshacer: function () { self.setState(Object.assign({}, self.st().deshacer, { deshacer: null })); },
+      orden: s.orden, onOrden: function (e) { self.setState({ orden: e.target.value }); },
+      agrupar: agrupar, onAgrupar: function (e) { self.setState({ agrupar: e.target.value }); }, fijoBool: !!fijo,
+      esFichas: !compacta, esCompacta: compacta,
+      verFichas: function () { self.setState({ densidad: 'fichas' }); }, verCompacta: function () { self.setState({ densidad: 'compacta' }); },
+      clasesLista: 'fichas' + (compacta ? ' compacta' : ''),
+      hayVacio: visibles.length === 0, haySugerencia: !!sugerencia,
+      sugerenciaTxt: sugerencia ? 'Quitar «' + sugerencia.a.texto + '» muestra ' + plural(sugerencia.n, 'caso') : '',
+      sugerir: sugerencia ? sugerencia.a.quitar : function () {},
+      grupos: grupos,
+      hayMas: restantes > 0, masTxt: 'Mostrar ' + Math.min(10, restantes) + ' más', mostrarMas: function () { self.setState({ limite: s.limite + 10 }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

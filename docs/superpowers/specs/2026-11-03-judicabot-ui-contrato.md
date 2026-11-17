@@ -10,14 +10,47 @@ Base: `/api`. JSON UTF-8. Errores: `{"detail": str}` o `{"detail": {"errores": [
 CasoResumen {
   id: str; nombre: str; radicado: str|null; accionante: str|null; accionadas: str[];
   juzgado_a_quo: str|null;
+  proceso: "segunda";    // tipo de proceso; hoy siempre "segunda" (segunda instancia de tutela)
   estado: "sin_iniciar"|"revision"|"incompleto"|"esperando_decision"|"terminado"|"error"|"corriendo";
   etapa: 0|1|2|3|4;      // 0 documentos, 1 proceso/borrador en curso, 2 decisión, 3 redacción final, 4 fallo listo
   siguiente_paso: str;   // texto para la UI, p. ej. "Revisar borrador"
-  n_insumos: int; n_alertas: int; job_activo: str|null; actualizado: str  // ISO 8601 UTC
+  n_insumos: int; n_alertas: int; job_activo: str|null; actualizado: str;  // ISO 8601 UTC
+  segunda: DatosSegunda|null;  // null solo si el estado del caso no se pudo leer (estado "error" sin datos)
+  creado: str|null;            // instante de creación (ISO 8601 con desfase); null en los casos anteriores a .datos_caso.json
+  termino: Termino|null;       // término para fallar efectivo: el guardado o el propuesto desde la fecha de reparto
+  vence: str|null;             // AAAA-MM-DD; null si no hay término o el caso terminó
+  dias_restantes: int|null     // 0 el día del vencimiento, positivo antes, negativo (atraso) después; null si vence es null
+}
+
+Termino { inicio: str /* AAAA-MM-DD, "Recibido el" */; dias: int /* 1..365 */; unidad: "habiles"|"calendario" }
+
+DatosSegunda {             // datos propios de la segunda instancia; se muestran como filtros de la lista
+  decision_a_quo: "ampara"|"niega"|"improcedente"|"carencia_actual_de_objeto"|"otro"|null;
+  impugnante: "accionante"|"accionada"|"vinculada"|"otro"|"varios"|null;
+  resultado: "CONFIRMAR"|"REVOCAR"|"MODIFICAR"|null;
+  sustitutiva: "AMPARAR"|"NEGAR"|"IMPROCEDENTE"|"CARENCIA_HECHO_SUPERADO"|"CARENCIA_DANO_CONSUMADO"|"CARENCIA_SOBREVINIENTE"|null;
+  derechos: str[];         // derechos invocados, sin espacios sobrantes ni repetidos (sin distinguir mayúsculas)
+  pruebas_nuevas: bool|null;
+  n_citas_revisar: int|null;
+  jev_discrepa: bool|null
 }
 ```
 
-`GET /api/casos/{caso_id}/resumen` → `CasoResumen` (la misma fila que `GET /api/casos` para ese caso: mismo cache, y con `estado: "corriendo"`, `etapa` y `job_activo` si hay un job activo). 404 `{"detail": "Caso no encontrado."}` si el caso no existe. Un caso ilegible devuelve 200 con `estado: "error"`, como en la lista.
+Todos los campos de `DatosSegunda` son obligatorios en el JSON; lo que no se conoce llega como `null` (o `[]` en `derechos`), nunca se omite. Se calculan en `resumen_segunda.datos(estado, resumen)` al reconstruir el resumen cacheado y dependen de lo que el caso ya tiene:
+
+- `decision_a_quo`: sentido de la decisión de primera instancia. Se clasifica el texto libre de `metadatos.decision_a_quo` (si está en blanco, `metadatos.resultado_a_quo`) sin tildes ni mayúsculas: primero el verbo inicial y, si no hay, todo el texto, en el orden «declar… carencia» (o «hecho superado», «daño consumado», «situación sobreviniente») → `carencia_actual_de_objeto`, «declar… improcedente» o «improcedencia»/«improcedente» → `improcedente`, `neg`/`nieg`/`deneg`, una negación delante de ampar/tutel/conced/acced («no concedió el amparo») y «desestim…/rechaz… el amparo» → `niega`, `ampar`/`tutel`/`conced` → `ampara`. Las raíces tienen forma de verbo: «negó el amparo» es `niega` (no `ampara`), y ni «negligencia» ni los sustantivos «tutela» y «amparo» clasifican (el verbo «amparó» lleva tilde). Si el texto no clasifica, se usa la respuesta `sentido_fallo` de Jev cuando su confianza alcanza el umbral del bloque `jev_metadatos`; si tampoco, `otro` (hay texto) o `null` (no hay). Los cinco valores son `jev_metadatos.SENTIDOS`.
+- `impugnante`: `varios` si `metadatos.impugnantes` trae más de uno; si no, `metadatos.impugnante_rol`.
+- `resultado` y `sustitutiva`: los de la última decisión, solo si su `accion` es `decidir` (`sustitutiva` es `null` al confirmar).
+- `pruebas_nuevas`: `true` si la apertura registra pruebas nuevas en segunda instancia, `false` si la apertura existe y no registra ninguna, `null` si aún no hay apertura (estados `sin_iniciar`, `incompleto`, `revision`).
+- `n_citas_revisar` (citas en estado `alerta` o `rechazada`) y `jev_discrepa` (alguna comparación de `jev_metadatos.coincide` es `false`): solo mientras el caso está en `esperando_decision` (`0` y `false` si no hay nada que señalar); en cualquier otro estado, incluido `corriendo`, son `null`.
+
+El valor de `proceso`, el de `segunda`, `creado` y `termino` forman parte del resumen cacheado (`VERSION = 3` del caché: un `.resumen.json` anterior se reconstruye solo). `vence` y `dias_restantes` dependen de la fecha y **nunca se cachean**: `resumen_caso._completo` los calcula en cada lectura con `termino.plazo` y la fecha de Colombia (UTC-5), de modo que la lista, `GET …/resumen`, `con_job` y `resumen_de_error` los traen siempre al día.
+
+**Término para fallar** (`termino.py`). Cada caso guarda en `<caso>/.datos_caso.json` (escritura atómica) `{proceso, creado, termino}`; `POST /api/casos` lo crea con `proceso: "segunda"`, `creado` y `termino: null`. Si falta o está corrupto se lee como `proceso: "segunda"`, `creado: null`, `termino: null`. El término efectivo es el guardado o, si no hay, el que se propone: `inicio` = fecha de reparto (`fecha_reparto` de `auto.json` si es una fecha válida; si no, la del acta de reparto de segunda en los metadatos), 20 días `habiles`; sin fecha de reparto no hay término. Los días se cuentan desde el día siguiente a `inicio`: `habiles` vence el n-ésimo día hábil posterior (sin fines de semana ni festivos colombianos, `festivos.py`); `calendario` vence en `inicio` + n días, y si ese día no es hábil pasa al siguiente hábil. `dias_restantes` cuenta en la unidad del término (hábiles posteriores a hoy hasta `vence`, o días corridos) y es negativo después del vencimiento; un vencimiento que cayó el viernes sigue siendo negativo (-1) el fin de semana. `vence` y `dias_restantes` son `null` si el caso está `terminado` o no hay término. `auto.json` y `.datos_caso.json` se rastrean en la firma del caché, así que editarlos reconstruye el resumen.
+
+`GET /api/casos/{caso_id}/termino` → `{termino: Termino|null, por_defecto: bool, fecha_reparto: str|null, vence: str|null, dias_restantes: int|null}`. `por_defecto` es `true` mientras el término sea la propuesta y no uno guardado. `PUT /api/casos/{caso_id}/termino` (cuerpo `Termino`) lo guarda en `.datos_caso.json` y devuelve lo mismo que el GET. 404 si el caso no existe (también con un cuerpo inválido); 422 si `inicio` no es una fecha real `AAAA-MM-DD` entre 2000 y 2100, `dias` no es un entero de 1 a 365 o `unidad` no es `habiles` ni `calendario`. `GET /api/estado-servidor` trae además `festivos: str[]`, las fechas ISO de los festivos del año anterior, el actual y el siguiente (hora de Colombia), en orden.
+
+`GET /api/casos/{caso_id}/resumen` → `CasoResumen` (la misma fila que `GET /api/casos` para ese caso: mismo cache, y con `estado: "corriendo"`, `etapa` y `job_activo` si hay un job activo). 404 `{"detail": "Caso no encontrado."}` si el caso no existe. Un caso ilegible devuelve 200 con `estado: "error"` y `segunda: null`, como en la lista.
 
 `POST /api/casos` (multipart: `nombre?` opcional, `files[]`) → `{id, n_insumos}`. Sin `nombre`, se usa la carpeta raíz de los archivos o "caso". Copia el formato global vigente al `config.json` del caso (B2). 400 si dos archivos caen en la misma ruta tras normalizarla (`{"detail": "Hay archivos con la misma ruta: a.pdf, b.pdf."}`) o si un nombre es a la vez archivo y carpeta; en ambos casos no se crea el caso.
 Resumen cacheado en `<caso>/.resumen.json` (escritura atómica); se actualiza en cada transición; si falta o está desactualizado (mtime de `caso.json`/`hilo.sqlite`), se reconstruye perezosamente. Al arrancar el servidor, un hilo daemon recorre los casos y calienta esa caché (no bloquea el arranque; un caso que falle se registra y se omite; si `CASOS_DIR` no existe no hace nada).
@@ -52,10 +85,14 @@ Evento { n: int; t: str  // ISO; etapa: "ingesta"|"apertura"|"consideraciones"|"
 Vista { tipo: "borrador"|"fallo"; sha256: str; paginas: Pagina[]; citas: CitaVista[]; indice: {id,titulo}[] }
 Pagina { bloques: Bloque[] }
 Bloque { id: str; tipo: "titulo"|"encabezado"|"parrafo"|"cita_bloque"|"lista"|"tabla"|"firma"|"pie"|"resuelve_numeral";
-         origen: "plantilla"|"modelo"; seccion: str|null; segmentos: Segmento[] }
+         origen: "plantilla"|"modelo"; seccion: str|null; segmentos: Segmento[];
+         fuente: Fuente|null  // por defecto null }
+Fuente { pieza: str; parrafo: int }  // pieza editable (B7) y posición del párrafo en `PiezaEdicion.parrafos`
 Segmento { texto: str; negrita?: bool; cursiva?: bool; cita_id?: str }
 CitaVista { id: str; texto: str; fuente: str; cobertura: float|null; estado: "verificada"|"revisar"|"rechazada"; detalle: str|null }
 ```
+
+`fuente` solo la llevan los bloques de prosa editable de las secciones I a V (y el título de cada bloque de consideraciones, con `parrafo: 0`); vale `null` en plantilla, encabezado, ASUNTO, `cita_bloque`, tablas, caso concreto, resolutiva y pies. El fallo también la lleva en I a V, pero su vista la ignora.
 
 Invariante: concatenar `segmentos[].texto` de todos los bloques de texto reproduce el texto de los párrafos del .docx (prueba de equivalencia).
 
@@ -71,6 +108,36 @@ Nunca 500: entradas inválidas devuelven `errores` y `numerales` vacío o parcia
 ## B6 — Preferencias de IA
 
 `GET /api/ia` → `{modelo, modelos[], api_key: bool, jev_key: bool, jev: {modo:"apagado"|"sombra"|"relleno", umbral: float}, effort, max_tokens: int, max_retries: int}`; `PUT /api/ia` con los mismos campos editables (`modelo, jev.modo, jev.umbral, effort, max_tokens, max_retries`) → mismo shape. Se guarda en `.preferencias.json` (se conserva `modelo`) y se aplica a casos nuevos y al ejecutar (como hoy `TUTELA2_MODELO`). `/api/estado-servidor`, `/api/modelo`, `/api/api-key`, `/api/jev-key` se mantienen.
+
+## B7 — Edición in situ del borrador
+
+Diseño: `docs/superpowers/specs/2026-11-17-edicion-in-situ-design.md`. Rutas en `backend/tutela2/rutas_ediciones.py`; esquemas en `esquemas.py`. Una **pieza** es un campo de texto del estado (`apertura.antecedentes_hechos`, `apertura.contestaciones.{i}.texto`, `apertura.sentencia_impugnada`, `apertura.impugnacion`, `consideraciones.procedibilidad`, `consideraciones.bloques.{i}.titulo`, `consideraciones.bloques.{i}.texto`); cualquier otro id es desconocido. El id va en la ruta: el cliente aplica `encodeURIComponent`. Las ediciones no tocan el grafo: viven en `caso_dir/ediciones.json` y se consolidan al decidir.
+
+```
+PiezaEdicion { parrafos: str[]; editados: int[]; modificada: bool; avisos: str[] }
+  // parrafos: forma editable (citas ⟦cita c2 · T-200 de 2022⟧, imágenes ⟦imagen · desc⟧; el frontend no las convierte)
+  // editados: índices de párrafos distintos del texto de la IA (inserciones y reemplazos; un párrafo quitado no tiene índice)
+  // modificada: el texto efectivo difiere del de la IA, también cuando solo se quitaron párrafos (en un conflicto vale false)
+TrozoOk { tipo: "ok"; parrafos: str[] }
+TrozoConflicto { tipo: "conflicto"; mio: str[]; nuevo: str[]; mio_permitido: bool }
+ConflictoEdicion { pieza: str; etiqueta: str; huerfana: bool; trozos: (TrozoOk|TrozoConflicto)[] }  // discriminador `tipo`
+  // huerfana: la pieza perdió su ancla (contestación por entidad, bloque por título de la IA); trozos = [TrozoOk con el texto del usuario], solo se descarta
+EdicionesRespuesta { editable: bool; motivo: str|null; piezas: {[pieza]: PiezaEdicion}; conflictos: ConflictoEdicion[] }
+EdicionCuerpo { parrafo: int >= 0; original: str; texto: str }
+ResolverCuerpo { elecciones: ("mio"|"nuevo")[] }
+```
+
+`GET /api/casos/{id}/ediciones` → `EdicionesRespuesta`. Con un job corriendo o con el caso fuera de `esperando_decision` responde **200** `{editable: false, motivo, piezas: {}, conflictos: []}`, nunca un 4xx. Si es editable, sincroniza con la salida actual de la IA; si la capa cambió, la guarda y regenera `previo.docx`. 404 `{"detail": "Caso no encontrado."}` si el caso no existe.
+
+`PUT /api/casos/{id}/ediciones/{pieza}` body `EdicionCuerpo` → `EdicionesRespuesta`. `original` debe ser `piezas[pieza].parrafos[parrafo]` tal como se recibió (no el texto del bloque de la vista); `texto` puede traer 0 o más párrafos separados por una línea en blanco (0 borra el párrafo). Los títulos (`…titulo`) rechazan cualquier salto de línea.
+`DELETE /api/casos/{id}/ediciones/{pieza}` → `EdicionesRespuesta`. Restaura **toda** la pieza al texto de la IA, o descarta la edición de una pieza huérfana.
+`POST /api/casos/{id}/ediciones/{pieza}/resolver` body `ResolverCuerpo` → `EdicionesRespuesta`. Una elección por trozo en conflicto, en orden; elegir `"mio"` exige `mio_permitido`. Una pieza huérfana no se resuelve: se descarta con DELETE.
+
+Cada llamada que modifica devuelve la `EdicionesRespuesta` completa y regenera `previo.docx` y la vista del borrador.
+
+Códigos de PUT, DELETE y POST: **404** `{"detail": "No existe la pieza …"}` si la pieza es desconocida (o el caso no existe); **409** si hay un job corriendo, el caso no está en `esperando_decision`, la pieza tiene un conflicto pendiente (PUT) o `original` está desfasado (`"recargue el borrador"`), o no hay conflicto que resolver (POST); **422** si la validación falla (pieza vacía, `[[`/`]]` o fichas ⟦…⟧ alteradas, citas o imágenes distintas de las de la IA, jurisprudencia nueva fuera de ficha, número de elecciones distinto, `"mio"` no permitido o pieza huérfana). Todos los errores son `{"detail": str}` en español, con los motivos unidos por un espacio; los 422 de validación del cuerpo de FastAPI traen una lista.
+
+**Conflictos y decisión.** `POST /api/casos/{id}/run` con `cmd: "decidir"` responde **409** `{"detail": "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir."}` mientras haya conflictos pendientes, de forma síncrona y sin crear un job (así no aparece un job fallido en la vista del proceso). Vale para toda decisión enviada con ese `cmd`, también las de rehacer apertura o consideraciones. Tras una corrección de la IA, el rebase puede dejar conflictos nuevos: aparecen en el siguiente `GET …/ediciones` y bloquean la siguiente decisión hasta resolverlos.
 
 ## Existentes que la UI usa sin cambios
 

@@ -90,6 +90,7 @@ export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: Prop
       }
     >
       <p class="sub bor-dialogo-intro">El modelo vuelve a redactar la parte que elija, siguiendo su instrucción.</p>
+      <p class="sub bor-dialogo-intro">Sus ediciones se conservan; si la corrección cambia los mismos párrafos, se le pedirá elegir.</p>
       <fieldset class="bor-dlg-opciones" aria-describedby={intentado && faltaAccion ? "bor-err-accion" : undefined}>
         <legend>¿Qué parte quiere rehacer?</legend>
         {OPCIONES.map((o) => (

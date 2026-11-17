@@ -9,6 +9,7 @@ import threading
 import time
 import types
 import zipfile
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from tutela2 import config as cfgmod
-from tutela2 import server
+from tutela2 import server, termino
 from tutela2.config import Config, LLMConfig
 
 
@@ -461,6 +462,20 @@ def test_api_key_solo_en_memoria(cliente, tmp_path, monkeypatch):
     _subir(cliente, "x", {"a.pdf": b"1"})
     assert not any(b"sk-ant-prueba" in p.read_bytes() for p in tmp_path.rglob("*") if p.is_file())
     monkeypatch.delenv("ANTHROPIC_API_KEY")
+
+
+def test_estado_servidor_trae_los_festivos_del_anio_anterior_actual_y_siguiente(cliente, monkeypatch):
+    monkeypatch.setattr(termino, "hoy", lambda: date(2026, 11, 17))
+    festivos = cliente.get("/api/estado-servidor").json()["festivos"]
+    assert festivos == sorted(festivos) and len(festivos) == len(set(festivos)) == 17 + 19 + 19
+    assert {f[:4] for f in festivos} == {"2025", "2026", "2027"}
+    assert {"2025-12-25", "2026-11-16", "2026-12-08", "2027-01-11"} <= set(festivos)
+    assert "2026-11-17" not in festivos and all(date.fromisoformat(f) for f in festivos)
+
+
+def test_los_festivos_del_servidor_siguen_el_anio_de_colombia(cliente, monkeypatch):
+    monkeypatch.setattr(termino, "hoy", lambda: date(2027, 1, 1))
+    assert {f[:4] for f in cliente.get("/api/estado-servidor").json()["festivos"]} == {"2026", "2027", "2028"}
 
 
 def test_clave_de_gemini_solo_en_memoria(cliente, tmp_path, monkeypatch):

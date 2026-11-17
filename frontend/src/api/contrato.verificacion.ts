@@ -1,8 +1,9 @@
 import type * as C from "./contrato";
 import type { Evento as EventoSse, Fin } from "./eventos";
-import type { components } from "./schema";
+import type { components, paths } from "./schema";
 
 type S = components["schemas"];
+type RutaTermino = paths["/api/casos/{caso_id}/termino"];
 
 type Igual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Afirmar<T extends true> = T;
@@ -10,6 +11,23 @@ type Sin<T, K extends keyof T> = Omit<T, K>;
 
 export type VerificacionContrato = [
   CasoResumen: Afirmar<Igual<C.CasoResumen, S["CasoResumen"]>>,
+  CasoResumenProceso: Afirmar<Igual<C.ProcesoCaso, S["CasoResumen"]["proceso"]>>,
+  CasoResumenSegunda: Afirmar<Igual<C.CasoResumen["segunda"], S["CasoResumen"]["segunda"]>>,
+  CasoResumenCreado: Afirmar<Igual<C.CasoResumen["creado"], S["CasoResumen"]["creado"]>>,
+  CasoResumenTermino: Afirmar<Igual<C.CasoResumen["termino"], S["CasoResumen"]["termino"]>>,
+  CasoResumenVence: Afirmar<Igual<C.CasoResumen["vence"], S["CasoResumen"]["vence"]>>,
+  CasoResumenDiasRestantes: Afirmar<Igual<C.CasoResumen["dias_restantes"], S["CasoResumen"]["dias_restantes"]>>,
+  Termino: Afirmar<Igual<C.Termino, S["Termino"]>>,
+  TerminoUnidad: Afirmar<Igual<C.UnidadTermino, S["Termino"]["unidad"]>>,
+  TerminoRespuesta: Afirmar<Igual<C.TerminoRespuesta, S["TerminoRespuesta"]>>,
+  TerminoGet: Afirmar<Igual<RutaTermino["get"]["responses"][200]["content"]["application/json"], C.TerminoRespuesta>>,
+  TerminoPutRespuesta: Afirmar<Igual<RutaTermino["put"]["responses"][200]["content"]["application/json"], C.TerminoRespuesta>>,
+  TerminoPutCuerpo: Afirmar<Igual<RutaTermino["put"]["requestBody"]["content"]["application/json"], C.Termino>>,
+  DatosSegunda: Afirmar<Igual<C.DatosSegunda, S["DatosSegunda"]>>,
+  DatosSegundaDecisionAQuo: Afirmar<Igual<C.SentidoAQuo, NonNullable<S["DatosSegunda"]["decision_a_quo"]>>>,
+  DatosSegundaImpugnante: Afirmar<Igual<C.ImpugnanteCaso, NonNullable<S["DatosSegunda"]["impugnante"]>>>,
+  DatosSegundaResultado: Afirmar<Igual<C.ResultadoCaso, NonNullable<S["DatosSegunda"]["resultado"]>>>,
+  DatosSegundaSustitutiva: Afirmar<Igual<C.SustitutivaCaso, NonNullable<S["DatosSegunda"]["sustitutiva"]>>>,
   CrearCasoRespuesta: Afirmar<Igual<C.CrearCasoRespuesta, S["CasoCreado"]>>,
   CampoFormato: Afirmar<Igual<C.CampoFormato, S["CampoFormato"]>>,
   Despacho: Afirmar<Igual<C.Despacho, S["Despacho"]>>,
@@ -22,6 +40,7 @@ export type VerificacionContrato = [
   FinJobError: Afirmar<Igual<C.FinJob["error"], S["EventosJob"]["error"]>>,
   EventosJson: Afirmar<Igual<C.EventosJson, S["EventosJob"]>>,
   Segmento: Afirmar<Igual<C.Segmento, S["Segmento"]>>,
+  Fuente: Afirmar<Igual<C.Fuente, S["Fuente"]>>,
   Bloque: Afirmar<Igual<C.Bloque, S["Bloque"]>>,
   PaginaVista: Afirmar<Igual<C.PaginaVista, S["PaginaVista"]>>,
   CitaVista: Afirmar<Igual<C.CitaVista, S["CitaVista"]>>,
@@ -29,6 +48,13 @@ export type VerificacionContrato = [
   NumeralVista: Afirmar<Igual<C.NumeralVista, S["NumeralVista"]>>,
   DecisionVistaRespuesta: Afirmar<Igual<C.DecisionVistaRespuesta, S["DecisionVistaRespuesta"]>>,
   DecisionVistaAdvertencia: Afirmar<Igual<C.DecisionVistaRespuesta["advertencias"][number], S["FaltanteDecision"]>>,
+  PiezaEdicion: Afirmar<Igual<C.PiezaEdicion, S["PiezaEdicion"]>>,
+  TrozoOk: Afirmar<Igual<C.TrozoOk, S["TrozoOk"]>>,
+  TrozoConflicto: Afirmar<Igual<C.TrozoConflicto, S["TrozoConflicto"]>>,
+  ConflictoEdicion: Afirmar<Igual<C.ConflictoEdicion, S["ConflictoEdicion"]>>,
+  EdicionesRespuesta: Afirmar<Igual<C.EdicionesRespuesta, S["EdicionesRespuesta"]>>,
+  EdicionCuerpo: Afirmar<Igual<C.EdicionCuerpo, S["EdicionCuerpo"]>>,
+  ResolverCuerpo: Afirmar<Igual<C.ResolverCuerpo, S["ResolverCuerpo"]>>,
   ModoJev: Afirmar<Igual<C.ModoJev, S["IAJev"]["modo"]>>,
   Effort: Afirmar<Igual<C.Effort, S["IAEstado"]["effort"]>>,
   Proveedor: Afirmar<Igual<C.Proveedor, S["IAEstado"]["proveedor"]>>,

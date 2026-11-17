@@ -55,6 +55,13 @@ function mensajeDe(e: unknown): string {
 const EN_CURSO = "Ya hay una ejecución en curso para este caso.";
 const esBloqueoApoderados = (mensaje: string) => mensaje.startsWith("Hay apoderados no verificados");
 
+function accionDelError(mensaje: string, base: string) {
+  if (mensaje.startsWith("Falta la clave de la API")) return <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton>;
+  if (mensaje.startsWith("Hay conflictos de edición")) return <Boton href={`${base}/borrador`}>Resolver en el borrador</Boton>;
+  if (esBloqueoApoderados(mensaje)) return <Boton href={`${base}/borrador`}>Ir al borrador</Boton>;
+  return <Boton href={`${base}/proceso`}>Ver el proceso</Boton>;
+}
+
 export default function Decision({ caso }: PropsVista) {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [resumen, setResumen] = useState<CasoResumen | null>(null);
@@ -263,7 +270,8 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
       setConfirmar(false);
       setEnviando(false);
       if (e instanceof ErrorApi && e.estado === 409) {
-        setErrorEnvio(e.message || EN_CURSO);
+        // El servidor explica el 409 (conflictos de edición, apoderados sin revisar o una ejecución en curso).
+        setErrorEnvio(typeof e.detalle === "string" && e.message ? e.message : EN_CURSO);
         setConsultaApoderados((n) => n + 1);
       } else {
         setErrorEnvio(mensajeDe(e));
@@ -312,15 +320,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
         <Aviso
           tipo="error"
           titulo="No se pudo enviar la decisión"
-          acciones={
-            errorEnvio.startsWith("Falta la clave de la API") ? (
-              <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton>
-            ) : esBloqueoApoderados(errorEnvio) ? (
-              <Boton href={`${base}/borrador`}>Ir al borrador</Boton>
-            ) : (
-              <Boton href={`${base}/proceso`}>Ver el proceso</Boton>
-            )
-          }
+          acciones={accionDelError(errorEnvio, base)}
         >
           {errorEnvio}
         </Aviso>

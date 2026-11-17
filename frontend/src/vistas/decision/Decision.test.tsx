@@ -244,6 +244,33 @@ describe("Decisión: errores de la API", () => {
     expect(await screen.findByText("No se pudo enviar la decisión")).toBeTruthy();
     expect(location.hash).toBe("");
   });
+
+  it("un 409 por conflictos de edición muestra el motivo del servidor y lleva al borrador, no al proceso", async () => {
+    const motivo = "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir.";
+    servidor({ run: () => json({ detail: motivo }, 409) });
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
+    expect(await screen.findByText(motivo)).toBeTruthy();
+    expect(screen.queryByText("Ya hay una ejecución en curso para este caso.")).toBeNull();
+    expect(screen.getByRole("link", { name: "Resolver en el borrador" }).getAttribute("href")).toBe(`#/segunda/${CASO}/borrador`);
+    expect(screen.queryByRole("link", { name: "Ver el proceso" })).toBeNull();
+  });
+
+  it("un 409 por una ejecución en curso sigue llevando al proceso", async () => {
+    servidor({ run: () => json({ detail: "Ya hay una ejecución en curso para este caso." }, 409) });
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
+    expect(await screen.findByText("Ya hay una ejecución en curso para este caso.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ver el proceso" }).getAttribute("href")).toBe(`#/segunda/${CASO}/proceso`);
+  });
 });
 
 describe("Decisión: apoderados no verificados", () => {
@@ -335,6 +362,7 @@ describe("Decisión: clave del proveedor activo", () => {
     modelo: "claude-sonnet-5-5",
     modelos: [],
     modelos_gemini: [],
+    festivos: [],
     ...extra,
   });
 

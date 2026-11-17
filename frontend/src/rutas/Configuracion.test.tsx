@@ -42,7 +42,7 @@ async function abrirSobreCasos() {
   await within(panel()).findByRole("heading", { level: 2, name: "Despacho" });
 }
 
-const SERVIDOR: EstadoServidor = { proveedor: "anthropic", api_key: false, gemini_key: false, jev_key: false, modelo: "claude-opus-5-5", modelos: [], modelos_gemini: [] };
+const SERVIDOR: EstadoServidor = { proveedor: "anthropic", api_key: false, gemini_key: false, jev_key: false, modelo: "claude-opus-5-5", modelos: [], modelos_gemini: [], festivos: [] };
 
 beforeEach(() => {
   vi.stubGlobal(

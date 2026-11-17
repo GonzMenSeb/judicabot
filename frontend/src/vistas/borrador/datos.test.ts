@@ -17,6 +17,7 @@ import {
   redaccionPorNodo,
   seccionesDeCitas,
   tituloDelCaso,
+  unidadesDe,
 } from "./datos";
 import { APODERADOS_BORRADOR, ESTADO_BORRADOR, VISTA_BORRADOR } from "./mock";
 import type { EstadoCaso, LlamadaBitacora } from "./tipos";
@@ -318,17 +319,46 @@ describe("construirRevision", () => {
   const items = construirRevision(VISTA_BORRADOR.citas, ESTADO_BORRADOR.resumen?.alertas, jev, secciones);
 
   it("ordena por nivel y, dentro de cada uno, citas, Jev y alertas", () => {
+    const { ingesta = [], apertura = [] } = (ESTADO_BORRADOR.resumen?.alertas ?? {}) as Record<string, string[]>;
     expect(items.map((i) => [i.nivel, i.clave])).toEqual([
-      ["mal", "cita-c3"],
-      ["alerta", "cita-c2"],
+      ["mal", "cita-c3-rechazada-sentencia T-999 de 2019"],
+      ["alerta", "cita-c2-revisar-sentencia SU-508 de 2020"],
       ["alerta", "jev-sentido"],
-      ["alerta", "alerta-apertura-3"],
-      ["alerta", "alerta-apertura-4"],
-      ["info", "alerta-ingesta-0"],
-      ["info", "alerta-ingesta-1"],
-      ["ok", "cita-c1"],
+      ["alerta", `alerta-apertura-${apertura[1]}`],
+      ["alerta", `alerta-apertura-${apertura[2]}`],
+      ["info", `alerta-ingesta-${ingesta[0]}`],
+      ["info", `alerta-ingesta-${ingesta[1]}`],
+      ["ok", "cita-c1-verificada-sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa"],
       ["ok", "jev-rol"],
     ]);
+  });
+
+  it("las claves dependen del contenido: no cambian si cambia el orden de las alertas", () => {
+    const alertas = { apertura: ["ALERTA: uno", "ALERTA: dos"], ingesta: ["x"] };
+    const invertidas = { ingesta: ["x"], apertura: ["ALERTA: dos", "ALERTA: uno"] };
+    const claves = (a: unknown) => construirRevision([], a as never, [], {}).map((i) => i.clave).sort();
+    expect(claves(alertas)).toEqual(["alerta-apertura-ALERTA: dos", "alerta-apertura-ALERTA: uno", "alerta-ingesta-x"]);
+    expect(claves(invertidas)).toEqual(claves(alertas));
+  });
+
+  it("quita los elementos con una clave repetida", () => {
+    const r = construirRevision([], { apertura: ["ALERTA: igual", "ALERTA: igual", "ALERTA: otra"] }, [], {});
+    expect(r.map((i) => i.clave)).toEqual(["alerta-apertura-ALERTA: igual", "alerta-apertura-ALERTA: otra"]);
+  });
+
+  it("la clave de una cita incluye su sentencia: si una corrección reasigna los ids, lo revisado no pasa a otra sentencia", () => {
+    const antes: CitaVista = { id: "c2", texto: "t", fuente: "sentencia T-200 de 2022", cobertura: 0.9, estado: "revisar", detalle: null };
+    const despues: CitaVista = { ...antes, fuente: "sentencia T-300 de 2023" };
+    const revisados = new Set(construirRevision([antes], null, [], {}).map((i) => i.clave));
+    const vigentes = construirRevision([despues], null, [], {}).map((i) => i.clave);
+    expect(vigentes.some((k) => revisados.has(k))).toBe(false);
+    expect(construirRevision([{ ...antes }], null, [], {}).map((i) => i.clave).every((k) => revisados.has(k))).toBe(true);
+  });
+
+  it("la clave de una cita incluye su estado", () => {
+    const base: CitaVista = { id: "c9", texto: "t", fuente: "f", cobertura: 0.9, estado: "verificada", detalle: null };
+    expect(construirRevision([base], null, [], {})[0]?.clave).toBe("cita-c9-verificada-f");
+    expect(construirRevision([{ ...base, estado: "rechazada" }], null, [], {})[0]?.clave).toBe("cita-c9-rechazada-f");
   });
 
   it("pliega la alerta de la cita rechazada y la de Jev que ya muestra su fila", () => {
@@ -338,7 +368,7 @@ describe("construirRevision", () => {
   });
 
   it("describe las citas con origen, línea y detalle", () => {
-    const c1 = items.find((i) => i.clave === "cita-c1");
+    const c1 = items.find((i) => i.clave === "cita-c1-verificada-sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa");
     expect(c1).toMatchObject({
       nivel: "ok",
       origen: "Cita · V. Consideraciones",
@@ -347,15 +377,15 @@ describe("construirRevision", () => {
       marca: { tipo: "cita", id: "c1" },
       detalle: { tipo: "cita", motivos: [] },
     });
-    const c2 = items.find((i) => i.clave === "cita-c2");
+    const c2 = items.find((i) => i.clave === "cita-c2-revisar-sentencia SU-508 de 2020");
     expect(c2?.linea).toBe("La cobertura del fragmento citado es 71 %. Compare con la relatoría antes de firmar.");
-    expect(items.find((i) => i.clave === "cita-c3")?.linea).toBe("No aparece en el dataset de la Corte Constitucional.");
+    expect(items.find((i) => i.clave === "cita-c3-rechazada-sentencia T-999 de 2019")?.linea).toBe("No aparece en el dataset de la Corte Constitucional.");
   });
 
   it("cita sin motivos usa la etiqueta del estado y sin fuente usa el id", () => {
     const citas: CitaVista[] = [{ id: "z9", texto: "t", fuente: "", cobertura: null, estado: "revisar", detalle: null }];
     const [item] = construirRevision(citas, null, [], {});
-    expect(item).toMatchObject({ clave: "cita-z9", origen: "Cita", titulo: "z9", linea: "Con alerta", nivel: "alerta" });
+    expect(item).toMatchObject({ clave: "cita-z9-revisar-", origen: "Cita", titulo: "z9", linea: "Con alerta", nivel: "alerta" });
   });
 
   it("describe las filas de Jev", () => {
@@ -392,7 +422,7 @@ describe("construirRevision", () => {
   it("alerta de una cita que no existe se conserva", () => {
     const r = construirRevision([], { consideraciones: ["BLOQUEA: La cita c9 (sentencia X) fue rechazada: no aparece."] }, [], {});
     expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ nivel: "mal", clave: "alerta-consideraciones-0" });
+    expect(r[0]).toMatchObject({ nivel: "mal", clave: "alerta-consideraciones-BLOQUEA: La cita c9 (sentencia X) fue rechazada: no aparece." });
   });
 
   it("acepta alertas como lista y quita los prefijos", () => {
@@ -410,8 +440,11 @@ describe("construirRevision", () => {
       [],
       {},
     );
-    expect(r.filter((i) => i.grupo === "apoderados").map((i) => [i.clave, i.origen, i.nivel])).toEqual([["alerta-apoderados-1", "Apoderados", "alerta"]]);
-    expect(r.filter((i) => i.grupo === "citas").map((i) => i.clave)).toEqual(["cita-c3", "cita-c2", "alerta-apertura-0", "cita-c1"]);
+    const claves = new Map(VISTA_BORRADOR.citas.map((c) => [c.id, `cita-${c.id}-${c.estado}-${c.fuente}`]));
+    expect(r.filter((i) => i.grupo === "apoderados").map((i) => [i.clave, i.origen, i.nivel])).toEqual([
+      ["alerta-apoderados-ALERTA: Según el modelo, la Clínica actúa por medio de abogado, pero no se pudo comprobar.", "Apoderados", "alerta"],
+    ]);
+    expect(r.filter((i) => i.grupo === "citas").map((i) => i.clave)).toEqual([claves.get("c3"), claves.get("c2"), "alerta-apertura-ALERTA: x", claves.get("c1")]);
   });
 
   it("tolera alertas ausentes", () => {
@@ -459,19 +492,22 @@ describe("revisados", () => {
     localStorage.clear();
   });
 
-  it("arma la clave con el caso y el sha", () => {
-    expect(claveRevisados("c1", "abc")).toBe("judicabot:revisados:c1:abc");
+  const SHA = "a".repeat(64);
+  const OTRA_SHA = "b".repeat(64);
+
+  it("arma la clave solo con el caso", () => {
+    expect(claveRevisados("c1")).toBe("judicabot:revisados:c1");
   });
 
   it("ida y vuelta", () => {
-    const clave = claveRevisados("c1", "abc");
+    const clave = claveRevisados("c1");
     expect(leerRevisados(clave).size).toBe(0);
-    guardarRevisados(clave, new Set(["cita-c1", "jev-rol"]));
-    expect([...leerRevisados(clave)].sort()).toEqual(["cita-c1", "jev-rol"]);
+    guardarRevisados(clave, new Set(["cita-c1-verificada", "jev-rol"]));
+    expect([...leerRevisados(clave)].sort()).toEqual(["cita-c1-verificada", "jev-rol"]);
   });
 
   it("JSON corrupto, valor que no es arreglo de cadenas o getItem que lanza dan vacío", () => {
-    const clave = claveRevisados("c1", "abc");
+    const clave = claveRevisados("c1");
     localStorage.setItem(clave, "{no es json");
     expect(leerRevisados(clave).size).toBe(0);
     localStorage.setItem(clave, '{"a":1}');
@@ -484,15 +520,46 @@ describe("revisados", () => {
     expect(leerRevisados(clave).size).toBe(0);
   });
 
-  it("guardar borra los revisados de otros borradores del mismo caso y respeta los demás", () => {
-    localStorage.setItem(claveRevisados("c1", "viejo"), '["a"]');
-    localStorage.setItem(claveRevisados("c2", "viejo"), '["a"]');
+  it("al leer descarta lo que ya no está entre los elementos vigentes", () => {
+    const clave = claveRevisados("c1");
+    localStorage.setItem(clave, JSON.stringify(["cita-c1-verificada", "cita-c2-revisar", "alerta-apertura-vieja"]));
+    expect([...leerRevisados(clave, new Set(["cita-c1-verificada", "alerta-apertura-nueva"]))]).toEqual(["cita-c1-verificada"]);
+    expect(leerRevisados(clave).size).toBe(3);
+  });
+
+  it("al guardar descarta lo que ya no está entre los elementos vigentes", () => {
+    const clave = claveRevisados("c1");
+    guardarRevisados(clave, new Set(["a", "b", "c"]), new Set(["b", "c", "d"]));
+    expect(JSON.parse(localStorage.getItem(clave) ?? "null")).toEqual(["b", "c"]);
+  });
+
+  it("sin elementos vigentes (aún no se leyeron las alertas) no poda nada", () => {
+    const clave = claveRevisados("c1");
+    guardarRevisados(clave, new Set(["alerta-apertura-x", "cita-c1-verificada"]));
+    expect([...leerRevisados(clave)].sort()).toEqual(["alerta-apertura-x", "cita-c1-verificada"]);
+  });
+
+  it("guardar borra solo los revisados antiguos (con sha) del mismo caso y respeta los demás", () => {
+    localStorage.setItem(`${claveRevisados("c1")}:${SHA}`, '["a"]');
+    localStorage.setItem(`${claveRevisados("c1")}:${OTRA_SHA}`, '["a"]');
+    localStorage.setItem(`${claveRevisados("c2")}:${SHA}`, '["a"]');
+    localStorage.setItem(claveRevisados("c2"), '["x"]');
+    localStorage.setItem(claveRevisados("c10"), '["y"]');
     localStorage.setItem("otra", "x");
-    guardarRevisados(claveRevisados("c1", "nuevo"), new Set(["b"]));
-    expect(localStorage.getItem(claveRevisados("c1", "viejo"))).toBeNull();
-    expect(localStorage.getItem(claveRevisados("c2", "viejo"))).not.toBeNull();
+    guardarRevisados(claveRevisados("c1"), new Set(["b"]));
+    expect(localStorage.getItem(`${claveRevisados("c1")}:${SHA}`)).toBeNull();
+    expect(localStorage.getItem(`${claveRevisados("c1")}:${OTRA_SHA}`)).toBeNull();
+    expect(localStorage.getItem(`${claveRevisados("c2")}:${SHA}`)).not.toBeNull();
+    expect(localStorage.getItem(claveRevisados("c2"))).toBe('["x"]');
+    expect(localStorage.getItem(claveRevisados("c10"))).toBe('["y"]');
     expect(localStorage.getItem("otra")).toBe("x");
-    expect([...leerRevisados(claveRevisados("c1", "nuevo"))]).toEqual(["b"]);
+    expect([...leerRevisados(claveRevisados("c1"))]).toEqual(["b"]);
+  });
+
+  it("guardar no toca las claves de otros casos cuyo id empieza igual", () => {
+    localStorage.setItem(`${claveRevisados("c1:x")}`, '["z"]');
+    guardarRevisados(claveRevisados("c1"), new Set(["b"]));
+    expect(localStorage.getItem(claveRevisados("c1:x"))).toBe('["z"]');
   });
 
   it("guardar no lanza si el almacenamiento falla", () => {
@@ -500,6 +567,48 @@ describe("revisados", () => {
       throw new Error("lleno");
     });
     expect(() => guardarRevisados("k", new Set(["a"]))).not.toThrow();
+  });
+});
+
+describe("unidadesDe", () => {
+  const bloque = (id: string, tipo: Bloque["tipo"], fuente?: Bloque["fuente"]): Bloque => ({ id, tipo, origen: "modelo", seccion: null, segmentos: [{ texto: id }], fuente: fuente ?? null });
+  const vista = (...paginas: Bloque[][]) => ({ tipo: "borrador" as const, sha256: "x", citas: [], indice: [], paginas: paginas.map((bloques) => ({ bloques })) });
+  const f = (pieza: string, parrafo: number) => ({ pieza, parrafo });
+
+  it("sin fuentes no hay unidades", () => {
+    expect(unidadesDe(vista([bloque("a", "parrafo"), bloque("b", "titulo")])).size).toBe(0);
+  });
+
+  it("agrupa bloques consecutivos con la misma pieza y párrafo, también entre páginas", () => {
+    const u = unidadesDe(vista([bloque("a", "parrafo", f("p", 0)), bloque("b", "parrafo", f("p", 0))], [bloque("c", "parrafo", f("p", 0)), bloque("d", "parrafo", f("p", 1))]));
+    expect([...new Set(u.values())].map((x) => [x.clave, x.pieza, x.parrafo, x.ids])).toEqual([
+      ["p#0", "p", 0, ["a", "b", "c"]],
+      ["p#1", "p", 1, ["d"]],
+    ]);
+    expect(u.get("a")).toBe(u.get("c"));
+    expect(u.get("c")).not.toBe(u.get("d"));
+  });
+
+  it("la cita en bloque sin fuente que sigue a una unidad se suma a ella, también entre sus partes", () => {
+    const u = unidadesDe(
+      vista([bloque("a", "parrafo", f("p", 0)), bloque("q", "cita_bloque"), bloque("b", "parrafo", f("p", 0)), bloque("r", "cita_bloque"), bloque("c", "parrafo", f("p", 1))]),
+    );
+    expect(u.get("a")?.ids).toEqual(["a", "q", "b", "r"]);
+    expect(u.get("c")?.ids).toEqual(["c"]);
+  });
+
+  it("un bloque sin fuente que no es cita en bloque corta la unidad", () => {
+    const u = unidadesDe(vista([bloque("a", "parrafo", f("p", 0)), bloque("x", "parrafo"), bloque("b", "parrafo", f("p", 0))]));
+    expect(u.has("x")).toBe(false);
+    expect(u.get("a")).not.toBe(u.get("b"));
+    expect(unidadesDe(vista([bloque("q", "cita_bloque"), bloque("a", "parrafo", f("p", 0))])).has("q")).toBe(false);
+  });
+
+  it("ignora los pies y distingue piezas con el mismo párrafo", () => {
+    const u = unidadesDe(vista([bloque("a", "parrafo", f("p", 0)), bloque("pie", "pie"), bloque("b", "parrafo", f("q", 0))]));
+    expect(u.has("pie")).toBe(false);
+    expect(u.get("a")).not.toBe(u.get("b"));
+    expect(unidadesDe(VISTA_BORRADOR).size).toBe(16);
   });
 });
 

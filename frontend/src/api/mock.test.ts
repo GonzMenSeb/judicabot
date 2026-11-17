@@ -38,7 +38,7 @@ describe("mocks", () => {
 
   it("resuelve el resumen de cada caso de demostración y deja pasar los desconocidos", async () => {
     const lista = (await resolverMock(peticion("GET", "/api/casos"))) as { id: string }[];
-    const ids = [...lista.map((c) => c.id), "demo-sin-leer", "quintero-eps-horizonte", "sin-fallo"];
+    const ids = [...lista.map((c) => c.id), "quintero-eps-horizonte", "sin-fallo"];
     for (const id of ids) {
       const resumen = (await resolverMock(peticion("GET", `/api/casos/${id}/resumen`))) as { id: string; nombre: string; etapa: number };
       expect(resumen.id).toBe(id);

@@ -141,6 +141,13 @@ export type GrupoBloque =
   | { tipo: "bloque"; bloque: Bloque }
   | { tipo: "tabla" | "lista"; bloques: Bloque[] };
 
+export interface UnidadEdicion {
+  clave: string;
+  pieza: string;
+  parrafo: number;
+  ids: string[];
+}
+
 export interface CorreccionCuerpo {
   cmd: "decidir";
   decision: { accion: "rehacer_apertura" | "rehacer_consideraciones"; instruccion: string };

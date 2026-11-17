@@ -28,6 +28,7 @@ from starlette.types import Receive, Scope, Send
 
 from tutela2 import acceso
 from tutela2 import config as cfgmod
+from tutela2 import festivos, termino
 from tutela2.config import Config
 from tutela2.estaticos import SIN_GZIP, CabecerasEstaticas
 from tutela2.jev import clave_valida
@@ -101,6 +102,7 @@ class EstadoServidor(BaseModel):
     modelo: str
     modelos: list[str]
     modelos_gemini: list[str]
+    festivos: list[str]
 
 
 class JobInicio(BaseModel):
@@ -345,6 +347,11 @@ def proveedor_del_caso(caso_dir: Path) -> str | None:
     return preferencias.superponer(cfg, preferencias_efectivas()).llm.proveedor
 
 
+def _festivos_cercanos() -> list[str]:
+    anio = termino.hoy().year
+    return sorted(dia.isoformat() for a in (anio - 1, anio, anio + 1) for dia in festivos.festivos(a))
+
+
 @app.get("/api/estado-servidor", response_model=EstadoServidor)
 def estado_servidor() -> dict[str, Any]:
     from tutela2 import preferencias
@@ -358,6 +365,7 @@ def estado_servidor() -> dict[str, Any]:
         "modelo": preferencias.modelo_activo(efectivas),
         "modelos": list(cfgmod.modelos_permitidos()),
         "modelos_gemini": list(cfgmod.modelos_permitidos("gemini")),
+        "festivos": _festivos_cercanos(),
     }
 
 
@@ -456,18 +464,21 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
     caso_dir = _dir_caso(caso_id)
     if body.cmd == "decidir" and not body.decision:
         raise HTTPException(422, "Falta la decisión.")
-    if body.cmd == "decidir" and body.decision.get("accion") == "decidir":
-        bloqueo = _bloqueo_apoderados(caso_dir)
-        if bloqueo:
-            raise HTTPException(409, bloqueo)
     from collections import deque
 
-    from tutela2 import eventos
+    from tutela2 import ediciones, eventos
 
     job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": deque(maxlen=200), "resultado": None, "error": None}
     with _LOCK:
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
+        if body.cmd == "decidir" and ediciones.hay_conflictos(caso_dir):
+            raise HTTPException(409, "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir.")
+        # Mismo orden que ``api.decidir`` y el Dock: primero los conflictos de edición, luego los apoderados.
+        if body.cmd == "decidir" and body.decision.get("accion") == "decidir":
+            bloqueo = _bloqueo_apoderados(caso_dir)
+            if bloqueo:
+                raise HTTPException(409, bloqueo)
         JOBS[job["id"]] = job
         eventos.crear(job["id"])
         for viejo in [i for i, j in JOBS.items() if j["estado"] != "corriendo"][:-50]:
@@ -548,6 +559,7 @@ for _modulo in (
     "rutas_ia",
     "rutas_dataset",
     "rutas_extension",
+    "rutas_ediciones",
     "rutas_apoderados",
     "rutas_ajustes_apoderados",
     "rutas_expediente",

@@ -12,6 +12,7 @@ export interface PropsDock {
   puedeCorregir: boolean;
   motivoNoCorregir: string | null;
   alCorregir: () => void;
+  conflictos?: number;
 }
 
 type Tono = "alerta" | "ok" | "info";
@@ -26,8 +27,15 @@ function Icono({ tono }: { tono: Tono }) {
   );
 }
 
-function mensaje({ pendientes, revisados, total, enCurso, bloqueo, alertas = "listo" }: PropsDock): { tono: Tono; titulo: string; linea: string } {
+const MOTIVO_CONFLICTOS = "Resuelva los conflictos de edición antes de seguir.";
+
+// Los conflictos de edición van antes que la compuerta de apoderados: bloquean también «Pedir correcciones»
+// y el servidor los rechaza primero.
+function mensaje({ pendientes, revisados, total, enCurso, bloqueo, alertas = "listo", conflictos = 0 }: PropsDock): { tono: Tono; titulo: string; linea: string } {
   if (enCurso) return { tono: "info", titulo: "Hay una redacción en curso", linea: "Podrá decidir cuando termine." };
+  if (conflictos > 0) {
+    return { tono: "alerta", titulo: conflictos === 1 ? "Hay 1 conflicto de edición" : `Hay ${conflictos} conflictos de edición`, linea: MOTIVO_CONFLICTOS };
+  }
   if (bloqueo) return { tono: "alerta", titulo: "Revise los apoderados no verificados", linea: bloqueo };
   if (total === 0 && alertas === "cargando") return { tono: "info", titulo: "Comprobando el borrador", linea: "Leyendo las alertas del caso." };
   if (total === 0 && alertas === "fallo") {
@@ -45,8 +53,9 @@ function mensaje({ pendientes, revisados, total, enCurso, bloqueo, alertas = "li
 }
 
 export function Dock(props: PropsDock) {
-  const { enCurso, bloqueo, hrefDecision, puedeCorregir, motivoNoCorregir, alCorregir } = props;
+  const { enCurso, bloqueo, hrefDecision, puedeCorregir, motivoNoCorregir, alCorregir, conflictos = 0 } = props;
   const { tono, titulo, linea } = mensaje(props);
+  const bloqueado = conflictos > 0 && !enCurso;
   return (
     <div class="bor-dock">
       <div class="bor-dock-fila">
@@ -54,14 +63,14 @@ export function Dock(props: PropsDock) {
           <Icono tono={tono} />
           <div>
             <b>{titulo}</b>
-            <span id="bor-dock-linea">{motivoNoCorregir && !enCurso && !bloqueo ? motivoNoCorregir : linea}</span>
+            <span id="bor-dock-linea">{motivoNoCorregir && !enCurso && !bloqueado && !bloqueo ? motivoNoCorregir : linea}</span>
           </div>
         </div>
         <div class="bor-dock-acciones">
-          <Boton onClick={alCorregir} disabled={!puedeCorregir}>
+          <Boton onClick={alCorregir} disabled={!puedeCorregir || bloqueado} aria-describedby={bloqueado ? "bor-dock-linea" : undefined}>
             Pedir correcciones
           </Boton>
-          <Boton variante="sello" grande href={hrefDecision} disabled={enCurso || Boolean(bloqueo)} aria-describedby={bloqueo ? "bor-dock-linea" : undefined}>
+          <Boton variante="sello" grande href={hrefDecision} disabled={enCurso || bloqueado || Boolean(bloqueo)} aria-describedby={bloqueado || bloqueo ? "bor-dock-linea" : undefined}>
             Pasar a la decisión
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" />

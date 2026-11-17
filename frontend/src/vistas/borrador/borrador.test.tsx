@@ -2,18 +2,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApoderadosRespuesta, ApoderadoVista } from "../../api/contrato";
+import type { ApoderadosRespuesta, ApoderadoVista, ConflictoEdicion, EdicionesRespuesta } from "../../api/contrato";
 import { jobActual, toasts } from "../../estado";
 import { conRevision } from "./apoderados";
 import { claveRevisados } from "./datos";
 import Borrador from "./index";
-import { APODERADOS_BORRADOR, CASO_MOCK_BORRADOR, ESTADO_BORRADOR, paginaMock, VISTA_BORRADOR } from "./mock";
+import { APODERADOS_BORRADOR, CASO_MOCK_BORRADOR, crearEdicionesMock, ESTADO_BORRADOR, paginaMock, VISTA_BORRADOR } from "./mock";
 import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const CASO = CASO_MOCK_BORRADOR;
 
 interface Respuestas {
-  vista?: unknown | number;
+  vista?: unknown | number | (() => unknown);
   estado?: unknown | number;
   run?: unknown | number;
   apoderados?: unknown | number;
@@ -22,6 +22,8 @@ interface Respuestas {
   ajuste?: (cuerpo: Record<string, unknown>, url: string) => unknown;
   consultar?: (cuerpo: Record<string, unknown>) => unknown;
   identificar?: () => unknown;
+  ediciones?: unknown | number | (() => unknown);
+  editar?: (cuerpo: unknown, url: string) => unknown;
 }
 
 const SIN_IDENTIFICACION: ApoderadosRespuesta = {
@@ -64,13 +66,17 @@ function simularRed({
   ajuste,
   consultar,
   identificar,
+  ediciones = 404,
+  editar,
 }: Respuestas = {}) {
   const llamadas: { url: string; metodo: string; cuerpo: unknown }[] = [];
   const falso = vi.fn(async (url: string, init?: RequestInit) => {
     const metodo = init?.method ?? "GET";
     const cuerpo: unknown = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
     llamadas.push({ url, metodo, cuerpo });
-    if (url.endsWith("/vista/borrador")) return responder(vista);
+    if (url.endsWith("/vista/borrador")) return responder(typeof vista === "function" ? vista() : vista);
+    if (metodo === "GET" && url.endsWith("/ediciones")) return responder(typeof ediciones === "function" ? ediciones() : ediciones);
+    if (metodo === "PUT" && /\/ediciones\/[^/]+$/.test(url) && editar) return responder(editar(cuerpo, url));
     if (url.endsWith("/estado")) return responder(estado);
     if (url.endsWith("/run")) return responder(run);
     if (url.endsWith("/apoderados")) return responder(apoderados);
@@ -113,7 +119,7 @@ const conBitacora = (bitacora: LlamadaBitacora[] | null): EstadoCaso => {
 
 const seccionRedaccion = () => screen.getByRole("heading", { name: "Quién redactó" }).closest("section") as HTMLElement;
 
-const CLAVE = claveRevisados(CASO, VISTA_BORRADOR.sha256);
+const CLAVE = claveRevisados(CASO);
 
 async function abrir() {
   const vista = render(<Borrador caso={CASO} />);
@@ -414,14 +420,14 @@ describe("Revisión y panel", () => {
     expect(screen.getByText("Quedan 6 puntos por revisar")).toBeTruthy();
     expect(screen.getByText("Lleva 1 de 7. No bloquean la decisión.")).toBeTruthy();
     expect(within(panel()).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
-    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual(["cita-c3"]);
+    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual(["cita-c3-rechazada-sentencia T-999 de 2019"]);
     fireEvent.click(marca);
     expect(marca.getAttribute("aria-pressed")).toBe("false");
     expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual([]);
   });
 
-  it("recupera lo revisado al volver y lo reinicia si el borrador cambió", async () => {
-    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3", "cita-c2"]));
+  it("recupera lo revisado al volver y lo conserva si el borrador cambió por una edición", async () => {
+    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3-rechazada-sentencia T-999 de 2019", "cita-c2-revisar-sentencia SU-508 de 2020"]));
     simularRed();
     const primera = await abrir();
     expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("true");
@@ -433,8 +439,16 @@ describe("Revisión y panel", () => {
     otra.sha256 = "1".repeat(64);
     simularRed({ vista: otra });
     await abrir();
+    expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Quedan 5 puntos por revisar")).toBeTruthy();
+  });
+
+  it("lo revisado de una cita deja de valer si cambia su estado", async () => {
+    localStorage.setItem(CLAVE, JSON.stringify(["cita-c3-revisar-sentencia T-999 de 2019", "cita-c2-revisar-sentencia SU-508 de 2020"]));
+    simularRed();
+    await abrir();
     expect(marcaRevisado("Sentencia T-999 de 2019").getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText("Quedan 7 puntos por revisar")).toBeTruthy();
+    expect(marcaRevisado("Sentencia SU-508 de 2020").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("revisar todo lo pendiente deja la barra lista para pasar a la decisión", async () => {
@@ -873,7 +887,7 @@ describe("Apoderados en el borrador", () => {
     expect(within(grupo).getByText(texto)).toBeTruthy();
     expect(within(grupo).getByText("Apoderados")).toBeTruthy();
     fireEvent.click(within(grupo).getByRole("button", { name: /^Revisado: En 1a-011/ }));
-    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual([expect.stringMatching(/^alerta-apoderados-\d+$/)]);
+    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual([`alerta-apoderados-${alerta}`]);
   });
 
   it("un caso sin identificación no bloquea y la pestaña lo explica", async () => {
@@ -1273,6 +1287,106 @@ describe("Apoderados en el borrador", () => {
     const fuente = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8");
     expect(fuente).toContain('import("./VisorEvidencia")');
     expect(fuente).not.toMatch(/^import (?!type )[^;]*from "\.\/VisorEvidencia";/m);
+  });
+
+  it("el detalle del abogado y los diálogos de corregir y de conflictos viajan en chunks aparte", () => {
+    const fuente = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8");
+    for (const modulo of ["PopoverApoderado", "DialogoCorrecciones", "DialogoConflictos"]) {
+      expect(fuente).toContain(`import("./${modulo}")`);
+      expect(fuente).not.toMatch(new RegExp(`^import (?!type )[^;]*from "\\./${modulo}";`, "m"));
+    }
+  });
+
+  describe("con el modo de edición", () => {
+    const ID_VERDE = "ap-3f9c2a71d0";
+    const CONTESTO = /admitió la acción el quince/;
+    const unidadDe = (texto: RegExp) => within(hoja()).getByText(texto).closest<HTMLElement>(".bor-unidad") as HTMLElement;
+    const marcasDe = (raiz: HTMLElement) => [...raiz.querySelectorAll<HTMLElement>("[data-apoderado]")].map((m) => m.dataset["apoderado"]);
+    const pedirCorrecciones = () => screen.getByRole("button", { name: "Pedir correcciones" }) as HTMLButtonElement;
+
+    function conEdiciones(extra: Partial<EdicionesRespuesta> = {}) {
+      const mock = crearEdicionesMock();
+      return simularRed({
+        apoderados: APODERADOS_BORRADOR,
+        vista: () => mock.vista(),
+        ediciones: () => ({ ...mock.respuesta(), ...extra }),
+        editar: (cuerpo, url) => mock.editar({ metodo: "PUT", ruta: url, cuerpo }),
+      });
+    }
+
+    async function abrirEditando() {
+      await abrir();
+      fireEvent.click(await screen.findByRole("switch", { name: "Editar texto" }));
+      await screen.findAllByRole("button", { name: "Editar párrafo" });
+    }
+
+    it("pulsar o teclear sobre el nombre de un abogado abre su detalle y no el editor del párrafo", async () => {
+      conEdiciones();
+      await abrirEditando();
+      const nombre = await nombreEnTexto(/Andrea Paola Giraldo Montoya/);
+      fireEvent.click(nombre);
+      expect(await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBeTruthy();
+      expect(screen.queryByRole("textbox", { name: "Texto del párrafo" })).toBeNull();
+      expect(pestanaApoderados().getAttribute("aria-selected")).toBe("true");
+      fireEvent.click(nombre);
+      for (const key of ["Enter", " "]) {
+        fireEvent.keyDown(nombre, { key });
+        expect(await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBeTruthy();
+        expect(screen.queryByRole("textbox")).toBeNull();
+        fireEvent.click(nombre);
+        expect(screen.queryByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBeNull();
+      }
+    });
+
+    it("al guardar un párrafo con abogados, los nombres que siguen escritos vuelven a quedar marcados", async () => {
+      conEdiciones();
+      await abrirEditando();
+      await nombreEnTexto(/Carlos Eduardo Pineda Ruiz/);
+      const unidad = unidadDe(CONTESTO);
+      expect(marcasDe(unidad)).toEqual([ID_VERDE, ID_ROJO]);
+      fireEvent.click(within(unidad).getByRole("button", { name: "Editar párrafo" }));
+      const campo = (await screen.findByRole("textbox", { name: "Texto del párrafo" })) as HTMLTextAreaElement;
+      expect(campo.value).toContain("la doctora Andrea Paola Giraldo Montoya;");
+      const nuevo = campo.value
+        .replace("contestó el diecisiete (17) de septiembre siguiente", "contestó el 17 de septiembre")
+        .replace("intervino por medio del doctor Carlos Eduardo Pineda Ruiz, quien solicitó", "solicitó");
+      expect(nuevo).not.toContain("Pineda");
+      fireEvent.input(campo, { target: { value: nuevo } });
+      fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+      await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+      const editada = await waitFor(() => unidadDe(/contestó el 17 de septiembre/));
+      expect(within(editada).getByText("Editado")).toBeTruthy();
+      expect(marcasDe(editada)).toEqual([ID_VERDE]);
+      expect(marcasDe(hoja())).not.toContain(ID_ROJO);
+      const andrea = within(editada).getByRole("button", { name: /Andrea Paola Giraldo Montoya/ });
+      expect(andrea.classList.contains("verificada")).toBe(true);
+      fireEvent.click(andrea);
+      expect(await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBeTruthy();
+    });
+
+    it("con conflictos de edición, el Dock los pide resolver antes que revisar a los apoderados", async () => {
+      const conflicto: ConflictoEdicion = {
+        pieza: "apertura.antecedentes_hechos",
+        etiqueta: "Antecedentes: hechos",
+        huerfana: false,
+        trozos: [{ tipo: "conflicto", mio: ["Mi texto."], nuevo: ["Texto de la corrección."], mio_permitido: true }],
+      };
+      conEdiciones({ conflictos: [conflicto] });
+      await abrir();
+      expect(await screen.findByText("Hay 1 conflicto de edición")).toBeTruthy();
+      expect(screen.getByText("Resuelva los conflictos de edición antes de seguir.")).toBeTruthy();
+      expect(screen.queryByText("Revise los apoderados no verificados")).toBeNull();
+      expect(pasarADecision().getAttribute("aria-disabled")).toBe("true");
+      expect(pedirCorrecciones().disabled).toBe(true);
+    });
+
+    it("sin conflictos, el bloqueo de los apoderados solo desactiva «Pasar a la decisión»", async () => {
+      conEdiciones();
+      await abrir();
+      expect(await screen.findByText("Revise los apoderados no verificados")).toBeTruthy();
+      expect(pasarADecision().getAttribute("aria-disabled")).toBe("true");
+      await waitFor(() => expect(pedirCorrecciones().disabled).toBe(false));
+    });
   });
 });
 

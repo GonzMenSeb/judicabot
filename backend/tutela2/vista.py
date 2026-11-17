@@ -35,12 +35,18 @@ class Segmento(BaseModel):
     apoderado_id: str | SkipJsonSchema[None] = _opcional()
 
 
+class Fuente(BaseModel):
+    pieza: str
+    parrafo: int
+
+
 class Bloque(BaseModel):
     id: str
     tipo: TipoBloque
     origen: Literal["plantilla", "modelo"]
     seccion: str | None
     segmentos: list[Segmento]
+    fuente: Fuente | None = None
 
 
 class PaginaVista(BaseModel):
@@ -82,6 +88,7 @@ class Registro:
     def __init__(self) -> None:
         self.tipo = "parrafo"
         self.origen = "plantilla"
+        self.fuente: dict | None = None
         self.cita: str | None = None
         self.spans: list[tuple[int, int, str]] = []
         self.seccion: str | None = None
@@ -89,8 +96,9 @@ class Registro:
         self.parrafos: dict[Any, dict] = {}
 
     @contextmanager
-    def como(self, tipo=_SIN_CONTEXTO, *, origen=_SIN_CONTEXTO, cita=_SIN_CONTEXTO, spans=_SIN_CONTEXTO):
-        cambios = {k: v for k, v in (("tipo", tipo), ("origen", origen), ("cita", cita), ("spans", spans)) if v is not _SIN_CONTEXTO}
+    def como(self, tipo=_SIN_CONTEXTO, *, origen=_SIN_CONTEXTO, cita=_SIN_CONTEXTO, spans=_SIN_CONTEXTO, fuente=_SIN_CONTEXTO):
+        campos = (("tipo", tipo), ("origen", origen), ("cita", cita), ("spans", spans), ("fuente", fuente))
+        cambios = {k: v for k, v in campos if v is not _SIN_CONTEXTO}
         previo = {k: getattr(self, k) for k in cambios}
         for k, v in cambios.items():
             setattr(self, k, v)
@@ -114,6 +122,7 @@ class Registro:
             entrada = self.parrafos[elemento] = {
                 "tipo": self.tipo,
                 "origen": self.origen,
+                "fuente": self.fuente,
                 "seccion": self.seccion,
                 "cita": self.cita,
                 "spans": self.spans,
@@ -191,7 +200,7 @@ def bloques_cuerpo(registro: Registro, doc) -> list[dict]:
                 meta = next((m for _, m in celdas if m is not None), None)
                 if meta is None or not any(s["texto"] for s, _ in celdas):
                     continue
-                crudos.append({**meta, "tipo": "tabla", "segmentos": [s for s, _ in celdas]})
+                crudos.append({**meta, "tipo": "tabla", "fuente": None, "segmentos": [s for s, _ in celdas]})
     contadores: dict[str | None, int] = {}
     bloques = []
     for b in crudos:
@@ -203,7 +212,14 @@ def bloques_cuerpo(registro: Registro, doc) -> list[dict]:
             contadores[seccion] = contadores.get(seccion, 0) + 1
             id_ = f"{seccion or 'encabezado'}-{contadores[seccion]}"
         bloques.append(
-            {"id": id_, "tipo": b["tipo"], "origen": b["origen"], "seccion": seccion, "segmentos": b["segmentos"]}
+            {
+                "id": id_,
+                "tipo": b["tipo"],
+                "origen": b["origen"],
+                "seccion": seccion,
+                "segmentos": b["segmentos"],
+                "fuente": b["fuente"],
+            }
         )
     return bloques
 
@@ -278,7 +294,14 @@ def armar(tipo: str, sha256: str, bloques: list[dict], pie: list[str], citas: li
     paginas = []
     for n, contenido in enumerate(paginar(bloques, gen), 1):
         pies = [
-            {"id": f"pie-{n}-{k}", "tipo": "pie", "origen": "plantilla", "seccion": None, "segmentos": [_seg(t)]}
+            {
+                "id": f"pie-{n}-{k}",
+                "tipo": "pie",
+                "origen": "plantilla",
+                "seccion": None,
+                "segmentos": [_seg(t)],
+                "fuente": None,
+            }
             for k, t in enumerate(pie, 1)
         ]
         paginas.append({"bloques": contenido + pies})

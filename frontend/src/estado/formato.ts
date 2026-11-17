@@ -20,6 +20,22 @@ export function fechaRelativa(iso: string, ahora: number = Date.now()): string {
   return formato.format(fecha);
 }
 
+const MESES_CORTOS = ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "ago.", "sep.", "oct.", "nov.", "dic."];
+const dos = (n: number) => String(n).padStart(2, "0");
+
+/** Día local de la fecha como "AAAA-MM-DD" (no UTC: en Colombia las 8 p. m. siguen siendo el mismo día). */
+export function diaIso(d: Date): string {
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`;
+}
+
+/** "19 oct." para un día "AAAA-MM-DD" (sin desfase de zona) o una marca de tiempo ISO (en hora local); "" si no es fecha. */
+export function fechaCorta(iso: string): string {
+  const dia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const fecha = dia ? new Date(Number(dia[1]), Number(dia[2]) - 1, Number(dia[3])) : new Date(iso);
+  if (!iso || Number.isNaN(fecha.getTime())) return "";
+  return `${fecha.getDate()} ${MESES_CORTOS[fecha.getMonth()]}`;
+}
+
 function pluralAutomatico(palabra: string): string {
   if (/ión$/.test(palabra)) return `${palabra.slice(0, -3)}iones`;
   if (/z$/.test(palabra)) return `${palabra.slice(0, -1)}ces`;
@@ -33,6 +49,17 @@ export function pluralizar(n: number, singular: string, plural: string = pluralA
 
 export function plural(n: number, singular: string, pluralForma?: string): string {
   return `${n} ${pluralizar(n, singular, pluralForma)}`;
+}
+
+/**
+ * Los días que faltan para un término, en su unidad, con el mismo texto en la lista y en Documentos: "Faltan 3 días
+ * hábiles", "Falta 1 día calendario", "Vence hoy" o "Venció hace 2 días hábiles". n es dias_restantes (0 = vence hoy).
+ */
+export function textoDiasRestantes(n: number, unidad: "habiles" | "calendario"): string {
+  const [uno, varios] = unidad === "calendario" ? ["día calendario", "días calendario"] : ["día hábil", "días hábiles"];
+  if (n === 0) return "Vence hoy";
+  if (n < 0) return `Venció hace ${plural(-n, uno, varios)}`;
+  return `${n === 1 ? "Falta" : "Faltan"} ${plural(n, uno, varios)}`;
 }
 
 export function porcentaje(fraccion: number | null | undefined, decimales = 0): string {
