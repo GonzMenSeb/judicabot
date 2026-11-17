@@ -22,6 +22,27 @@ siguiente_paso: texto fijo por estado (SIGUIENTE_PASO).
 n_alertas: len(alertas) si es lista (ingesta) o la suma de los largos si es dict (grafo).
 radicado: cui_2a o, si falta, cui_1a de los metadatos. nombre: contenido de <caso>/.nombre o, si no
 existe, el id. actualizado: la mayor mtime de los archivos de la firma, en ISO 8601 UTC.
+
+proceso: tipo de proceso del caso; hoy siempre "segunda" (segunda instancia de tutela).
+segunda: datos propios de la segunda instancia para filtrar la lista (ver resumen_segunda.datos): decisión del
+a quo, impugnante, resultado y sustitutiva de la decisión, derechos, pruebas nuevas, citas por revisar y
+discrepancia con Jev. Es None solo si el estado no se pudo leer (respuesta ilegible o resumen_de_error); en
+cualquier otro caso trae todas las claves, con None o [] donde falta el dato. n_citas_revisar y jev_discrepa
+solo se informan mientras el caso espera la decisión; con_job (estado corriendo) los vuelve a poner en None.
+
+creado, termino: de <caso>/.datos_caso.json (ver tutela2.termino). creado es el instante de creación del caso o
+None si es anterior a ese archivo. termino es el término para fallar efectivo, {inicio, dias, unidad}: el guardado
+o, si no lo hay, el propuesto desde la fecha de reparto (override de auto.json o acta de reparto) con 20 días
+hábiles; None si no hay término ni fecha de reparto. Los hechos cacheados dependen de caso.json, auto.json y
+.datos_caso.json, que por eso se rastrean.
+
+vence, dias_restantes: el plazo del término respecto de hoy (termino.plazo). Dependen de la fecha, así que nunca se
+cachean: _completo los calcula en cada lectura con termino.hoy(), y por ello todo resumen que sale de aquí
+(leer, actualizar, resumen_de_error y, a partir de ellos, con_job) los trae al día. Son None si el caso terminó o no
+hay término.
+
+VERSION 3: el resumen cacheado trae además creado y termino. Un caché de otra versión, o con otras claves, se
+descarta en _leer_cache y se reconstruye al leerlo o, al arrancar, en calentar.
 """
 
 from __future__ import annotations
@@ -36,12 +57,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from tutela2 import resumen_segunda
+from tutela2 import termino as plazos
+
 log = logging.getLogger("tutela2.resumen_caso")
 
 ARCHIVO = ".resumen.json"
 NOMBRE = ".nombre"
-VERSION = 1
-RASTREADOS = ("caso.json", "hilo.sqlite", "hilo.sqlite-wal", "decision.json", "config.json", "salidas", "insumos")
+VERSION = 3
+PROCESO = "segunda"
+RASTREADOS = (
+    "caso.json", "hilo.sqlite", "hilo.sqlite-wal", "decision.json", "config.json", "salidas", "insumos",
+    plazos.AUTO, plazos.ARCHIVO,
+)
 
 ESTADOS = ("sin_iniciar", "revision", "incompleto", "esperando_decision", "terminado", "error")
 SIGUIENTE_PASO = {
@@ -58,17 +86,17 @@ ETAPA_POR_ESTADO = {"sin_iniciar": 0, "incompleto": 0, "revision": 0, "esperando
 CLAVES = frozenset(
     {
         "nombre", "radicado", "accionante", "accionadas", "juzgado_a_quo", "estado", "etapa",
-        "siguiente_paso", "n_alertas", "n_insumos", "actualizado",
+        "siguiente_paso", "n_alertas", "n_insumos", "actualizado", "proceso", "segunda", "creado", "termino",
     }
 )
 
 
 def firma(caso_dir: Path) -> list[int | None]:
-    base = os.fspath(caso_dir)
+    prefijo = os.fspath(caso_dir) + os.sep
     resultado: list[int | None] = []
     for nombre in RASTREADOS:
         try:
-            resultado.append(os.stat(os.path.join(base, nombre)).st_mtime_ns)
+            resultado.append(os.stat(prefijo + nombre).st_mtime_ns)
         except OSError:
             resultado.append(None)
     return resultado
@@ -121,6 +149,7 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
             etapa, siguiente = 0, SIGUIENTE_PASO["error"]
     else:
         etapa, siguiente = ETAPA_POR_ESTADO[estado], SIGUIENTE_PASO[estado]
+    sin_datos = estado == "error" and not resumen
     return {
         "radicado": meta.get("cui_2a") or meta.get("cui_1a") or None,
         "accionante": meta.get("accionante") or None,
@@ -130,6 +159,8 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
         "etapa": etapa,
         "siguiente_paso": siguiente,
         "n_alertas": _n_alertas(resumen.get("alertas")),
+        "proceso": PROCESO,
+        "segunda": None if sin_datos else resumen_segunda.datos(estado, resumen),
     }
 
 
@@ -143,18 +174,22 @@ def _leer_estado(caso_dir: Path) -> dict[str, Any] | None:
 
 def construir(caso_dir: Path) -> tuple[list[int | None], dict[str, Any]]:
     sig = firma(caso_dir)
+    respuesta = _leer_estado(caso_dir)
     datos = {
         "nombre": _nombre(caso_dir),
-        **campos_desde_estado(_leer_estado(caso_dir)),
+        **campos_desde_estado(respuesta),
         "n_insumos": _contar_insumos(caso_dir),
         "actualizado": _actualizado(sig, caso_dir),
+        "creado": plazos.leer(caso_dir)["creado"],
+        "termino": plazos.efectivo(caso_dir, respuesta)[0],
     }
     return sig, datos
 
 
 def _leer_cache(caso_dir: Path) -> dict[str, Any] | None:
     try:
-        doc = json.loads((caso_dir / ARCHIVO).read_text(encoding="utf-8"))
+        with open(os.fspath(caso_dir) + os.sep + ARCHIVO, encoding="utf-8") as f:
+            doc = json.load(f)
         valido = doc["v"] == VERSION and isinstance(doc["firma"], list) and set(doc["datos"]) == CLAVES
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -172,7 +207,8 @@ def _escribir(caso_dir: Path, documento: dict[str, Any]) -> None:
 
 
 def _completo(caso_dir: Path, datos: dict[str, Any]) -> dict[str, Any]:
-    return {"id": caso_dir.name, **datos, "job_activo": None}
+    plazo = plazos.plazo(datos.get("termino"), datos.get("estado"), plazos.hoy()) or {"vence": None, "dias_restantes": None}
+    return {"id": caso_dir.name, **datos, **plazo, "job_activo": None}
 
 
 def actualizar(caso_dir: Path) -> dict[str, Any]:
@@ -207,9 +243,16 @@ def _etapa_corriendo(cmd: str, etapa_cache: int, caso_dir: Path) -> int:
     return etapa_cache
 
 
+def _sin_pendientes_de_decision(segunda: Any) -> Any:
+    if not isinstance(segunda, dict):
+        return segunda
+    return {**segunda, "n_citas_revisar": None, "jev_discrepa": None}
+
+
 def con_job(resumen: dict[str, Any], job_id: str, cmd: str, caso_dir: Path) -> dict[str, Any]:
     return {
         **resumen,
+        "segunda": _sin_pendientes_de_decision(resumen.get("segunda")),
         "estado": "corriendo",
         "etapa": _etapa_corriendo(cmd, resumen["etapa"], Path(caso_dir)),
         "siguiente_paso": SIGUIENTE_PASO["corriendo"],
@@ -224,8 +267,11 @@ def resumen_de_error(caso_dir: Path) -> dict[str, Any]:
         {
             "nombre": caso_dir.name,
             **campos_desde_estado(None),
+            "segunda": None,
             "n_insumos": 0,
             "actualizado": _actualizado([], caso_dir),
+            "creado": plazos.leer(caso_dir)["creado"],
+            "termino": plazos.efectivo(caso_dir, None)[0],
         },
     )
 

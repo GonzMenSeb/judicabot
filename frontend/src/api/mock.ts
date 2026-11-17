@@ -1,3 +1,5 @@
+import { FESTIVOS_MOCK } from "./festivos.mock";
+
 export type Metodo = "GET" | "POST" | "PUT" | "DELETE";
 
 export interface PeticionMock {
@@ -51,6 +53,7 @@ agregarMocks([
       modelo: "claude-sonnet-5-5",
       modelos: ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"],
       modelos_gemini: ["gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"],
+      festivos: FESTIVOS_MOCK,
     },
   },
 ]);

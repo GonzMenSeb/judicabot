@@ -1,15 +1,20 @@
 .fichas { display: grid; gap: 0.6rem; }
-.ficha { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 15rem 11.5rem; gap: 1.75rem; align-items: center; padding: 1rem 1.25rem 1rem 1.4rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; }
+.ficha { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 14rem 12rem; gap: 1.5rem; align-items: center; padding: 0.95rem 1.2rem 0.95rem 1.35rem; background: #fff; border: 1px solid var(--linea); border-radius: 12px; }
 .ficha::before { content: ""; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 4px; border-radius: 0 3px 3px 0; background: var(--acento); }
 .ficha.sello::before { background: var(--sello); }
 .ficha.alerta::before { background: #d19a2c; }
 .ficha.ok::before { background: var(--ok); }
+.ficha.trabajando::before { background: #7fa9b8; }
 .ficha .datos { min-width: 0; }
 .ficha .datos > :is(h3, h4) { margin: 0; font-size: 1.02rem; font-weight: 600; overflow-wrap: anywhere; }
+.ceja { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.15rem; color: var(--acento); font-size: 0.78rem; font-weight: 600; }
+.ceja svg { width: 15px; height: 15px; }
 .ficha .meta { display: flex; gap: 0.1rem 1.2rem; margin-top: 0.15rem; font-size: 0.88rem; color: var(--suave); min-width: 0; }
 .ficha .meta span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ficha .meta .radicado { flex: none; }
 .ficha .partes { margin-top: 0.1rem; overflow: hidden; font-size: 0.88rem; color: var(--suave); text-overflow: ellipsis; white-space: nowrap; }
+.extras { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
+.dato.eco { background: #e2f0f4; color: var(--acento-2); box-shadow: inset 0 0 0 1px var(--acento); font-weight: 600; }
 .ficha .avance { display: grid; gap: 0.35rem; }
 .seg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
 .seg4 i { height: 5px; border-radius: 3px; background: var(--fondo-2); }
@@ -20,18 +25,43 @@
 .ficha.trabajando .seg4 i.a { background: linear-gradient(90deg, var(--acento-fondo), var(--acento), var(--acento-fondo)); background-size: 200% 100%; opacity: 1; animation: barrido 1.6s linear infinite; }
 @keyframes barrido { from { background-position: 200% 0; } to { background-position: 0 0; } }
 .ficha .siguiente { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
-.ficha .siguiente small { font-size: 0.86rem; color: var(--suave); }
-.ficha.sello .siguiente small { color: var(--sello); font-weight: 500; }
-.ficha.alerta .siguiente small { color: var(--alerta); font-weight: 500; }
-.ficha .accion { display: grid; justify-items: end; gap: 0.25rem; }
-.ficha .accion small { color: var(--suave); font-size: 0.82rem; }
-.ficha.compacta { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+.ficha .siguiente small, .c-sig { font-size: 0.86rem; color: var(--suave); }
+:is(.ficha, .fila-c).sello :is(.siguiente small, .c-sig) { color: var(--sello); font-weight: 500; }
+:is(.ficha, .fila-c).alerta :is(.siguiente small, .c-sig) { color: var(--alerta); font-weight: 500; }
+.ficha .accion { display: grid; justify-items: end; gap: 0.25rem; min-width: 0; }
+.ficha .accion .btn { max-width: 100%; white-space: normal; text-align: center; }
+:is(.ficha .accion, .fila-c) small { color: var(--suave); font-size: 0.82rem; }
+
+.fichas.compacta { gap: 0; overflow: hidden; border: 1px solid var(--linea); border-radius: 12px; background: #fff; }
+.fila-c { display: grid; grid-template-columns: 0.55rem minmax(0, 2fr) minmax(0, 1.2fr) 16rem 5.5rem 10rem; gap: 1rem; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid #e3e8ea; }
+.fila-c:first-child { border-top: 0; }
+.fila-c:hover { background: #f7f9fa; }
+.punto-estado { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--c, var(--acento)); }
+.c-nombre { min-width: 0; }
+.fila-c :is(h3, h4), .fila-c small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila-c :is(h3, h4) { margin: 0; font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+.c-nombre small { display: block; }
+.c-marcas { display: flex; flex-wrap: wrap; gap: 0.25rem 0.3rem; min-width: 0; }
+.c-marcas .dato { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.c-cuando { text-align: right; }
+.fila-c .btn { justify-self: end; }
+.btn.chico { padding: 0.32rem 0.8rem; font-size: 0.86rem; }
+.e-decidir { --c: var(--sello); }
+.e-faltan { --c: #d19a2c; }
+.e-error { --c: var(--mal); }
+.e-redaccion { --c: #7fa9b8; }
+.e-terminado { --c: var(--ok); }
 
 @media (max-width: 960px) {
   .ficha { grid-template-columns: 1fr; gap: 0.7rem; }
-  .ficha .accion { justify-items: start; }
+  .ficha .accion { grid-auto-flow: column; align-items: center; justify-content: start; gap: 0.8rem; }
   .ficha .meta { flex-wrap: wrap; }
   .ficha .meta span, .ficha .partes { overflow: visible; white-space: normal; }
+  .fila-c { grid-template-columns: 0.55rem minmax(0, 1fr) auto; row-gap: 0.3rem; }
+  .fila-c > :nth-child(n + 3):not(.btn) { grid-column: 2 / -1; }
+  .fila-c > div:empty { display: none; }
+  .fila-c .c-cuando { text-align: left; }
+  .fila-c .btn { grid-column: 3; grid-row: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ficha.trabajando .seg4 i.a { animation: none; }

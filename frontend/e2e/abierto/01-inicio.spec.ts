@@ -11,7 +11,7 @@ test("inicio: tres procesos inactivos y uno activo", async ({ page }) => {
   }
   const segunda = page.getByRole("link", { name: "Fallo de tutela de segunda instancia" });
   await expect(segunda).toHaveCount(1);
-  await expect(page.getByRole("region", { name: "Para continuar" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Mi trabajo" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Configuración, falta la clave" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Formato de documentos" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Inteligencia artificial/ })).toHaveCount(0);

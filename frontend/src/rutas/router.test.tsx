@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/preact";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Rutas } from "./Rutas";
-import { coincidir, configuracion, hashDe, navegar, navegarDirecto, protegerSalida, ruta, sincronizar } from "./router";
+import { coincidir, configuracion, consulta, hashActual, hashDe, navegar, navegarDirecto, protegerSalida, reemplazarConsulta, ruta, separar, sincronizar } from "./router";
 
 vi.mock("../vistas/inicio", () => ({ default: () => <div data-vista="inicio"><h1>Inicio</h1></div> }));
 vi.mock("../vistas/decision", () => ({ default: ({ caso }: { caso?: string }) => <div data-vista="decision"><h1>Decisión</h1><p>{caso}</p></div> }));
@@ -195,5 +195,110 @@ describe("guardias de salida", () => {
     await cambio;
     expect(ruta.value).toEqual({ vista: "casos", params: {} });
     expect(pedidos).toHaveLength(1);
+  });
+});
+
+describe("consulta en el hash", () => {
+  beforeEach(() => {
+    history.replaceState(null, "", "/");
+    ruta.value = coincidir("");
+    configuracion.value = null;
+    consulta.value = "";
+  });
+
+  it("separar parte en el primer signo de interrogación", () => {
+    expect(separar("#/segunda")).toEqual(["#/segunda", ""]);
+    expect(separar("#/segunda?e=decidir")).toEqual(["#/segunda", "e=decidir"]);
+    expect(separar("#/?q=a?b&o=x")).toEqual(["#/", "q=a?b&o=x"]);
+    expect(separar("")).toEqual(["", ""]);
+  });
+
+  it("coincidir ignora la consulta", () => {
+    expect(coincidir("#/segunda?e=decidir")).toEqual({ vista: "casos", params: {} });
+    expect(coincidir("#/?e=x")).toEqual({ vista: "inicio", params: {} });
+    expect(coincidir("#/segunda/c1/fallo?x=1")).toEqual({ vista: "fallo", params: { caso: "c1" } });
+    expect(coincidir("#/configuracion/ia?e=x")).toEqual({ vista: "inicio", params: {}, configuracion: "ia" });
+  });
+
+  it("consulta sigue al hash y no cambia la ruta si solo cambia la consulta", async () => {
+    await irA("#/segunda?e=decidir");
+    expect(ruta.value).toEqual({ vista: "casos", params: {} });
+    expect(consulta.value).toBe("e=decidir");
+    const vista = ruta.value;
+
+    await irA("#/segunda?e=error&o=vence");
+    expect(consulta.value).toBe("e=error&o=vence");
+    expect(ruta.value).toBe(vista);
+
+    await irA("#/segunda");
+    expect(consulta.value).toBe("");
+  });
+
+  it("reemplazarConsulta no agrega entradas al historial ni vuelve a montar la vista", async () => {
+    await irA("#/segunda/c1/decision");
+    render(<Rutas />);
+    const titulo = await screen.findByRole("heading", { name: "Decisión" });
+    const antes = history.length;
+    let cambios = 0;
+    const contar = () => cambios++;
+    addEventListener("hashchange", contar);
+
+    act(() => reemplazarConsulta("e=decidir"));
+    await new Promise((r) => setTimeout(r, 20));
+    removeEventListener("hashchange", contar);
+
+    expect(location.hash).toBe("#/segunda/c1/decision?e=decidir");
+    expect(consulta.value).toBe("e=decidir");
+    expect(history.length).toBe(antes);
+    expect(cambios).toBe(0);
+    expect(screen.getByRole("heading", { name: "Decisión" })).toBe(titulo);
+
+    act(() => reemplazarConsulta(""));
+    expect(location.hash).toBe("#/segunda/c1/decision");
+    expect(history.length).toBe(antes);
+  });
+
+  it("hashActual une la página y la consulta", async () => {
+    expect(hashActual()).toBe("#/");
+    await irA("#/segunda");
+    reemplazarConsulta("e=decidir");
+    expect(hashActual()).toBe("#/segunda?e=decidir");
+    reemplazarConsulta("");
+    expect(hashActual()).toBe("#/segunda");
+  });
+
+  it("la consulta sobrevive al abrir y cerrar la configuración desde un enlace", async () => {
+    await irA("#/segunda?e=decidir");
+    await irA("#/configuracion/ia");
+    expect(configuracion.value).toBe("ia");
+    expect(consulta.value).toBe("e=decidir");
+    expect(hashActual()).toBe("#/segunda?e=decidir");
+
+    const entradas = history.length;
+    navegarDirecto(hashActual());
+    await vi.waitFor(() => expect(configuracion.value).toBeNull());
+    expect(location.hash).toBe("#/segunda?e=decidir");
+    expect(consulta.value).toBe("e=decidir");
+    expect(history.length).toBe(entradas);
+  });
+
+  it("la consulta sobrevive a cerrar la configuración abierta por enlace directo", () => {
+    history.replaceState({ panel: { profundidad: 0, desdePagina: false } }, "", "#/configuracion/ia");
+    sincronizar();
+    expect(configuracion.value).toBe("ia");
+    reemplazarConsulta("e=decidir");
+    expect(location.hash).toBe("#/configuracion/ia");
+    navegarDirecto(hashActual());
+    expect(configuracion.value).toBeNull();
+    expect(location.hash).toBe("#/?e=decidir");
+    expect(consulta.value).toBe("e=decidir");
+  });
+
+  it("con la configuración abierta, navegar a otra página recuerda la consulta de su destino", async () => {
+    await irA("#/segunda?e=decidir");
+    await irA("#/configuracion/ia");
+    navegar("#/segunda/c1/documentos?x=1");
+    expect(location.hash).toBe("#/configuracion/ia");
+    expect(hashActual()).toBe("#/segunda/c1/documentos?x=1");
   });
 });

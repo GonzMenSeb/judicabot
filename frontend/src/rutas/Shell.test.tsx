@@ -28,7 +28,7 @@ function Montaje() {
   );
 }
 
-const SERVIDOR = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+const SERVIDOR = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [], festivos: [] };
 
 beforeEach(() => {
   vi.stubGlobal(

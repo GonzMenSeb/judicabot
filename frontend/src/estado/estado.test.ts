@@ -94,7 +94,7 @@ describe("estadoServidor", () => {
   });
 
   it("carga una sola vez y permite forzar", async () => {
-    const cuerpo = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: ["claude-sonnet-5-5"], modelos_gemini: [] };
+    const cuerpo = { proveedor: "anthropic", api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: ["claude-sonnet-5-5"], modelos_gemini: [], festivos: [] };
     const falso = vi.fn(async () => new Response(JSON.stringify(cuerpo), { status: 200 }));
     vi.stubGlobal("fetch", falso);
     await Promise.all([cargarEstadoServidor(true), cargarEstadoServidor()]);
@@ -107,7 +107,7 @@ describe("estadoServidor", () => {
   });
 
   it("la clave activa es la del proveedor elegido", () => {
-    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [], festivos: [] };
     expect(claveActiva(base)).toBe(true);
     expect(claveActiva({ ...base, proveedor: "gemini" })).toBe(false);
     expect(claveActiva({ ...base, proveedor: "gemini", gemini_key: true, api_key: false })).toBe(true);
@@ -115,7 +115,7 @@ describe("estadoServidor", () => {
   });
 
   it("dentro de un caso manda el proveedor que resuelve la ejecución, no el del servidor", () => {
-    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [] };
+    const base = { proveedor: "anthropic" as const, api_key: true, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [], festivos: [] };
     expect(proveedorSinClave(base, "gemini")).toBe("gemini");
     expect(proveedorSinClave(base, "anthropic")).toBeNull();
     expect(proveedorSinClave(base, null)).toBeNull();
@@ -132,7 +132,7 @@ describe("estadoServidor", () => {
     await cargarEstadoServidor(true);
     expect(errorEstadoServidor.value).toBe(true);
     expect(estadoServidor.value).toBeNull();
-    const cuerpo = { proveedor: "gemini", api_key: false, gemini_key: true, jev_key: false, modelo: "gemini-4-argon", modelos: [], modelos_gemini: ["gemini-4-argon"] };
+    const cuerpo = { proveedor: "gemini", api_key: false, gemini_key: true, jev_key: false, modelo: "gemini-4-argon", modelos: [], modelos_gemini: ["gemini-4-argon"], festivos: [] };
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(cuerpo), { status: 200 })));
     await cargarEstadoServidor();
     expect(errorEstadoServidor.value).toBe(false);

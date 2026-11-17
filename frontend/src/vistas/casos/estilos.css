@@ -36,16 +36,6 @@
 .soltar-global div { padding: 2.5rem 3rem; border: 2.5px dashed rgba(255, 255, 255, 0.75); border-radius: 18px; text-align: center; }
 .soltar-global h2 { font-size: 1.6rem; font-weight: 600; }
 
-.herramientas { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; }
-.herramientas h2 { font-size: 1.25rem; font-weight: 600; }
-.buscar { position: relative; width: min(22rem, 100%); }
-.buscar svg { position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%); color: var(--tenue-deco); pointer-events: none; }
-.buscar input { padding-left: 2.2rem; }
-.grupo-casos { margin-bottom: 2rem; }
-.grupo-casos > h3 { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; font-size: 0.98rem; font-weight: 600; color: var(--suave); }
-.grupo-casos > h3 span { font-weight: 400; color: var(--suave); font-variant-numeric: tabular-nums; }
-.vacio-busqueda { padding: 2rem; border: 1px dashed var(--linea); border-radius: 12px; color: var(--suave); text-align: center; overflow-wrap: anywhere; }
-
 @media (max-width: 960px) {
   .nuevo-caso { grid-template-columns: 1fr; }
   .nuevo-caso .ilus { border-top: 1px solid var(--linea); border-left: 0; }

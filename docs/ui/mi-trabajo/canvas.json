@@ -1,0 +1,22 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-17T20:30:00Z" },
+  "title": "Mi trabajo — rediseño",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 1900, "title": "Inicio · Mi trabajo", "expand": "fill", "is_interactive": true },
+    "Segunda.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 2200, "title": "Proceso · Fallos de segunda instancia", "expand": "fill", "is_interactive": true },
+    "Lista.dc.html": { "x": 0, "y": 2850, "w": 1280, "h": 1700, "title": "Componente compartido · ListaTrabajo", "expand": "fill", "is_interactive": true },
+    "Facetas.dc.html": { "x": 1360, "y": 2850, "w": 1280, "h": 2700, "title": "Mapa de filtros por proceso" }
+  },
+  "order": ["Main.dc.html", "Segunda.dc.html", "Lista.dc.html", "Facetas.dc.html"],
+  "notes": {
+    "titulo1": { "x": 0, "y": -300, "text": "Mi trabajo: una lista, filtros por proceso", "kind": "title1", "maxW": 2640 },
+    "titulo2": { "x": 0, "y": 2540, "text": "Un solo componente y su mapa de filtros", "kind": "title1", "maxW": 2640 },
+    "nota1": { "x": 2720, "y": 0, "w": 380, "text": "Estado futuro: los cuatro procesos activos, con datos de ejemplo al 17 de noviembre de 2026.\n\nHoy solo existe 2ª instancia: mientras haya un único proceso con casos, las pestañas se ocultan y la lista funciona igual.\n\nPruebe: en Inicio toque la pestaña «2ª instancia». A la derecha de los filtros generales aparece el carril con sus filtros propios, y cada fila muestra sus datos; un dato resaltado explica por qué el caso coincide.\n\nOtros toques: un estado de la franja para ver solo ese, una baldosa de Plazos, la pastilla Trabajado (histograma por día) y la vista Compacta.", "fill": "teal" },
+    "nota2": { "x": 2720, "y": 760, "w": 380, "text": "La página del proceso monta el mismo componente con proceso=\"segunda\": sin pestañas, agrupado por estado (como hoy) y con el carril «Propios de 2ª instancia» siempre a la vista junto a los generales.\n\nEl resto de la página (encabezado y Nuevo caso) no cambia.", "fill": "gray" },
+    "nota3": { "x": 0, "y": 4600, "w": 600, "text": "El componente suelto: cambie «proceso» en Tweaks (todos, primera, segunda, desacato, penal) para ver los filtros propios de cada uno.", "fill": "gray" }
+  },
+  "designSystems": []
+}

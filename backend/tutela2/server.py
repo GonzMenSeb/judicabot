@@ -28,6 +28,7 @@ from starlette.types import Receive, Scope, Send
 
 from tutela2 import acceso
 from tutela2 import config as cfgmod
+from tutela2 import festivos, termino
 from tutela2.config import Config
 from tutela2.estaticos import SIN_GZIP, CabecerasEstaticas
 from tutela2.jev import clave_valida
@@ -94,6 +95,7 @@ class EstadoServidor(BaseModel):
     modelo: str
     modelos: list[str]
     modelos_gemini: list[str]
+    festivos: list[str]
 
 
 class JobInicio(BaseModel):
@@ -338,6 +340,11 @@ def proveedor_del_caso(caso_dir: Path) -> str | None:
     return preferencias.superponer(cfg, preferencias_efectivas()).llm.proveedor
 
 
+def _festivos_cercanos() -> list[str]:
+    anio = termino.hoy().year
+    return sorted(dia.isoformat() for a in (anio - 1, anio, anio + 1) for dia in festivos.festivos(a))
+
+
 @app.get("/api/estado-servidor", response_model=EstadoServidor)
 def estado_servidor() -> dict[str, Any]:
     from tutela2 import preferencias
@@ -351,6 +358,7 @@ def estado_servidor() -> dict[str, Any]:
         "modelo": preferencias.modelo_activo(efectivas),
         "modelos": list(cfgmod.modelos_permitidos()),
         "modelos_gemini": list(cfgmod.modelos_permitidos("gemini")),
+        "festivos": _festivos_cercanos(),
     }
 
 
