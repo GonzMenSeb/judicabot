@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { jobActual } from "../../estado";
+import type { ApoderadosRespuesta, ApoderadoVista } from "../../api/contrato";
+import { jobActual, toasts } from "../../estado";
+import { conRevision } from "./apoderados";
 import { claveRevisados } from "./datos";
 import Borrador from "./index";
-import { CASO_MOCK_BORRADOR, ESTADO_BORRADOR, VISTA_BORRADOR } from "./mock";
+import { APODERADOS_BORRADOR, CASO_MOCK_BORRADOR, ESTADO_BORRADOR, paginaMock, VISTA_BORRADOR } from "./mock";
 import type { EstadoCaso, LlamadaBitacora } from "./tipos";
 
 const CASO = CASO_MOCK_BORRADOR;
@@ -12,7 +16,23 @@ interface Respuestas {
   vista?: unknown | number;
   estado?: unknown | number;
   run?: unknown | number;
+  apoderados?: unknown | number;
+  revision?: (cuerpo: { revisado: boolean; nota: string }) => unknown;
+  subida?: (cuerpo: FormData) => unknown;
+  ajuste?: (cuerpo: Record<string, unknown>, url: string) => unknown;
+  consultar?: (cuerpo: Record<string, unknown>) => unknown;
+  identificar?: () => unknown;
 }
+
+const SIN_IDENTIFICACION: ApoderadosRespuesta = {
+  identificacion: "no_disponible",
+  apoderados: [],
+  sin_apoderado: [],
+  alertas: [],
+  consulta: { activa: false, extension: "no_conectada", modo: "extension", pausa_hasta: null },
+  bloquea_decision: false,
+  editable: true,
+};
 
 class Falla {
   constructor(
@@ -34,14 +54,33 @@ function responder(cuerpo: unknown | number): Response {
   return new Response(JSON.stringify(cuerpo), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-function simularRed({ vista = VISTA_BORRADOR, estado = ESTADO_BORRADOR, run = { job_id: "j-1" } }: Respuestas = {}) {
+function simularRed({
+  vista = VISTA_BORRADOR,
+  estado = ESTADO_BORRADOR,
+  run = { job_id: "j-1" },
+  apoderados = SIN_IDENTIFICACION,
+  revision,
+  subida,
+  ajuste,
+  consultar,
+  identificar,
+}: Respuestas = {}) {
   const llamadas: { url: string; metodo: string; cuerpo: unknown }[] = [];
   const falso = vi.fn(async (url: string, init?: RequestInit) => {
     const metodo = init?.method ?? "GET";
-    llamadas.push({ url, metodo, cuerpo: init?.body ? JSON.parse(String(init.body)) : undefined });
+    const cuerpo: unknown = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
+    llamadas.push({ url, metodo, cuerpo });
     if (url.endsWith("/vista/borrador")) return responder(vista);
     if (url.endsWith("/estado")) return responder(estado);
     if (url.endsWith("/run")) return responder(run);
+    if (url.endsWith("/apoderados")) return responder(apoderados);
+    if (metodo === "PUT" && url.endsWith("/revision") && revision) return responder(revision(cuerpo as { revisado: boolean; nota: string }));
+    if (metodo === "PUT" && url.endsWith("/certificado") && subida) return responder(subida(cuerpo as FormData));
+    if (metodo === "PUT" && url.endsWith("/ajustes") && ajuste) return responder(ajuste(cuerpo as Record<string, unknown>, url));
+    if (metodo === "POST" && url.endsWith("/apoderados/consultar") && consultar) return responder(consultar(cuerpo as Record<string, unknown>));
+    if (metodo === "POST" && url.endsWith("/apoderados/identificar") && identificar) return responder(identificar());
+    const pagina = /\/expediente\/([^/]+)\/paginas\/(\d+)$/.exec(url);
+    if (pagina) return responder(paginaMock(pagina[1] ?? "", Number(pagina[2])));
     return responder(404);
   });
   vi.stubGlobal("fetch", falso);
@@ -739,6 +778,501 @@ describe("Borrador interacción", () => {
     expect(screen.getByText("Comprobando el borrador")).toBeTruthy();
     liberar(responder(conEstado("esperando_decision", { resumen: { alertas: {}, jev_metadatos: null } })));
     expect(await screen.findByText("El borrador está listo para su decisión")).toBeTruthy();
+  });
+});
+
+describe("Apoderados en el borrador", () => {
+  const ID_ROJO = "ap-c47d19e6a8";
+  const ID_AMBAR = "ap-81be04c5f2";
+  const rojo = (): ApoderadoVista => structuredClone(APODERADOS_BORRADOR.apoderados.find((a) => a.id === ID_ROJO) as ApoderadoVista);
+  const pestanaApoderados = () => within(panel()).getByRole("tab", { name: /^Apoderados/ });
+  const pasarADecision = () => screen.getByText("Pasar a la decisión").closest("a") as HTMLElement;
+
+  it("un apoderado no verificado bloquea «Pasar a la decisión» hasta marcarlo revisado en el servidor", async () => {
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, revision: (c) => conRevision(rojo(), c.revisado) });
+    await abrir();
+    expect(await screen.findByText("Revise los apoderados no verificados")).toBeTruthy();
+    expect(screen.getByText(/^CARLOS EDUARDO PINEDA RUIZ no pudo verificarse\. Márquelo como revisado/)).toBeTruthy();
+    expect(pasarADecision().getAttribute("aria-disabled")).toBe("true");
+    expect(pasarADecision().hasAttribute("href")).toBe(false);
+    expect(within(panel()).getByRole("alert").textContent).toContain("Un apoderado no pudo verificarse.");
+    expect(resumenPanel()).toBe("Lleva 0 de 7 revisados.");
+
+    fireEvent.click(pestanaApoderados());
+    const marca = marcaRevisado("CARLOS EDUARDO PINEDA RUIZ");
+    marca.focus();
+    fireEvent.click(marca);
+    expect(marca.getAttribute("aria-pressed")).toBe("true");
+    const put = llamadas.find((l) => l.metodo === "PUT");
+    expect(put?.url).toBe(`/api/casos/${CASO}/apoderados/${ID_ROJO}/revision`);
+    expect(put?.cuerpo).toEqual({ revisado: true, nota: "", huella: rojo().huella });
+    expect((await screen.findByRole("link", { name: "Pasar a la decisión" })).getAttribute("href")).toBe(`#/segunda/${CASO}/decision`);
+    await waitFor(() => expect(within(panel()).queryByRole("alert")).toBeNull());
+    expect(document.activeElement).toBe(marca);
+    expect(localStorage.getItem(CLAVE)).toBeNull();
+  });
+
+  it("con nombres de abogados marcados, la barra del documento explica los tres trazos", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    const leyenda = await screen.findByRole("note", { name: "Leyenda de apoderados" });
+    expect(leyenda.closest(".bor-doc-barra")?.classList.contains("con-leyenda")).toBe(true);
+    expect([...leyenda.children].map((c) => c.textContent)).toEqual(["Abogado verificado", "Abogado por revisar", "Abogado no verificado"]);
+    expect([...leyenda.querySelectorAll(".bor-ley-m")].map((m) => m.className)).toEqual(["bor-ley-m v", "bor-ley-m a", "bor-ley-m m"]);
+  });
+
+  it("sin nombres marcados (no hay identificación, o el texto no nombra a ningún abogado) no hay leyenda", async () => {
+    simularRed();
+    await abrir();
+    await screen.findByRole("tab", { name: /^Apoderados/ });
+    expect(screen.queryByRole("note", { name: "Leyenda de apoderados" })).toBeNull();
+    expect(document.querySelector(".bor-doc-barra")?.classList.contains("con-leyenda")).toBe(false);
+  });
+
+  it("si el servidor rechaza la revisión la desmarca, vuelve a bloquear y explica por qué", async () => {
+    const motivo = "El caso no está esperando la decisión: la revisión de los apoderados no se puede cambiar ahora.";
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, revision: () => new Falla(409, motivo) });
+    await abrir();
+    await screen.findByText("Revise los apoderados no verificados");
+    fireEvent.click(pestanaApoderados());
+    const marca = marcaRevisado("CARLOS EDUARDO PINEDA RUIZ");
+    fireEvent.click(marca);
+    expect(await within(panel()).findByText(motivo)).toBeTruthy();
+    expect(marca.getAttribute("aria-pressed")).toBe("false");
+    expect(pasarADecision().getAttribute("aria-disabled")).toBe("true");
+    await waitFor(() => expect(llamadas.filter((l) => l.metodo === "GET" && l.url.endsWith("/apoderados")).length).toBe(2));
+  });
+
+  it("cuenta a los apoderados pendientes en la barra inferior con lo revisado en el servidor", async () => {
+    const apoderados = structuredClone(APODERADOS_BORRADOR);
+    apoderados.apoderados = apoderados.apoderados.map((a) => (a.id === ID_ROJO ? conRevision(a, true) : a));
+    apoderados.bloquea_decision = false;
+    simularRed({ apoderados });
+    await abrir();
+    expect(await screen.findByText("Quedan 8 puntos por revisar")).toBeTruthy();
+    expect(screen.getByText("Lleva 1 de 9. No bloquean la decisión.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Revisión/ }).textContent).toContain("8");
+    expect(screen.getByRole("link", { name: "Pasar a la decisión" })).toBeTruthy();
+    expect(resumenPanel()).toBe("Lleva 0 de 7 revisados. Nada de esto bloquea la decisión.");
+    fireEvent.click(pestanaApoderados());
+    expect(marcaRevisado("CARLOS EDUARDO PINEDA RUIZ").getAttribute("aria-pressed")).toBe("true");
+    expect(resumenPanel()).toBe("3 apoderados · 1 verificado · 1 por revisar · 1 no verificado");
+  });
+
+  it("las alertas del nodo de apoderados se revisan en su pestaña y se guardan en el navegador", async () => {
+    const estado = structuredClone(ESTADO_BORRADOR);
+    const alerta = "ALERTA: En 1a-011 (011.pdf), p. 3, consta la tarjeta profesional 12345, que no corresponde a ningún apoderado identificado; revise si actúa un abogado que no se identificó.";
+    if (estado.resumen?.alertas && !Array.isArray(estado.resumen.alertas)) estado.resumen.alertas["apoderados"] = [alerta];
+    simularRed({ estado, apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    const texto = alerta.replace(/^ALERTA: /, "");
+    await screen.findByText("Revise los apoderados no verificados");
+    expect(within(panel()).queryByText(texto)).toBeNull();
+    fireEvent.click(pestanaApoderados());
+    const grupo = within(panel()).getByRole("heading", { name: "Avisos de la identificación" }).closest("section") as HTMLElement;
+    expect(within(grupo).getByText(texto)).toBeTruthy();
+    expect(within(grupo).getByText("Apoderados")).toBeTruthy();
+    fireEvent.click(within(grupo).getByRole("button", { name: /^Revisado: En 1a-011/ }));
+    expect(JSON.parse(localStorage.getItem(CLAVE) ?? "null")).toEqual([expect.stringMatching(/^alerta-apoderados-\d+$/)]);
+  });
+
+  it("un caso sin identificación no bloquea y la pestaña lo explica", async () => {
+    simularRed();
+    await abrir();
+    await screen.findByText("Quedan 7 puntos por revisar");
+    expect(screen.getByRole("link", { name: "Pasar a la decisión" })).toBeTruthy();
+    fireEvent.click(pestanaApoderados());
+    expect(within(panel()).getByText("Identificación no disponible para este caso", { selector: "b" })).toBeTruthy();
+    expect(resumenPanel()).toBe("Identificación no disponible para este caso.");
+  });
+
+  it("si /apoderados falla no bloquea la decisión y ofrece reintentar en la pestaña", async () => {
+    const llamadas = simularRed({ apoderados: 500 });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    expect(await within(panel()).findByText("No se pudo leer el estado de los apoderados", { selector: "b" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Pasar a la decisión" })).toBeTruthy();
+    fireEvent.click(within(panel()).getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(llamadas.filter((l) => l.url.endsWith("/apoderados")).length).toBe(2));
+  });
+
+  it("pulsar una cita en el texto vuelve a la pestaña de citas y marca su fila", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    expect(pestanaApoderados().getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(citaEnTexto(/SU-508/));
+    expect(within(panel()).getByRole("tab", { name: /^Citas/ }).getAttribute("aria-selected")).toBe("true");
+    expect(panel().querySelector(".bor-fila-activa")?.textContent).toContain("Sentencia SU-508 de 2020");
+  });
+
+  const nombreEnTexto = (nombre: RegExp) => within(hoja()).findByRole("button", { name: nombre });
+
+  it("sin /apoderados los nombres de los abogados quedan como texto", async () => {
+    simularRed();
+    await abrir();
+    await screen.findByText("Quedan 7 puntos por revisar");
+    expect(hoja().querySelector("[data-apoderado]")).toBeNull();
+    expect(hoja().textContent).toContain("la doctora Andrea Paola Giraldo Montoya;");
+  });
+
+  it("pulsar el nombre de un abogado abre su detalle, cambia a la pestaña Apoderados y abre su fila", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    const nombre = await nombreEnTexto(/Andrea Paola Giraldo Montoya/);
+    expect(nombre.textContent).toBe("Andrea Paola Giraldo Montoya (abogado verificado)");
+    expect(nombre.classList.contains("verificada")).toBe(true);
+    expect((await nombreEnTexto(/Luis Fernando Ospina Arango/)).classList.contains("revisar")).toBe(true);
+    expect((await nombreEnTexto(/Carlos Eduardo Pineda Ruiz/)).classList.contains("rechazada")).toBe(true);
+    nombre.focus();
+    fireEvent.click(nombre);
+    const detalle = await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" });
+    expect(detalle.id).toBe("bor-detalle");
+    expect(nombre.getAttribute("aria-pressed")).toBe("true");
+    expect(nombre.getAttribute("aria-controls")).toBe("bor-detalle");
+    expect(within(detalle).getByRole("heading", { level: 4, name: "Tarjeta profesional" })).toBeTruthy();
+    expect(within(detalle).getByRole("heading", { level: 4, name: "Facultad para representar" })).toBeTruthy();
+    expect(pestanaApoderados().getAttribute("aria-selected")).toBe("true");
+    expect(panel().querySelector(".bor-fila-activa")?.textContent).toContain("ANDREA PAOLA GIRALDO MONTOYA");
+    expect(within(panel()).getByRole("button", { name: /ANDREA PAOLA GIRALDO MONTOYA/, expanded: true })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(within(detalle).getByRole("heading", { level: 3 })));
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBeNull();
+    expect(document.activeElement).toBe(nombre);
+    expect(nombre.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("volver a pulsar el nombre o hacer clic fuera cierra el detalle del abogado", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    const nombre = await nombreEnTexto(/Carlos Eduardo Pineda Ruiz/);
+    fireEvent.click(nombre);
+    await screen.findByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" });
+    fireEvent.click(nombre);
+    expect(screen.queryByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" })).toBeNull();
+    fireEvent.keyDown(nombre, { key: "Enter" });
+    await screen.findByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" });
+    fireEvent.click(screen.getByRole("heading", { level: 3, name: /ASUNTO/ }));
+    expect(screen.queryByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" })).toBeNull();
+  });
+
+  it("«Marcar revisado» del detalle envía la huella que vio y desbloquea la decisión", async () => {
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, revision: (c) => conRevision(rojo(), c.revisado) });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Carlos Eduardo Pineda Ruiz/));
+    const detalle = await screen.findByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" });
+    expect(pasarADecision().getAttribute("aria-disabled")).toBe("true");
+    const boton = within(detalle).getByRole("button", { name: "Marcar revisado" });
+    expect(boton.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(boton);
+    const put = llamadas.find((l) => l.metodo === "PUT");
+    expect(put?.url).toBe(`/api/casos/${CASO}/apoderados/${ID_ROJO}/revision`);
+    expect(put?.cuerpo).toEqual({ revisado: true, nota: "", huella: rojo().huella });
+    expect(boton.getAttribute("aria-pressed")).toBe("true");
+    expect((await screen.findByRole("link", { name: "Pasar a la decisión" })).getAttribute("href")).toBe(`#/segunda/${CASO}/decision`);
+    expect(marcaRevisado("CARLOS EDUARDO PINEDA RUIZ").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("sube el certificado desde el detalle como FormData sin el nombre original y el abogado queda en verde", async () => {
+    const ambar = structuredClone(APODERADOS_BORRADOR.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista);
+    const verde: ApoderadoVista = {
+      ...ambar,
+      estado: "verificado",
+      fase: "listo",
+      motivos: [],
+      vigencia: {
+        ...ambar.vigencia,
+        estado: "vigente",
+        fase: "listo",
+        origen: "manual",
+        consultado_en: "2026-11-17T10:50:00-05:00",
+        certificado_url: `/api/casos/${CASO}/apoderados/${ID_AMBAR}/certificado`,
+      },
+      huella: "otra-huella",
+    };
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, subida: () => verde });
+    await abrir();
+    const nombre = await nombreEnTexto(/Luis Fernando Ospina Arango/);
+    fireEvent.click(nombre);
+    const detalle = await screen.findByRole("dialog", { name: "LUIS FERNANDO OSPINA ARANGO" });
+    const entrada = detalle.querySelector<HTMLInputElement>("input[type=file]");
+    if (!entrada) throw new Error("falta el selector de archivo");
+    const archivo = new File(["%PDF-1.7 certificado"], "CV_RNA-TPA_71654320.pdf", { type: "application/pdf" });
+    Object.defineProperty(entrada, "files", { configurable: true, value: [archivo] });
+    fireEvent.change(entrada);
+    await waitFor(() => expect(nombre.classList.contains("verificada")).toBe(true));
+    const put = llamadas.find((l) => l.metodo === "PUT" && l.url.endsWith("/certificado"));
+    expect(put?.url).toBe(`/api/casos/${CASO}/apoderados/${ID_AMBAR}/certificado`);
+    const cuerpo = put?.cuerpo as FormData;
+    expect([...cuerpo.keys()]).toEqual(["archivo"]);
+    const enviado = cuerpo.get("archivo") as File;
+    expect(enviado.name).toBe("certificado.pdf");
+    expect(enviado.size).toBe(archivo.size);
+    expect(within(detalle).getByText("Abogado verificado", { selector: ".chip" })).toBeTruthy();
+    expect(within(detalle).getByRole("link", { name: /Ver certificado \(PDF\)/ }).getAttribute("href")).toBe(verde.vigencia.certificado_url);
+    expect(detalle.querySelector("input[type=file]")).toBeNull();
+  });
+
+  it("si el servidor rechaza el certificado lo explica en el detalle", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR, subida: () => new Falla(422, "El certificado es de otra persona.") });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Luis Fernando Ospina Arango/));
+    const detalle = await screen.findByRole("dialog", { name: "LUIS FERNANDO OSPINA ARANGO" });
+    const entrada = detalle.querySelector<HTMLInputElement>("input[type=file]") as HTMLInputElement;
+    Object.defineProperty(entrada, "files", { configurable: true, value: [new File(["%PDF-1.7"], "c.pdf", { type: "application/pdf" })] });
+    fireEvent.change(entrada);
+    expect(await within(detalle).findByText("El certificado es de otra persona.")).toBeTruthy();
+  });
+
+  it("«Ver poder» abre el visor perezoso con la página, un clic dentro no cierra el detalle y al cerrar vuelve el foco", async () => {
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Andrea Paola Giraldo Montoya/));
+    const detalle = await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" });
+    const ver = within(detalle).getByRole("button", { name: "Ver poder · p. 4" });
+    ver.focus();
+    fireEvent.click(ver);
+    const visor = await screen.findByRole("dialog", { name: "Poder especial · Doc. 1a-007" });
+    expect(visor.tagName).toBe("DIALOG");
+    expect(within(visor).getByText("Evidencia de que ANDREA PAOLA GIRALDO MONTOYA representa a EPS HORIZONTE SALUD S.A.S.")).toBeTruthy();
+    await waitFor(() => expect(visor.querySelector("mark")?.textContent?.replace(/\s+/g, " ")).toMatch(/^confiero poder especial.*conteste la acción de tutela de la referencia$/));
+    expect(llamadas.some((l) => l.url === `/api/casos/${CASO}/expediente/1a-007/paginas/4`)).toBe(true);
+    fireEvent.click(within(visor).getByRole("heading", { level: 3, name: "Lo que se cotejó" }));
+    expect(screen.getByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBe(detalle);
+    fireEvent.click(within(visor).getByRole("button", { name: "Cerrar visor" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Poder especial · Doc. 1a-007" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(ver));
+    expect(screen.getByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" })).toBe(detalle);
+  });
+
+  it("el visor abierto desde la fila marca revisado al abogado en el servidor", async () => {
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, revision: (c) => conRevision(rojo(), c.revisado) });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    fireEvent.click(await within(panel()).findByRole("button", { name: /CARLOS EDUARDO PINEDA RUIZ/, expanded: false }));
+    const abrirPoder = within(panel()).getByRole("button", { name: "Poder · p. 5" });
+    fireEvent.click(abrirPoder);
+    const visor = await screen.findByRole("dialog", { name: "Poder especial · Doc. 1a-011" });
+    fireEvent.click(within(visor).getByRole("button", { name: "Marcar revisado" }));
+    expect(llamadas.find((l) => l.metodo === "PUT")?.cuerpo).toEqual({ revisado: true, nota: "", huella: rojo().huella });
+    await waitFor(() => expect(within(visor).getByRole("button", { name: "Marcar revisado" }).getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.keyDown(within(visor).getByRole("button", { name: "Cerrar visor" }), { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(abrirPoder));
+  });
+
+  it("«Ver en el texto» de la fila de un abogado selecciona su nombre y abre su detalle", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    fireEvent.click(await within(panel()).findByRole("button", { name: /CARLOS EDUARDO PINEDA RUIZ/, expanded: false }));
+    fireEvent.click(within(panel()).getByRole("button", { name: /Ver en el texto/ }));
+    const nombre = await nombreEnTexto(/Carlos Eduardo Pineda Ruiz/);
+    expect(nombre.getAttribute("aria-pressed")).toBe("true");
+    expect(await screen.findByRole("dialog", { name: "CARLOS EDUARDO PINEDA RUIZ" })).toBeTruthy();
+    expect(pestanaApoderados().getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("al abrir pide una vez la consulta automática de quien sigue sin consultar", async () => {
+    const enCola = structuredClone(APODERADOS_BORRADOR);
+    enCola.consulta = { ...enCola.consulta, activa: true, extension: "conectada" };
+    const ambar = enCola.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista;
+    ambar.fase = "en_cola";
+    ambar.vigencia.fase = "en_cola";
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, consultar: () => enCola });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    const fila = await waitFor(() => {
+      const li = panel().querySelector<HTMLElement>(`li[data-clave="apoderado-${ID_AMBAR}"]`);
+      expect(li?.querySelector(".bor-fila-sub .chip")?.textContent).toBe("En cola");
+      return li as HTMLElement;
+    });
+    expect(fila).toBeTruthy();
+    const posts = llamadas.filter((l) => l.metodo === "POST");
+    expect(posts.map((l) => [l.url, l.cuerpo])).toEqual([[`/api/casos/${CASO}/apoderados/consultar`, { forzar: false }]]);
+    expect(within(panel()).getByRole("note", { name: "Consulta automática de la vigencia" }).textContent).toContain("Extensión conectada");
+    expect(panel().querySelector(".bor-panel-resumen [role=status]")?.textContent).toBe("2 de 3 listos · en cola para consultar");
+  });
+
+  it("«Reintentar consulta automática» del detalle fuerza la consulta de ese abogado", async () => {
+    const sinRespuesta = structuredClone(APODERADOS_BORRADOR);
+    sinRespuesta.consulta.extension = "conectada";
+    const ambar = sinRespuesta.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista;
+    ambar.vigencia.estado = "inaccesible";
+    const enCola = structuredClone(sinRespuesta);
+    const enColaAmbar = enCola.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista;
+    enColaAmbar.fase = "en_cola";
+    enColaAmbar.vigencia.fase = "en_cola";
+    enCola.consulta.activa = true;
+    const llamadas = simularRed({ apoderados: sinRespuesta, consultar: () => enCola });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Luis Fernando Ospina Arango/));
+    const detalle = await screen.findByRole("dialog", { name: "LUIS FERNANDO OSPINA ARANGO" });
+    expect(llamadas.filter((l) => l.metodo === "POST")).toEqual([]);
+    fireEvent.click(within(detalle).getByRole("button", { name: "Reintentar consulta automática" }));
+    await waitFor(() => expect(within(detalle).getByText("En cola para consultar la Rama Judicial.")).toBeTruthy());
+    expect(llamadas.filter((l) => l.metodo === "POST").map((l) => l.cuerpo)).toEqual([{ ids: [ID_AMBAR], forzar: true }]);
+    await waitFor(() => expect(document.activeElement).toBe(within(detalle).getByRole("heading", { level: 3 })));
+  });
+
+  it("sin extensión conectada no ofrece reintentar: el aviso enlaza a instalarla", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Luis Fernando Ospina Arango/));
+    const detalle = await screen.findByRole("dialog", { name: "LUIS FERNANDO OSPINA ARANGO" });
+    expect(within(detalle).queryByRole("button", { name: "Reintentar consulta automática" })).toBeNull();
+    expect(within(panel()).getByRole("link", { name: "Instalar la extensión" }).getAttribute("href")).toBe("#/configuracion/extension");
+  });
+
+  it("«No es correcto…» del detalle pide confirmar, descarta el poder y el abogado queda por revisar", async () => {
+    const verde = structuredClone(APODERADOS_BORRADOR.apoderados.find((a) => a.id === "ap-3f9c2a71d0") as ApoderadoVista);
+    const descartado: ApoderadoVista = {
+      ...verde,
+      estado: "revisar",
+      motivos: ["El poder se descartó en la revisión."],
+      poder: { ...verde.poder, estado: "descartado", evidencia: null, cadena: null },
+      huella: "descartado",
+    };
+    const llamadas = simularRed({ apoderados: APODERADOS_BORRADOR, ajuste: () => descartado });
+    await abrir();
+    const nombre = await nombreEnTexto(/Andrea Paola Giraldo Montoya/);
+    fireEvent.click(nombre);
+    const detalle = await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" });
+    const boton = within(detalle).getByRole("button", { name: "No es correcto…" });
+    boton.focus();
+    fireEvent.click(boton);
+    const confirmar = await screen.findByRole("dialog", { name: "¿El poder no es correcto?" });
+    expect(confirmar.tagName).toBe("DIALOG");
+    expect(llamadas.some((l) => l.url.endsWith("/ajustes"))).toBe(false);
+    fireEvent.click(within(confirmar).getByRole("button", { name: "Descartar el poder" }));
+    await waitFor(() => expect(nombre.classList.contains("revisar")).toBe(true));
+    const put = llamadas.find((l) => l.url.endsWith("/ajustes"));
+    expect(put).toMatchObject({ metodo: "PUT", url: `/api/casos/${CASO}/apoderados/ap-3f9c2a71d0/ajustes`, cuerpo: { poder_descartado: true, nota: "" } });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "¿El poder no es correcto?" })).toBeNull());
+    expect(within(detalle).getByText("Poder descartado", { selector: ".chip" })).toBeTruthy();
+    expect(within(detalle).getByRole("button", { name: "Señalar el poder a mano…" })).toBeTruthy();
+    // El botón que abrió la confirmación ya no está: el foco vuelve al título del detalle.
+    await waitFor(() => expect(document.activeElement).toBe(within(detalle).getByRole("heading", { level: 3 })));
+  });
+
+  it.each([
+    ["hallado", "Se volvió a tomar el poder hallado."],
+    ["sin_poder", "Ya no hay un poder que respalde a ANDREA PAOLA GIRALDO MONTOYA: señálelo a mano."],
+  ] as const)("«Deshacer el descarte» del detalle deja el foco en el detalle y lo dice (vuelve a %s)", async (vuelve, aviso) => {
+    const datos = structuredClone(APODERADOS_BORRADOR);
+    const verde = datos.apoderados.find((a) => a.id === "ap-3f9c2a71d0") as ApoderadoVista;
+    const original = structuredClone(verde);
+    verde.estado = "revisar";
+    verde.poder = { ...verde.poder, estado: "descartado", evidencia: null, cadena: null };
+    const restaurado: ApoderadoVista =
+      vuelve === "hallado" ? original : { ...original, estado: "revisar", poder: { ...original.poder, estado: "sin_poder", evidencia: null, cadena: null } };
+    const llamadas = simularRed({ apoderados: datos, ajuste: () => restaurado });
+    toasts.value = [];
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Andrea Paola Giraldo Montoya/));
+    const detalle = await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" });
+    const deshacer = within(detalle).getByRole("button", { name: "Deshacer el descarte" });
+    deshacer.focus();
+    fireEvent.click(deshacer);
+    await waitFor(() => expect(within(detalle).queryByRole("button", { name: "Deshacer el descarte" })).toBeNull());
+    expect(llamadas.find((l) => l.url.endsWith("/ajustes"))?.cuerpo).toEqual({ poder_descartado: false });
+    // El botón ya no está: el foco no queda en <body>, vuelve al título del detalle.
+    await waitFor(() => expect(document.activeElement).toBe(within(detalle).getByRole("heading", { level: 3 })));
+    expect(toasts.value.map((t) => t.texto)).toEqual([aviso]);
+  });
+
+  it("«Señalar el poder a mano…» de la fila explica un rechazo dentro del diálogo y, aceptado, deja al abogado en verde", async () => {
+    const datos = structuredClone(APODERADOS_BORRADOR);
+    const ambar = datos.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista;
+    ambar.poder = { ...ambar.poder, estado: "sin_poder", evidencia: null };
+    const manual: ApoderadoVista = {
+      ...ambar,
+      estado: "verificado",
+      fase: "listo",
+      motivos: [],
+      vigencia: { ...ambar.vigencia, estado: "vigente", fase: "listo" },
+      poder: { ...structuredClone(APODERADOS_BORRADOR.apoderados.find((a) => a.id === ID_AMBAR) as ApoderadoVista).poder, estado: "manual" },
+    };
+    let intentos = 0;
+    const llamadas = simularRed({
+      apoderados: datos,
+      ajuste: () => (++intentos === 1 ? new Falla(422, "El nombre del abogado no aparece en esa página.") : manual),
+    });
+    await abrir();
+    fireEvent.click(pestanaApoderados());
+    fireEvent.click(await within(panel()).findByRole("button", { name: /LUIS FERNANDO OSPINA ARANGO/, expanded: false }));
+    fireEvent.click(within(panel()).getByRole("button", { name: "Señalar el poder a mano…" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Señalar el poder a mano" });
+    const documento = within(dialogo).getByLabelText("Documento del expediente") as HTMLSelectElement;
+    // El borrador solo conoce los documentos de las evidencias; el poder de este abogado está en otro.
+    expect([...documento.options].map((o) => o.value)).toEqual(["1a-007", "1a-011", ""]);
+    fireEvent.change(documento, { target: { value: "" } });
+    fireEvent.input(within(dialogo).getByLabelText("Número del documento"), { target: { value: "1a-002" } });
+    fireEvent.input(within(dialogo).getByLabelText("Página"), { target: { value: "5" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Señalar el poder" }));
+    expect(await within(dialogo).findByText("El nombre del abogado no aparece en esa página.")).toBeTruthy();
+    fireEvent.input(within(dialogo).getByLabelText("Página"), { target: { value: "6" } });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Señalar el poder" }));
+    await waitFor(() => expect(within(panel()).getByRole("region", { name: "Verificados" }).textContent).toContain("LUIS FERNANDO OSPINA ARANGO"));
+    expect(llamadas.filter((l) => l.url.endsWith("/ajustes")).map((l) => l.cuerpo)).toEqual([
+      { poder_manual: { doc_id: "1a-002", pagina: 5 }, nota: "" },
+      { poder_manual: { doc_id: "1a-002", pagina: 6 }, nota: "" },
+    ]);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Señalar el poder a mano" })).toBeNull());
+  });
+
+  it("«No es correcto…» del visor cierra el visor y pide confirmar el descarte de ese poder", async () => {
+    simularRed({ apoderados: APODERADOS_BORRADOR });
+    await abrir();
+    fireEvent.click(await nombreEnTexto(/Andrea Paola Giraldo Montoya/));
+    const detalle = await screen.findByRole("dialog", { name: "ANDREA PAOLA GIRALDO MONTOYA" });
+    fireEvent.click(within(detalle).getByRole("button", { name: "Ver poder · p. 4" }));
+    const visor = await screen.findByRole("dialog", { name: "Poder especial · Doc. 1a-007" });
+    fireEvent.click(within(visor).getByRole("button", { name: "No es correcto…" }));
+    const confirmar = await screen.findByRole("dialog", { name: "¿El poder no es correcto?" });
+    expect(screen.queryByRole("dialog", { name: "Poder especial · Doc. 1a-007" })).toBeNull();
+    expect(confirmar.textContent).toContain("el poder del Doc. 1a-007, p. 4,");
+    fireEvent.click(within(confirmar).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "¿El poder no es correcto?" })).toBeNull());
+  });
+
+  it("un caso anterior se identifica desde la pestaña y el borrador se vuelve a leer con los nombres marcados", async () => {
+    const sinNombres = structuredClone(VISTA_BORRADOR);
+    for (const p of sinNombres.paginas) for (const b of p.bloques) for (const s of b.segmentos) delete s.apoderado_id;
+    let vistas = 0;
+    let identificado = false;
+    const llamadas = simularRed({ apoderados: SIN_IDENTIFICACION, identificar: () => APODERADOS_BORRADOR });
+    const red = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const original = red.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    red.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/vista/borrador")) {
+        vistas += 1;
+        llamadas.push({ url, metodo: "GET", cuerpo: undefined });
+        return responder(identificado ? VISTA_BORRADOR : sinNombres);
+      }
+      if (url.endsWith("/identificar")) identificado = true;
+      return original(url, init);
+    });
+    await abrir();
+    expect(within(hoja()).queryByRole("button", { name: /Andrea Paola Giraldo Montoya/ })).toBeNull();
+    fireEvent.click(pestanaApoderados());
+    fireEvent.click(await within(panel()).findByRole("button", { name: "Identificar apoderados" }));
+    expect(await nombreEnTexto(/Andrea Paola Giraldo Montoya/)).toBeTruthy();
+    expect(vistas).toBe(2);
+    expect(llamadas.filter((l) => l.metodo === "POST").map((l) => l.url)).toContain(`/api/casos/${CASO}/apoderados/identificar`);
+    expect(within(panel()).getByRole("region", { name: "No verificados" }).textContent).toContain("CARLOS EDUARDO PINEDA RUIZ");
+    expect(within(indice()).getByText("2 abogados por revisar")).toBeTruthy();
+  });
+
+  it("las correcciones viajan en un chunk aparte: el borrador solo las importa con import()", () => {
+    const fuente = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8");
+    expect(fuente).toContain('import("./DialogoAjuste")');
+    expect(fuente).not.toMatch(/^import (?!type )[^;]*from "\.\/DialogoAjuste";/m);
+  });
+
+  it("el visor viaja en un chunk aparte: el borrador solo lo importa con import()", () => {
+    const fuente = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8");
+    expect(fuente).toContain('import("./VisorEvidencia")');
+    expect(fuente).not.toMatch(/^import (?!type )[^;]*from "\.\/VisorEvidencia";/m);
   });
 });
 

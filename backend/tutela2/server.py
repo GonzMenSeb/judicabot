@@ -54,9 +54,16 @@ def _calentar_resumenes() -> None:
 
 @asynccontextmanager
 async def _ciclo_de_vida(aplicacion: FastAPI) -> AsyncIterator[None]:
+    from tutela2 import vigencia
+
     aplicacion.state.calentamiento = threading.Thread(target=_calentar_resumenes, name="calentar-resumenes", daemon=True)
     aplicacion.state.calentamiento.start()
-    yield
+    # La cola de consultas de vigencia corre en su propio hilo y despierta al conectarse la extensión.
+    vigencia.COLA.iniciar()
+    try:
+        yield
+    finally:
+        vigencia.COLA.detener()
 
 
 app = FastAPI(title="Tutela 2ª instancia", lifespan=_ciclo_de_vida)
@@ -430,11 +437,29 @@ def estado_caso(caso_id: str) -> dict[str, Any]:
     return resultado
 
 
+def _bloqueo_apoderados(caso_dir: Path) -> str | None:
+    """Aviso anticipado de la compuerta de apoderados; ``api.decidir`` la vuelve a aplicar y falla cerrado."""
+    from tutela2 import estado_apoderados, registro_apoderados
+
+    try:
+        pendientes = estado_apoderados.bloqueos(caso_dir)
+    except registro_apoderados.RegistroInvalido as e:
+        return str(e)
+    except Exception:
+        log.exception("No se pudo revisar el estado de los apoderados de %s", caso_dir.name)
+        return None
+    return estado_apoderados.mensaje_bloqueo(pendientes) if pendientes else None
+
+
 @app.post("/api/casos/{caso_id}/run", response_model=JobInicio)
 def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
     caso_dir = _dir_caso(caso_id)
     if body.cmd == "decidir" and not body.decision:
         raise HTTPException(422, "Falta la decisión.")
+    if body.cmd == "decidir" and body.decision.get("accion") == "decidir":
+        bloqueo = _bloqueo_apoderados(caso_dir)
+        if bloqueo:
+            raise HTTPException(409, bloqueo)
     from collections import deque
 
     from tutela2 import eventos
@@ -514,7 +539,19 @@ class _Assets:
         await _servidor_assets(directorio)(scope, receive, send)
 
 
-for _modulo in ("rutas_casos", "rutas_formato", "rutas_eventos", "rutas_vista", "rutas_decision", "rutas_ia", "rutas_dataset", "rutas_extension"):
+for _modulo in (
+    "rutas_casos",
+    "rutas_formato",
+    "rutas_eventos",
+    "rutas_vista",
+    "rutas_decision",
+    "rutas_ia",
+    "rutas_dataset",
+    "rutas_extension",
+    "rutas_apoderados",
+    "rutas_ajustes_apoderados",
+    "rutas_expediente",
+):
     try:
         _m = importlib.import_module(f"tutela2.{_modulo}")
     except ModuleNotFoundError as exc:

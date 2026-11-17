@@ -85,6 +85,12 @@ describe("Indice", () => {
     expect(screen.getByRole("button", { name: "Anexo dos" }).querySelector(".bor-marcador")).toBeNull();
   });
 
+  it("distingue para lectores las citas de los nombres de abogados por revisar", () => {
+    indice({ marcas: { "b-t1": { n: 2, mal: false, apoderados: 1 }, "b-t2": { n: 2, mal: true, apoderados: 2 } } });
+    expect(within(screen.getByRole("button", { name: /I\. Asunto/ })).getByText("1 cita y 1 abogado por revisar")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /V\. Consideraciones/ })).getByText("2 abogados por revisar")).toBeTruthy();
+  });
+
   it("pone un separador solo antes del primer anexo", () => {
     indice();
     const nav = screen.getByRole("navigation");
@@ -128,6 +134,24 @@ describe("Dock", () => {
     expect(decidir.getAttribute("href")).toBe("#/decision");
     expect(decidir.classList.contains("sello")).toBe(true);
     expect(decidir.classList.contains("grande")).toBe(true);
+  });
+
+  it("con un apoderado que bloquea deshabilita «Pasar a la decisión» y da la razón", () => {
+    const razon = "CARLOS EDUARDO PINEDA RUIZ no pudo verificarse. Márquelo como revisado en la pestaña Apoderados para pasar a la decisión.";
+    dock({ bloqueo: razon, motivoNoCorregir: "No se pudo comprobar el estado del caso." });
+    expect(screen.getByText("Revise los apoderados no verificados")).toBeTruthy();
+    expect(screen.getByText(razon).id).toBe("bor-dock-linea");
+    expect(screen.queryByText(/No bloquean la decisión/)).toBeNull();
+    const decidir = screen.getByText("Pasar a la decisión").closest("a") as HTMLElement;
+    expect(decidir.getAttribute("aria-disabled")).toBe("true");
+    expect(decidir.hasAttribute("href")).toBe(false);
+    expect(decidir.getAttribute("aria-describedby")).toBe("bor-dock-linea");
+  });
+
+  it("una redacción en curso tiene prioridad sobre el bloqueo", () => {
+    dock({ bloqueo: "Alguien no pudo verificarse.", enCurso: true });
+    expect(screen.getByText("Hay una redacción en curso")).toBeTruthy();
+    expect(screen.getByText("Pasar a la decisión").closest("a")?.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("dice cuántos puntos quedan sin revisar", () => {

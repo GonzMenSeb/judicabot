@@ -456,7 +456,8 @@ def test_caso_sintetico_eventos_reales_y_latencia(fuente_sintetica, tmp_path, mo
     etapas = {e["etapa"] for e in iniciar}
     assert {"apertura", "consideraciones", "verificacion"} <= etapas
     respuestas = [e for e in iniciar if e["tipo"] == "escribe" and e["datos"].get("tokens_salida")]
-    assert {e["datos"]["nodo"] for e in respuestas} == {"apertura", "consideraciones"}
+    assert {e["datos"]["nodo"] for e in respuestas} == {"apertura", "apoderados", "consideraciones"}
+    assert {e["etapa"] for e in respuestas if e["datos"]["nodo"] == "apoderados"} == {"apertura"}
     citas = [e["datos"] for e in iniciar if e["etapa"] == "verificacion" and e["datos"] and "cobertura" in e["datos"]]
     resumen = next(e["datos"] for e in iniciar if e["texto"].startswith("Informe de citas"))
     assert len(citas) == sum(resumen.values()) > 0

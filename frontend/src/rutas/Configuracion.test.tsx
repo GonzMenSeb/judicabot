@@ -113,14 +113,14 @@ describe("panel de configuración", () => {
     expect([formato, ia, extension].map((e) => e?.getAttribute("href"))).toEqual(["#/configuracion/formato", "#/configuracion/ia", "#/configuracion/extension"]);
     expect(formato?.textContent?.trim()).toBe("Formato de documentos");
     expect(ia?.textContent).toMatch(/^Inteligencia artificial/);
-    expect(extension?.textContent?.trim()).toBe("Extensión de la relatoría");
+    expect(extension?.textContent?.trim()).toBe("Extensión de consultas públicas");
 
     await esperarHash(() => fireEvent.click(extension as HTMLElement));
     expect(location.hash).toBe("#/configuracion/extension");
-    expect(within(panel()).getByRole("heading", { level: 1, name: "Extensión de la relatoría" })).toBeTruthy();
+    expect(within(panel()).getByRole("heading", { level: 1, name: "Extensión de consultas públicas" })).toBeTruthy();
     expect(await within(panel()).findByRole("link", { name: "Descargar extensión (.zip)" })).toBeTruthy();
     expect(within(navegacion()).getByRole("link", { current: "page" }).getAttribute("href")).toBe("#/configuracion/extension");
-    expect(document.title).toBe("Extensión de la relatoría · Configuración · Judicabot");
+    expect(document.title).toBe("Extensión de consultas públicas · Configuración · Judicabot");
   });
 
   it("la X cierra, vuelve a la página de fondo y devuelve el foco al engranaje", async () => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import traceback
 import unicodedata
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -12,19 +13,21 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, ValidationError
 
-from tutela2 import citas, eventos, expediente, fallos, formulas, ingest, lint, prompts
+from tutela2 import apoderados, citas, eventos, expediente, fallos, formulas, ingest, lint, prompts
 from tutela2.config import Config
 from tutela2.jev import JevClient, cliente_jev
 from tutela2.jev_metadatos import verificar_apertura
 from tutela2.llm import LLMClient, leer_secciones, seccion
 from tutela2.models import (
     AperturaLLM,
+    ApoderadosLLM,
     CasoConcretoLLM,
     CitaVerificada,
     ConsideracionesLLM,
     Decision,
     Doc,
     Estado,
+    Identificacion,
     Ingesta,
     LlamadaIA,
     Metadatos,
@@ -54,6 +57,7 @@ def estado_inicial(caso_dir: Path, cfg: Config, ing: Ingesta) -> Estado:
         "bitacora": list(ing.llamadas_jev),
         "salidas": {},
         "jev_metadatos": None,
+        "apoderados": None,
     }
 
 
@@ -116,15 +120,22 @@ def _correcciones(state: Estado, nodo: str, rehacer: str | None, previa: str | N
 
 
 def _llamar(
-    cliente: LLMClient, cfg: Config, state: Estado, nodo: str, user: str, schema: type[BaseModel]
+    cliente: LLMClient,
+    cfg: Config,
+    state: Estado,
+    nodo: str,
+    user: str,
+    schema: type[BaseModel],
+    etapa: str | None = None,
 ) -> tuple[Any, dict, dict]:
     system, prompt_id = prompts.prompt_para(nodo, cfg)
     intentos = dict(state.get("intentos") or {})
     intento = intentos.get(nodo, 0) + 1
     log.info("%s: llamada al modelo, intento %d", nodo, intento)
     modelo = cfg.modelo_para(nodo)
+    etapa = etapa or nodo
     eventos.emitir(
-        nodo,
+        etapa,
         "lee",
         f"Llamada al modelo {modelo}{' (proveedor fake)' if cfg.llm.proveedor == 'fake' else ''}, "
         f"intento {intento}: {len(user)} caracteres de entrada.",
@@ -134,7 +145,7 @@ def _llamar(
         salida, meta = cliente.estructurado(nodo, system, user, schema, cfg)
     except Exception as e:
         eventos.emitir(
-            nodo,
+            etapa,
             "error",
             f"La llamada al modelo falló en el intento {intento}: {type(e).__name__}: {e}",
             {"nodo": nodo, "intento": intento, "tipo_error": type(e).__name__},
@@ -159,7 +170,7 @@ def _llamar(
         raise
     log.info("%s: respuesta recibida (%s tokens de salida)", nodo, meta.get("tokens_salida") or "?")
     eventos.emitir(
-        nodo,
+        etapa,
         "escribe",
         f"Respuesta del modelo recibida: {meta.get('tokens_salida') or '?'} tokens de salida.",
         {
@@ -324,6 +335,107 @@ def nodo_validar_apertura(state: Estado, cfg: Config, jev: JevClient | None = No
         "bitacora": llamadas_jev,
         "jev_metadatos": metadatos_jev,
     }
+
+
+def _con_identificacion(state: Estado, ident: Identificacion) -> dict:
+    _espejar_identificacion(Path(state["caso_dir"]), ident)
+    return {
+        "apoderados": ident.model_dump(mode="json"),
+        "alertas": {**(state.get("alertas") or {}), "apoderados": list(ident.alertas)},
+    }
+
+
+def _espejar_identificacion(caso_dir: Path, ident: Identificacion) -> None:
+    """Copia la identificación al registro del caso, que lee la pestaña Apoderados, y pone en la cola de
+    consultas de vigencia las cédulas verificadas (la cola no hace nada si la consulta está apagada).
+    Si algo falla, solo se registra: la corrida sigue y el borrador ofrece subir el certificado."""
+    if not caso_dir.is_dir():
+        return
+    from tutela2 import registro_apoderados, vigencia
+
+    try:
+        registro_apoderados.espejar(caso_dir, ident)
+    except Exception as e:
+        log.warning("apoderados: no se pudo copiar la identificación al registro del caso (%s)", type(e).__name__)
+        return
+    try:
+        vigencia.COLA.encolar(caso_dir, [a.cedula for a in ident.apoderados if a.cedula])
+    except Exception as e:
+        log.warning("apoderados: no se pudo poner en cola la consulta de vigencia (%s)", type(e).__name__)
+
+
+def nodo_apoderados(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
+    """Identifica a los abogados de las partes. Nunca detiene ni repite la corrida: si falla, deja una alerta.
+
+    Se omite si está desactivado o si ni el expediente ni las partes de los metadatos cambiaron desde
+    la última identificación (``rehacer_apertura`` conserva así los mismos ids; si corrige las partes,
+    la identificación se rehace con ellas). Sus eventos van en la etapa de apertura y no llevan
+    números de cédula.
+    """
+    if not cfg.apoderados.activo:
+        return {}
+    ing = Ingesta.model_validate(state["ingesta"])
+    md = Metadatos.model_validate(state["metadatos"])
+    anterior = state.get("apoderados") or {}
+    if anterior.get("ingesta_sha") == apoderados.huella_ingesta(ing) and anterior.get("metadatos_sha") == apoderados.huella_partes(md):
+        eventos.emitir(
+            "apertura",
+            "verifica",
+            "Apoderados: ni el expediente ni las partes cambiaron; se conserva la identificación anterior.",
+            {"nodo": "apoderados"},
+        )
+        return {}
+    texto, alertas_texto = ingest.paginas_para_apoderados(ing, cfg.apoderados.max_chars)
+    n_paginas, n_docs = texto.count("\n[p. "), texto.count("### DOC ")
+    eventos.emitir(
+        "apertura",
+        "lee",
+        f"Identificación de apoderados: {n_paginas} páginas pertinentes de {n_docs} documentos.",
+        {"nodo": "apoderados", "paginas": n_paginas, "documentos": n_docs, "caracteres": len(texto)},
+    )
+    salida: dict = {}
+    propuesta = ApoderadosLLM()
+    if texto:
+        user = "\n".join(
+            [
+                seccion("DOCUMENTOS", texto),
+                seccion("METADATOS", _json({c: getattr(md, c) for c in apoderados.CAMPOS_PARTES})),
+            ]
+        )
+        try:
+            propuesta, llamada, intentos = _llamar(cliente, cfg, state, "apoderados", user, ApoderadosLLM, etapa="apertura")
+        except Exception as e:
+            log.warning("apoderados: la identificación falló (%s); la corrida sigue con una alerta", type(e).__name__)
+            return _con_identificacion(state, Identificacion(alertas=[*alertas_texto, apoderados.ALERTA_FALLA]))
+        salida = {"intentos": intentos, "bitacora": [llamada]}
+    try:
+        ident = apoderados.verificar(propuesta, ing, md)
+    except Exception as e:
+        marco = traceback.extract_tb(e.__traceback__)[-1]
+        log.error(
+            "apoderados: falló la verificación (%s en %s:%s); la corrida sigue con una alerta",
+            type(e).__name__,
+            Path(marco.filename).name,
+            marco.lineno,
+        )
+        ident = Identificacion(alertas=[apoderados.ALERTA_FALLA_VERIFICACION])
+    ident.alertas = list(dict.fromkeys([*alertas_texto, *ident.alertas]))
+    con_poder = sum(1 for a in ident.apoderados if a.poderes)
+    eventos.emitir(
+        "apertura",
+        "verifica",
+        f"Apoderados: {len(ident.apoderados)} identificado{'' if len(ident.apoderados) == 1 else 's'}, "
+        f"{con_poder} con poder hallado; {len(ident.sin_apoderado)} parte{'' if len(ident.sin_apoderado) == 1 else 's'} "
+        "sin abogado.",
+        {
+            "nodo": "apoderados",
+            "apoderados": len(ident.apoderados),
+            "con_poder": con_poder,
+            "sin_apoderado": len(ident.sin_apoderado),
+            "alertas": len(ident.alertas),
+        },
+    )
+    return {**salida, **_con_identificacion(state, ident)}
 
 
 def nodo_consideraciones(state: Estado, cfg: Config, cliente: LLMClient) -> dict:
@@ -647,9 +759,9 @@ def nodo_ensamblar(state: Estado, cfg: Config) -> dict:
 def construir(cfg: Config, llm: LLMClient, checkpointer: Any, jev: JevClient | None = None):
     verificador_jev = jev if jev is not None else cliente_jev(cfg)
 
-    def tras_validar_apertura(state: Estado) -> Literal["apertura", "consideraciones"]:
+    def tras_validar_apertura(state: Estado) -> Literal["apertura", "apoderados"]:
         reintentar = state.get("errores") and state.get("intentos", {}).get("apertura", 0) < cfg.max_intentos
-        return "apertura" if reintentar else "consideraciones"
+        return "apertura" if reintentar else "apoderados"
 
     def tras_verificar(state: Estado) -> Literal["consideraciones", "decision"]:
         reintentar = state.get("errores") and state.get("intentos", {}).get("consideraciones", 0) < cfg.max_intentos
@@ -670,6 +782,7 @@ def construir(cfg: Config, llm: LLMClient, checkpointer: Any, jev: JevClient | N
     g = StateGraph(Estado)
     g.add_node("apertura", lambda s: nodo_apertura(s, cfg, llm))
     g.add_node("validar_apertura", lambda s: nodo_validar_apertura(s, cfg, verificador_jev))
+    g.add_node("apoderados", lambda s: nodo_apoderados(s, cfg, llm))
     g.add_node("consideraciones", lambda s: nodo_consideraciones(s, cfg, llm))
     g.add_node("verificar_consideraciones", lambda s: nodo_verificar_consideraciones(s, cfg))
     g.add_node("decision", nodo_decision)
@@ -680,6 +793,7 @@ def construir(cfg: Config, llm: LLMClient, checkpointer: Any, jev: JevClient | N
     g.add_edge(START, "apertura")
     g.add_edge("apertura", "validar_apertura")
     g.add_conditional_edges("validar_apertura", tras_validar_apertura)
+    g.add_edge("apoderados", "consideraciones")
     g.add_edge("consideraciones", "verificar_consideraciones")
     g.add_conditional_edges("verificar_consideraciones", tras_verificar)
     g.add_conditional_edges("decision", tras_decision)

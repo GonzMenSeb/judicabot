@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { porcentaje } from "../../estado";
-import { Boton, cx } from "../../ui";
+import { Aviso, Boton, Chip, cx } from "../../ui";
+import { mostrarDentro } from "./desplazar";
 import "./panel.css";
-import type { DetalleRevision, FilaJev, ItemRevision, NivelRevision } from "./tipos";
+import {
+  type AccionesApoderado,
+  BarraApoderados,
+  DetalleApoderado,
+  ResumenApoderados,
+  TabApoderados,
+  textoBloqueoPanel,
+  type PanelApoderados,
+} from "./TabApoderados";
+import type { DetalleRevision, FilaJev, ItemRevision, NivelRevision, PedidoAjuste, PedidoVisor, Pestana, Seleccion } from "./tipos";
 
 export interface PropsPanelRevision {
   items: ItemRevision[];
@@ -10,14 +20,34 @@ export interface PropsPanelRevision {
   alRevisar: (clave: string) => void;
   abierta: string | null;
   alAbrir: (clave: string | null) => void;
-  seleccionada: string | null;
-  alVerEnTexto: (citaId: string, desde: HTMLElement) => void;
+  seleccionada: Seleccion | null;
+  alVerEnTexto: (marca: Seleccion, desde: HTMLElement) => void;
+  /** Abre el visor de evidencia en la página citada (el poder, el certificado de existencia o el escrito del abogado). */
+  alVerEvidencia: (pedido: PedidoVisor, desde: HTMLElement) => void;
+  /** Abre el diálogo de una corrección a mano de un abogado. */
+  alCorregir: (pedido: PedidoAjuste, desde: HTMLElement) => void;
+  /** «Deshacer el descarte» del poder de un abogado. */
+  alRestaurarPoder: (id: string) => void;
+  /** Los abogados cuyo nombre está marcado en el texto, para saber si «Ver en el texto» tiene adónde ir. */
+  apoderadosEnTexto: ReadonlySet<string>;
   umbralJev?: number;
   avisoEstado: string | null;
   alertasLeidas?: boolean;
   abiertoMovil: boolean;
   onCerrarMovil: () => void;
+  pestana: Pestana;
+  alPestana: (pestana: Pestana) => void;
+  apoderados: PanelApoderados;
 }
+
+const mismaMarca = (a: Seleccion | null, b: Seleccion | null): boolean => a !== null && b !== null && a.tipo === b.tipo && a.id === b.id;
+
+const PESTANAS: { id: Pestana; nombre: string }[] = [
+  { id: "citas", nombre: "Citas" },
+  { id: "apoderados", nombre: "Apoderados" },
+];
+
+const FOCO = "button:not([disabled]):not([tabindex='-1']), a[href]:not([tabindex='-1']), [tabindex]:not([tabindex='-1'])";
 
 type NivelPendiente = Exclude<NivelRevision, "ok">;
 
@@ -97,7 +127,15 @@ function DetalleJev({ fila, umbral }: { fila: FilaJev; umbral: number | undefine
   );
 }
 
-function Detalle({ detalle, umbral, alVerEnTexto }: { detalle: DetalleRevision; umbral: number | undefined; alVerEnTexto: PropsPanelRevision["alVerEnTexto"] }) {
+interface PropsDetalle {
+  detalle: DetalleRevision;
+  umbral: number | undefined;
+  alVerEnTexto: PropsPanelRevision["alVerEnTexto"];
+  acciones: AccionesApoderado;
+}
+
+function Detalle({ detalle, umbral, alVerEnTexto, acciones }: PropsDetalle) {
+  if (detalle.tipo === "apoderado") return <DetalleApoderado apoderado={detalle.apoderado} acciones={acciones} />;
   if (detalle.tipo === "cita") {
     const { cita, motivos } = detalle;
     return (
@@ -118,7 +156,7 @@ function Detalle({ detalle, umbral, alVerEnTexto }: { detalle: DetalleRevision; 
           </ul>
         )}
         <div class="bor-acciones-fila">
-          <Boton variante="fantasma" onClick={(e) => alVerEnTexto(cita.id, e.currentTarget)}>
+          <Boton variante="fantasma" onClick={(e) => alVerEnTexto({ tipo: "cita", id: cita.id }, e.currentTarget)}>
             Ver en el texto <IconoIr />
           </Boton>
           {cita.estado === "verificada" && cita.url && (
@@ -165,23 +203,46 @@ interface PropsFila {
   hecha: boolean;
   abierta: boolean;
   activa: boolean;
+  soloLectura: boolean;
   umbral: number | undefined;
   alRevisar: (clave: string) => void;
   alAbrir: (clave: string | null) => void;
   alVerEnTexto: PropsPanelRevision["alVerEnTexto"];
+  acciones: AccionesApoderado;
 }
 
-function Fila({ item, hecha, abierta, activa, umbral, alRevisar, alAbrir, alVerEnTexto }: PropsFila) {
+function Fila({ item, hecha, abierta, activa, soloLectura, umbral, alRevisar, alAbrir, alVerEnTexto, acciones }: PropsFila) {
   const expandida = abierta && item.detalle !== null;
+  const { etiqueta } = item;
+  const chip = etiqueta && !etiqueta.giro ? etiqueta : null;
   const contenido = (
     <>
       <span class="bor-fila-tipo">{item.origen}</span>
       <span class="bor-fila-titulo">{item.titulo}</span>
-      {item.linea && !expandida && <span class={cx("bor-fila-sub", item.lineaCompleta && "completa")}>{item.linea}</span>}
+      {/* Lo que está en curso va en su renglón, con el giro (mesa Consulta), y también con la fila abierta. */}
+      {etiqueta?.giro && (
+        <span class="bor-fila-curso">
+          <span class="giro" aria-hidden="true" />
+          {etiqueta.texto}
+        </span>
+      )}
+      {(item.linea || chip) && !expandida && (
+        <span class={cx("bor-fila-sub", item.lineaCompleta && "completa")}>
+          {chip && (
+            <>
+              <Chip tono={chip.tono}>{chip.texto}</Chip>{" "}
+            </>
+          )}
+          {item.linea}
+        </span>
+      )}
     </>
   );
   return (
-    <li class={cx("bor-fila", `n-${item.nivel}`, expandida && "abierta", hecha && "hecha", activa && "bor-fila-activa")}>
+    <li
+      class={cx("bor-fila", `n-${item.nivel}`, expandida && "abierta", hecha && "hecha", activa && "bor-fila-activa")}
+      data-clave={item.clave}
+    >
       {item.nivel === "ok" ? (
         <span class="bor-marca-revisado fija" aria-hidden="true">
           <IconoCheck />
@@ -191,7 +252,8 @@ function Fila({ item, hecha, abierta, activa, umbral, alRevisar, alAbrir, alVerE
           type="button"
           class="bor-marca-revisado"
           aria-pressed={hecha}
-          title={hecha ? "Marcar como pendiente" : "Marcar como revisado"}
+          disabled={soloLectura}
+          title={soloLectura ? "Solo se puede cambiar mientras el caso espera la decisión" : hecha ? "Marcar como pendiente" : "Marcar como revisado"}
           onClick={() => alRevisar(item.clave)}
         >
           <IconoCheck />
@@ -208,7 +270,7 @@ function Fila({ item, hecha, abierta, activa, umbral, alRevisar, alAbrir, alVerE
       )}
       {expandida && item.detalle && (
         <div class="bor-fila-detalle">
-          <Detalle detalle={item.detalle} umbral={umbral} alVerEnTexto={alVerEnTexto} />
+          <Detalle detalle={item.detalle} umbral={umbral} alVerEnTexto={alVerEnTexto} acciones={acciones} />
         </div>
       )}
     </li>
@@ -223,19 +285,59 @@ export function PanelRevision({
   alAbrir,
   seleccionada,
   alVerEnTexto,
+  alVerEvidencia,
+  alCorregir,
+  alRestaurarPoder,
+  apoderadosEnTexto,
   umbralJev,
   avisoEstado,
   alertasLeidas = true,
   abiertoMovil,
   onCerrarMovil,
+  pestana,
+  alPestana,
+  apoderados,
 }: PropsPanelRevision) {
   const [verComprobado, setVerComprobado] = useState(false);
   const cuerpo = useRef<HTMLDivElement>(null);
   const aside = useRef<HTMLElement>(null);
+  // El último control del panel que tuvo el foco y la fila donde estaba (su data-clave), para devolvérselo si
+  // los datos lo quitan sin que nadie toque nada; se olvida en cuanto el foco va a otra parte o se hace clic.
+  const ultimoFoco = useRef<{ elemento: HTMLElement; clave: string | null } | null>(null);
+
+  useEffect(() => {
+    const alEnfocar = (e: FocusEvent) => {
+      const destino = e.target instanceof HTMLElement ? e.target : null;
+      ultimoFoco.current =
+        destino && aside.current?.contains(destino) ? { elemento: destino, clave: destino.closest<HTMLElement>("li[data-clave]")?.dataset["clave"] ?? null } : null;
+    };
+    const alPulsar = () => {
+      ultimoFoco.current = null;
+    };
+    document.addEventListener("focusin", alEnfocar);
+    document.addEventListener("pointerdown", alPulsar, true);
+    return () => {
+      document.removeEventListener("focusin", alEnfocar);
+      document.removeEventListener("pointerdown", alPulsar, true);
+    };
+  }, []);
+
+  // Un resultado del sondeo puede mover a un abogado de grupo (otra <ul>: su fila se vuelve a crear) o quitar el
+  // botón que tenía el foco (el de «Identificar apoderados», el de «Deshacer el descarte»). El foco caería en <body>,
+  // fuera de la trampa del cajón en móvil: vuelve a la fila, ya en su sitio nuevo, o al título del panel.
+  useLayoutEffect(() => {
+    const previo = ultimoFoco.current;
+    if (!previo || previo.elemento.isConnected) return;
+    const activo = document.activeElement;
+    if (activo && activo !== document.body && activo.isConnected) return;
+    const fila = previo.clave === null ? undefined : Array.from(aside.current?.querySelectorAll<HTMLElement>("li[data-clave]") ?? []).find((li) => li.dataset["clave"] === previo.clave);
+    const destino = fila?.querySelector<HTMLElement>("button.bor-fila-boton") ?? document.getElementById("bor-panel-titulo");
+    destino?.focus({ preventScroll: true });
+  });
 
   const contenerFoco = (e: KeyboardEvent) => {
     if (e.key !== "Tab") return;
-    const foco = Array.from(aside.current?.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])") ?? []);
+    const foco = Array.from(aside.current?.querySelectorAll<HTMLElement>(FOCO) ?? []);
     const primero = foco[0];
     const ultimo = foco[foco.length - 1];
     if (!primero || !ultimo) return;
@@ -248,27 +350,123 @@ export function PanelRevision({
     }
   };
 
-  const pendientes = NIVELES.flatMap((nivel) => items.filter((i) => i.nivel === nivel.id));
-  const comprobados = items.filter((i) => i.nivel === "ok");
-  const hechos = pendientes.filter((i) => revisados.has(i.clave)).length;
+  // Cambia de pestaña y deja el foco en ella: el control que la pidió puede desaparecer al cambiar
+  // (el «Ver apoderados» del aviso solo existe en Citas) y el foco no debe caer en <body>, fuera
+  // de la trampa de foco del cajón en móvil.
+  const irAPestana = (id: Pestana) => {
+    alPestana(id);
+    document.getElementById(`bor-tab-${id}`)?.focus();
+  };
 
+  const alTecladoPestanas = (e: KeyboardEvent) => {
+    const actual = PESTANAS.findIndex((p) => p.id === pestana);
+    const ultima = PESTANAS.length - 1;
+    const destino =
+      e.key === "ArrowRight" ? (actual + 1) % PESTANAS.length : e.key === "ArrowLeft" ? (actual + ultima) % PESTANAS.length : e.key === "Home" ? 0 : e.key === "End" ? ultima : null;
+    const id = destino === null ? undefined : PESTANAS[destino]?.id;
+    if (!id) return;
+    e.preventDefault();
+    irAPestana(id);
+  };
+
+  const citas = items.filter((i) => i.grupo === "citas");
+  const deApoderados = items.filter((i) => i.grupo === "apoderados");
+  const pendientes = NIVELES.flatMap((nivel) => citas.filter((i) => i.nivel === nivel.id));
+  const comprobados = citas.filter((i) => i.nivel === "ok");
+  const hechos = pendientes.filter((i) => revisados.has(i.clave)).length;
+  const datosApoderados = apoderados.datos;
+  const bloqueos = (datosApoderados?.apoderados ?? []).filter((a) => a.bloquea).length;
+  const cuentaApoderados = datosApoderados?.identificacion === "lista" ? datosApoderados.apoderados.length : null;
+  const { consultar } = apoderados;
+  const acciones: AccionesApoderado = {
+    editable: datosApoderados?.editable ?? false,
+    consulta: datosApoderados?.consulta ?? null,
+    enTexto: apoderadosEnTexto,
+    alVerEnTexto,
+    alVerEvidencia,
+    alSubir: apoderados.subir,
+    alReintentar: (id) => consultar([id], true),
+    alCorregir,
+    alRestaurarPoder,
+  };
+
+  // Solo se desplaza el cuerpo del panel: mover la ventana cortaría el camino hacia la marca o el del detalle.
   useEffect(() => {
-    if (seleccionada === null || window.innerWidth < 1024) return;
-    cuerpo.current?.querySelector(".bor-fila-activa")?.scrollIntoView?.({ block: "nearest" });
+    if (seleccionada === null || window.innerWidth < 1024 || !cuerpo.current) return;
+    const fila = cuerpo.current.querySelector<HTMLElement>(".bor-fila-activa");
+    if (fila) mostrarDentro(cuerpo.current, fila);
   }, [seleccionada]);
 
-  const fila = (item: ItemRevision) => (
+  const fila = (item: ItemRevision, soloLectura = false) => (
     <Fila
       key={item.clave}
       item={item}
       hecha={revisados.has(item.clave)}
       abierta={abierta === item.clave}
-      activa={seleccionada !== null && item.cita === seleccionada}
+      activa={mismaMarca(item.marca, seleccionada)}
+      soloLectura={soloLectura}
       umbral={umbralJev}
       alRevisar={alRevisar}
       alAbrir={alAbrir}
       alVerEnTexto={alVerEnTexto}
+      acciones={acciones}
     />
+  );
+
+  const contenidoCitas = (
+    <>
+      {pendientes.length === 0 && (
+        <div class="bor-todo-bien">
+          <IconoCheck />
+          <div>
+            {alertasLeidas ? (
+              <>
+                <b>Todo salió bien</b>
+                <span>Las citas se encontraron en la relatoría y Jev coincide con el borrador.</span>
+              </>
+            ) : (
+              <>
+                <b>Citas sin objeciones</b>
+                <span>Las alertas del caso y la lectura de Jev no se han podido comprobar.</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {NIVELES.map((nivel) => {
+        const grupo = pendientes.filter((i) => i.nivel === nivel.id);
+        if (grupo.length === 0) return null;
+        const quedan = grupo.filter((i) => !revisados.has(i.clave)).length;
+        return (
+          <section key={nivel.id} class="bor-nivel" aria-labelledby={`bor-nv-${nivel.id}`}>
+            <div class={cx("bor-nivel-cabeza", `n-${nivel.id}`)}>
+              <i />
+              <h3 class="nombre" id={`bor-nv-${nivel.id}`}>
+                {nivel.nombre}
+              </h3>
+              <span class="cuenta">{quedan > 0 ? `${quedan} de ${grupo.length}` : "✓"}</span>
+            </div>
+            <ul class="bor-filas">{grupo.map((i) => fila(i))}</ul>
+          </section>
+        );
+      })}
+      {comprobados.length > 0 && (
+        <section class="bor-nivel">
+          <button
+            type="button"
+            class="bor-nivel-cabeza n-ok plegable"
+            aria-expanded={verComprobado}
+            onClick={() => setVerComprobado((v) => !v)}
+          >
+            <i />
+            <span class="nombre">Comprobado</span>
+            <span class="cuenta">{comprobados.length}</span>
+            <IconoChevron />
+          </button>
+          {verComprobado && <ul class="bor-filas">{comprobados.map((i) => fila(i))}</ul>}
+        </section>
+      )}
+    </>
   );
 
   return (
@@ -281,16 +479,21 @@ export function PanelRevision({
       aria-labelledby="bor-panel-titulo"
       onKeyDown={abiertoMovil ? contenerFoco : undefined}
     >
-      <div class="bor-panel-cabeza">
+      <div key="cabeza" class="bor-panel-cabeza">
         <div class="bor-panel-cabeza-fila">
           <div>
             <h2 id="bor-panel-titulo" tabIndex={-1}>
               Antes de decidir
             </h2>
             <p class="bor-panel-resumen">
-              {pendientes.length > 0 ? (
+              {pestana === "apoderados" ? (
+                // El progreso de la consulta («1 de 4 listo · consultando la Rama Judicial») se anuncia al cambiar.
+                <span role="status">
+                  <ResumenApoderados apoderados={apoderados} />
+                </span>
+              ) : pendientes.length > 0 ? (
                 <>
-                  Lleva <b>{`${hechos} de ${pendientes.length}`}</b> revisados. Nada de esto bloquea la decisión.
+                  Lleva <b>{`${hechos} de ${pendientes.length}`}</b> revisados.{bloqueos === 0 && " Nada de esto bloquea la decisión."}
                 </>
               ) : (
                 "Nada pendiente en lo que el sistema pudo comprobar."
@@ -301,67 +504,80 @@ export function PanelRevision({
             <IconoCerrar />
           </button>
         </div>
-        {pendientes.length > 0 && (
-          <div class="bor-progreso" role="progressbar" aria-label="Puntos revisados" aria-valuemin={0} aria-valuemax={pendientes.length} aria-valuenow={hechos}>
-            {pendientes.map((i) => (
-              <i key={i.clave} class={cx(`n-${i.nivel}`, revisados.has(i.clave) && "hecho")} />
-            ))}
-          </div>
-        )}
-      </div>
-      {avisoEstado && <p class="bor-panel-aviso">{avisoEstado}</p>}
-      <div class="bor-panel-cuerpo" ref={cuerpo}>
-        {pendientes.length === 0 && (
-          <div class="bor-todo-bien">
-            <IconoCheck />
-            <div>
-              {alertasLeidas ? (
-                <>
-                  <b>Todo salió bien</b>
-                  <span>Las citas se encontraron en la relatoría y Jev coincide con el borrador.</span>
-                </>
-              ) : (
-                <>
-                  <b>Citas sin objeciones</b>
-                  <span>Las alertas del caso y la lectura de Jev no se han podido comprobar.</span>
-                </>
-              )}
+        {pestana === "apoderados" ? (
+          <BarraApoderados key="barra-apoderados" datos={datosApoderados} />
+        ) : (
+          pendientes.length > 0 && (
+            <div key="barra-citas" class="bor-progreso" role="progressbar" aria-label="Puntos revisados" aria-valuemin={0} aria-valuemax={pendientes.length} aria-valuenow={hechos}>
+              {pendientes.map((i) => (
+                <i key={i.clave} class={cx(`n-${i.nivel}`, revisados.has(i.clave) && "hecho")} />
+              ))}
             </div>
+          )
+        )}
+        <div key="pestanas" class="bor-tabs" role="tablist" aria-label="Qué revisar">
+          {PESTANAS.map(({ id, nombre }) => {
+            const activa = pestana === id;
+            const cuenta = id === "citas" ? citas.length : cuentaApoderados;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`bor-tab-${id}`}
+                class="bor-tab"
+                aria-selected={activa}
+                aria-controls={`bor-tp-${id}`}
+                tabIndex={activa ? 0 : -1}
+                onClick={() => alPestana(id)}
+                onKeyDown={alTecladoPestanas}
+              >
+                {nombre}
+                {cuenta !== null && (
+                  <>
+                    {" "}
+                    <span class="n">{cuenta}</span>
+                  </>
+                )}
+                {id === "apoderados" && bloqueos > 0 && (
+                  <>
+                    <span class="punto" aria-hidden="true" />
+                    <span class="solo-lectura">, con apoderados no verificados</span>
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {bloqueos > 0 && (
+        <Aviso
+          key="bloqueo"
+          tipo="error"
+          class="bor-panel-bloqueo"
+          acciones={
+            pestana === "citas" ? (
+              <Boton variante="fantasma" onClick={() => irAPestana("apoderados")}>
+                Ver apoderados
+              </Boton>
+            ) : undefined
+          }
+        >
+          {textoBloqueoPanel(bloqueos)}
+        </Aviso>
+      )}
+      {avisoEstado && (
+        <p key="aviso" class="bor-panel-aviso">
+          {avisoEstado}
+        </p>
+      )}
+      <div key="cuerpo" class="bor-panel-cuerpo" ref={cuerpo}>
+        {PESTANAS.map(({ id }) => (
+          <div key={id} role="tabpanel" id={`bor-tp-${id}`} aria-labelledby={`bor-tab-${id}`} hidden={pestana !== id}>
+            {pestana === id &&
+              (id === "citas" ? contenidoCitas : <TabApoderados apoderados={apoderados} items={deApoderados} revisados={revisados} fila={fila} />)}
           </div>
-        )}
-        {NIVELES.map((nivel) => {
-          const grupo = pendientes.filter((i) => i.nivel === nivel.id);
-          if (grupo.length === 0) return null;
-          const quedan = grupo.filter((i) => !revisados.has(i.clave)).length;
-          return (
-            <section key={nivel.id} class="bor-nivel" aria-labelledby={`bor-nv-${nivel.id}`}>
-              <div class={cx("bor-nivel-cabeza", `n-${nivel.id}`)}>
-                <i />
-                <h3 class="nombre" id={`bor-nv-${nivel.id}`}>
-                  {nivel.nombre}
-                </h3>
-                <span class="cuenta">{quedan > 0 ? `${quedan} de ${grupo.length}` : "✓"}</span>
-              </div>
-              <ul class="bor-filas">{grupo.map(fila)}</ul>
-            </section>
-          );
-        })}
-        {comprobados.length > 0 && (
-          <section class="bor-nivel">
-            <button
-              type="button"
-              class="bor-nivel-cabeza n-ok plegable"
-              aria-expanded={verComprobado}
-              onClick={() => setVerComprobado((v) => !v)}
-            >
-              <i />
-              <span class="nombre">Comprobado</span>
-              <span class="cuenta">{comprobados.length}</span>
-              <IconoChevron />
-            </button>
-            {verComprobado && <ul class="bor-filas">{comprobados.map(fila)}</ul>}
-          </section>
-        )}
+        ))}
       </div>
     </aside>
   );

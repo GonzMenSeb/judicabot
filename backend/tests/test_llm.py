@@ -15,7 +15,15 @@ from anthropic.lib._parse._transform import to_json_output_format
 from tutela2 import citas, lint, llm
 from tutela2.config import Config, LLMConfig
 from tutela2.llm import AnthropicClient, ErrorLLM, FakeClient, cliente_para
-from tutela2.models import AperturaLLM, CasoConcretoLLM, ConsideracionesLLM, Decision, MetadatosLLM
+from tutela2.models import (
+    AperturaLLM,
+    ApoderadosLLM,
+    CasoConcretoLLM,
+    ConsideracionesLLM,
+    Decision,
+    MetadatosLLM,
+    ParteLLM,
+)
 from tutela2.prompts import prompt_default
 
 try:
@@ -476,7 +484,7 @@ def test_esquemas_aceptados_por_salida_estructurada():
     from anthropic.lib._parse._transform import transform_schema
     from pydantic import TypeAdapter
 
-    for esquema in (AperturaLLM, ConsideracionesLLM, CasoConcretoLLM):
+    for esquema in (AperturaLLM, ApoderadosLLM, ConsideracionesLLM, CasoConcretoLLM):
         transformado = transform_schema(TypeAdapter(esquema).json_schema())
         assert transformado["type"] == "object" and transformado["properties"]
 
@@ -999,3 +1007,120 @@ def test_sdk_real_dos_lazos_levantan_error_llm_con_dos_peticiones():
     with pytest.raises(ErrorLLM) as e:
         AnthropicClient(sdk_real(manejador)).estructurado("apertura", "s", "u", CasoConcretoLLM, Config())
     assert type(e.value) is ErrorLLM and str(e.value) == MENSAJE_DOS_LAZOS and len(peticiones) == 2
+
+
+# --- Apoderados ---
+
+
+def _objetos(esquema):
+    if isinstance(esquema, dict):
+        if "properties" in esquema:
+            yield esquema
+        for v in esquema.values():
+            yield from _objetos(v)
+    elif isinstance(esquema, list):
+        for v in esquema:
+            yield from _objetos(v)
+
+
+def test_esquema_de_apoderados_estricto_para_anthropic():
+    formato = to_json_output_format(ApoderadosLLM)
+    objetos = list(_objetos(formato["schema"]))
+    assert len(objetos) == 5
+    for o in objetos:
+        assert o["required"] == list(o["properties"]) and o["additionalProperties"] is False
+        assert all(p.get("description") for p in o["properties"].values())
+    assert _complejidad(formato["schema"]) == (0, 0)
+
+
+def test_esquema_de_apoderados_estricto_para_gemini():
+    convertido = llm.esquema_gemini(ApoderadosLLM)
+    texto = json.dumps(convertido)
+    assert "$ref" not in texto and "$defs" not in texto and "anyOf" not in texto
+    objetos = list(_objetos(convertido))
+    assert len(objetos) == 5
+    for o in objetos:
+        assert o["required"] == list(o["properties"])
+        assert set(o) <= llm._CLAVES_GEMINI
+    poder = convertido["properties"]["abogados"]["items"]["properties"]["poderes"]["items"]
+    assert poder["properties"]["tipo"]["enum"] == ["poder", "sustitucion", "certificado_existencia"]
+    assert convertido["properties"]["partes"]["items"]["properties"]["con_abogado"]["type"] == "boolean"
+
+
+def _ingesta_con_abogada():
+    from test_apoderados import base, certificado
+
+    return base(cert=certificado())
+
+
+def _user_apoderados() -> str:
+    from tutela2 import ingest
+
+    ing = _ingesta_con_abogada()
+    texto, _ = ingest.paginas_para_apoderados(ing, 150_000)
+    return llm.seccion("DOCUMENTOS", texto) + "\n" + llm.seccion("METADATOS", json.dumps(ing.metadatos.model_dump(mode="json")))
+
+
+def test_fake_client_identifica_abogada_poder_y_certificado():
+    from test_apoderados import ABOGADA, ACCIONANTE, CC_ABOGADA, EPS, REPRESENTANTE, TP_ABOGADA
+
+    cfg = Config(llm=LLMConfig(proveedor="fake"))
+    salida, meta = FakeClient().estructurado("apoderados", "s", _user_apoderados(), ApoderadosLLM, cfg)
+    assert salida == FakeClient().estructurado("apoderados", "s", _user_apoderados(), ApoderadosLLM, cfg)[0]
+    assert meta["modelo_efectivo"] == "fake"
+    assert salida.partes == [
+        ParteLLM(nombre=ACCIONANTE, rol_parte="accionante", con_abogado=False),
+        ParteLLM(nombre=EPS, rol_parte="accionada", con_abogado=True),
+    ]
+    [ab] = salida.abogados
+    assert (ab.nombre, ab.parte, ab.cedula_texto, ab.tarjeta_texto) == (ABOGADA, EPS, CC_ABOGADA, TP_ABOGADA)
+    assert [(m.doc_id, m.pagina) for m in ab.menciones] == [("1a-001", 1)]
+    assert ABOGADA in ab.menciones[0].cita and 8 <= len(ab.menciones[0].cita.split()) <= 60
+    [p] = ab.poderes
+    assert (p.tipo, p.doc_id, p.pagina, p.otorgante, p.cargo_otorgante) == (
+        "poder", "1a-001", 2, REPRESENTANTE, "representante legal"
+    )
+    assert (p.certificado_doc_id, p.certificado_pagina) == ("1a-002", 1)
+    assert p.cita.startswith("confiero poder especial") and ABOGADA in p.cita
+
+
+def test_fake_client_no_inventa_abogados_sin_tarjeta():
+    documentos = (
+        "### DOC 1a-001 | contestacion | c.pdf\n[p. 1]\n"
+        "La doctora ANA LUCÍA PÉREZ GÓMEZ, jefe de la oficina jurídica, contesta la tutela."
+    )
+    user = llm.seccion("DOCUMENTOS", documentos) + "\n" + llm.seccion(
+        "METADATOS", json.dumps({"accionante": "Pedro Pérez", "accionadas": ["Entidad Uno"]})
+    )
+    salida, _ = FakeClient().estructurado("apoderados", "s", user, ApoderadosLLM, Config(llm=LLMConfig(proveedor="fake")))
+    assert salida.abogados == [] and [p.con_abogado for p in salida.partes] == [False, False]
+
+
+def test_fake_apertura_nombra_al_abogado_de_la_contestacion():
+    from tutela2 import ingest
+
+    cfg = Config(llm=LLMConfig(proveedor="fake"))
+    user = llm.seccion("DOCUMENTOS", ingest.texto_para_llm(_ingesta_con_abogada())) + llm.seccion("METADATOS", "{}")
+    salida, _ = FakeClient().estructurado("apertura", "s", user, AperturaLLM, cfg)
+    assert salida.contestaciones[0].texto.startswith(
+        "La entidad, mediante su apoderada judicial, la doctora Andrea Paola Giraldo Montoya, dio respuesta"
+    )
+    sin_abogado = llm.seccion("DOCUMENTOS", "### DOC 1a-001 | contestacion | c.pdf\n[p. 1]\nLa entidad contesta.")
+    salida, _ = FakeClient().estructurado("apertura", "s", sin_abogado, AperturaLLM, cfg)
+    assert salida.contestaciones[0].texto.startswith("La entidad dio respuesta")
+
+
+def test_la_salida_de_apoderados_del_fake_pasa_la_verificacion():
+    from tutela2 import apoderados
+
+    ing = _ingesta_con_abogada()
+    cfg = Config(llm=LLMConfig(proveedor="fake"))
+    salida, _ = FakeClient().estructurado("apoderados", "s", _user_apoderados(), ApoderadosLLM, cfg)
+    [ap] = apoderados.verificar(salida, ing, ing.metadatos).apoderados
+    assert ap.motivos == [] and ap.poderes[0].cadena.estado == "confirmada"
+
+
+def test_el_prompt_de_apertura_pide_nombrar_al_abogado_sin_sus_numeros():
+    texto = prompt_default("apertura")
+    assert '"mediante apoderado judicial, el doctor Nombre Apellido, ..."' in texto
+    assert "sin su cédula ni su tarjeta profesional" in texto

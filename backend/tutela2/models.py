@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import operator
 from datetime import date
-from typing import Annotated, Any, Literal, Optional, TypedDict
+from typing import Annotated, Any, Literal, Optional, TypedDict, get_args
 
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 Rol = Literal[
     "acta_reparto_1a",
@@ -267,6 +275,178 @@ class CitaVerificada(BaseModel):
     estado: Literal["ok", "alerta", "rechazada"] = "rechazada"
     motivos: list[str] = []
     pasaje_cercano: Optional[str] = None
+
+
+RolParte = Literal["accionante", "accionada", "vinculada", "otro"]
+TipoPoder = Literal["poder", "sustitucion", "certificado_existencia"]
+_ROLES_PARTE = get_args(RolParte)
+_TIPOS_PODER = get_args(TipoPoder)
+
+
+def _clave_enum(v: Any) -> Any:
+    if not isinstance(v, str):
+        return v
+    return _SEPARADORES.sub("_", v.strip().lower().translate(_SIN_TILDES)).strip("_")
+
+
+def _rol_parte(v: Any) -> Any:
+    clave = _clave_enum(v)
+    if isinstance(clave, str) and clave not in _ROLES_PARTE:
+        singular = clave.rstrip("s")
+        return singular if singular in _ROLES_PARTE else clave
+    return clave
+
+
+def _tipo_poder(v: Any) -> Any:
+    clave = _clave_enum(v)
+    if isinstance(clave, str) and clave not in _TIPOS_PODER:
+        if clave.startswith("sustitu"):
+            return "sustitucion"
+        if clave.startswith("certificado"):
+            return "certificado_existencia"
+    return clave
+
+
+_RolParteLLM = Annotated[RolParte, BeforeValidator(_rol_parte)]
+_TipoPoderLLM = Annotated[TipoPoder, BeforeValidator(_tipo_poder)]
+
+
+class EvidenciaDoc(BaseModel):
+    """Fragmento del expediente que el código comprobó en una página concreta."""
+
+    doc_id: str
+    pagina: int
+    cita: str
+    cobertura: float = 0.0
+    ocr: bool = False
+    inicio: Optional[int] = None
+    fin: Optional[int] = None
+
+
+class Cadena(BaseModel):
+    """Si quien otorgó el poder de una persona jurídica figura como su representante en el certificado de existencia."""
+
+    estado: Literal["confirmada", "contradicha", "sin_certificado", "no_aplica"] = "no_aplica"
+    otorgante: str = ""
+    cargo: str = ""
+    evidencia: Optional[EvidenciaDoc] = None
+
+
+class Poder(BaseModel):
+    tipo: TipoPoder
+    evidencia: EvidenciaDoc
+    otorgante: str = ""
+    parte: str = ""
+    cadena: Cadena = Field(default_factory=Cadena)
+
+
+class Apoderado(BaseModel):
+    """Abogado identificado en el expediente; cédula y tarjeta solo si constan tal cual en una página verificada."""
+
+    id: str
+    nombre: str
+    parte: str
+    rol_parte: RolParte = "otro"
+    tipo_persona: Literal["natural", "juridica"] = "natural"
+    cedula: Optional[str] = None
+    tarjeta: Optional[str] = None
+    cedula_fuente: Optional[EvidenciaDoc] = None
+    menciones: list[EvidenciaDoc] = []
+    poderes: list[Poder] = []
+    ajenos: list[Poder] = []
+    motivos: list[str] = []
+
+
+class ParteSinApoderado(BaseModel):
+    nombre: str
+    rol_parte: RolParte = "otro"
+    nota: str = ""
+
+
+class Identificacion(BaseModel):
+    """Resultado del nodo apoderados: lo que el código comprobó de la propuesta del modelo."""
+
+    version: int = 1
+    ingesta_sha: str = ""
+    metadatos_sha: str = ""
+    """Huella de las partes de los metadatos con que se cotejó (``apoderados.huella_partes``)."""
+    apoderados: list[Apoderado] = []
+    sin_apoderado: list[ParteSinApoderado] = []
+    alertas: list[str] = []
+    documentos_revisados: int = 0
+
+
+class _EstrictoLLM(BaseModel):
+    """Salida estricta del modelo: todos los campos son requeridos y un nulo pasa al valor vacío del campo."""
+
+    model_config = ConfigDict(json_schema_extra=_todos_requeridos)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _sin_nulos(cls, v: Any, info: ValidationInfo) -> Any:
+        if v is None:
+            campo = cls.model_fields[info.field_name]
+            return campo.get_default(call_default_factory=True)
+        return v
+
+
+class ParteLLM(_EstrictoLLM):
+    nombre: str = Field("", description="Nombre de la parte tal como figura en METADATOS")
+    rol_parte: _RolParteLLM = Field("otro", description="Calidad de la parte en el trámite de tutela")
+    con_abogado: bool = Field(
+        False, description="Verdadero si la parte actúa en el expediente por medio de abogado o apoderado judicial"
+    )
+
+
+class MencionLLM(_EstrictoLLM):
+    doc_id: str = Field("", description="doc_id del documento donde actúa el abogado")
+    pagina: int = Field(0, description="Número de la página, según el marcador [p. N]")
+    cita: str = Field("", description="Fragmento literal de esa página, de 8 a 60 palabras, que contiene el nombre del abogado")
+
+
+class PoderLLM(_EstrictoLLM):
+    tipo: _TipoPoderLLM = Field(
+        "poder",
+        description="'poder' si la parte lo otorga al abogado, 'sustitucion' si otro abogado le sustituye el poder, "
+        "'certificado_existencia' si el certificado de existencia y representación lo inscribe como apoderado",
+    )
+    doc_id: str = Field("", description="doc_id del documento que contiene el poder, la sustitución o el certificado")
+    pagina: int = Field(0, description="Número de la página, según el marcador [p. N]")
+    cita: str = Field(
+        "", description="Fragmento literal de esa página, de 8 a 60 palabras, que contiene el nombre del abogado"
+    )
+    otorgante: str = Field("", description="Nombre de quien otorga o sustituye el poder, tal como consta; vacío si no consta")
+    cargo_otorgante: str = Field(
+        "",
+        description="Calidad en que firma el otorgante ('representante legal', 'gerente', 'en nombre propio', "
+        "'apoderado principal'); vacío si no consta",
+    )
+    certificado_doc_id: str = Field(
+        "",
+        description="Si la parte es una persona jurídica, doc_id del certificado de existencia y representación que "
+        "nombra al otorgante; vacío si no hay",
+    )
+    certificado_pagina: int = Field(0, description="Página de ese certificado que nombra al otorgante; 0 si no hay")
+
+
+class AbogadoLLM(_EstrictoLLM):
+    nombre: str = Field("", description="Nombre completo del abogado tal como consta en el expediente")
+    parte: str = Field("", description="Parte que representa, escrita exactamente como en METADATOS")
+    cedula_texto: str = Field(
+        "", description="Cédula de ciudadanía del abogado tal como está escrita, con sus puntos y espacios; vacío si no consta"
+    )
+    tarjeta_texto: str = Field(
+        "", description="Número de tarjeta profesional tal como está escrito, sin el rótulo 'T.P.'; vacío si no consta"
+    )
+    menciones: list[MencionLLM] = Field([], description="Páginas donde el abogado actúa: escritos que firma o presenta")
+    poderes: list[PoderLLM] = Field(
+        [], description="Cada poder, sustitución o certificado que lo faculta para representar a la parte"
+    )
+
+
+class ApoderadosLLM(_EstrictoLLM):
+    partes: list[ParteLLM] = Field([], description="Todas las partes del trámite, con o sin abogado")
+    abogados: list[AbogadoLLM] = Field([], description="Un elemento por cada abogado y parte que representa")
 
 
 class ParrafoLLM(BaseModel):
@@ -535,3 +715,4 @@ class Estado(TypedDict, total=False):
     bitacora: Annotated[list[dict[str, Any]], operator.add]
     salidas: dict[str, str]
     jev_metadatos: Optional[dict[str, Any]]
+    apoderados: Optional[dict[str, Any]]

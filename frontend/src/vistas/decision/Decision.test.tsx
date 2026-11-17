@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecisionVistaRespuesta, EstadoServidor } from "../../api/contrato";
 import { estadoServidor } from "../../estado";
+import { APODERADOS_BORRADOR } from "../borrador/mock";
 import Decision from "./index";
 import type { PayloadDecision } from "./tipos";
 
@@ -32,6 +33,7 @@ interface Opciones {
   run?: () => Response;
   resumen?: () => Response | Promise<Response>;
   proveedor?: string;
+  apoderados?: () => unknown;
 }
 
 const json = (datos: unknown, estado = 200) =>
@@ -85,6 +87,7 @@ function servidor(opciones: Opciones = {}) {
         return r instanceof Response ? r : json(r);
       }
       if (url.endsWith("/run")) return opciones.run ? opciones.run() : json({ job_id: "j-1" });
+      if (url.endsWith("/apoderados") && opciones.apoderados) return json(opciones.apoderados());
       return json({ detail: "no encontrado" }, 404);
     }),
   );
@@ -240,6 +243,86 @@ describe("Decisión: errores de la API", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
     expect(await screen.findByText("No se pudo enviar la decisión")).toBeTruthy();
     expect(location.hash).toBe("");
+  });
+});
+
+describe("Decisión: apoderados no verificados", () => {
+  const BLOQUEO = "Hay apoderados no verificados sin revisar: CARLOS EDUARDO PINEDA RUIZ. Márquelos como revisados en el borrador.";
+  const sinBloqueo = () => ({
+    ...structuredClone(APODERADOS_BORRADOR),
+    apoderados: APODERADOS_BORRADOR.apoderados.map((a) => ({ ...a, bloquea: false })),
+    bloquea_decision: false,
+  });
+  const enviarBoton = () => screen.getByRole("button", { name: "Enviar decisión y redactar" }) as HTMLButtonElement;
+
+  it("con un apoderado no verificado sin revisar deshabilita el envío y enlaza al borrador", async () => {
+    const llamadas = servidor({ apoderados: () => APODERADOS_BORRADOR });
+    await montar();
+    const aviso = (await screen.findByText("Hay apoderados no verificados sin revisar")).closest("[role=alert]") as HTMLElement;
+    expect(aviso.textContent).toContain("CARLOS EDUARDO PINEDA RUIZ: márquelo como revisado en la pestaña Apoderados del borrador");
+    expect(within(aviso).getByRole("link", { name: "Ir al borrador" }).getAttribute("href")).toBe(`#/segunda/${CASO}/borrador`);
+    expect(enviarBoton().disabled).toBe(true);
+    expect(estadoBarra()).toBe("Revise en el borrador los apoderados no verificados antes de enviar.");
+    expect(llamadas.some((l) => l.url === `/api/casos/${CASO}/apoderados`)).toBe(true);
+  });
+
+  it("con varios nombra a todos en plural", async () => {
+    const varios = structuredClone(APODERADOS_BORRADOR);
+    varios.apoderados = varios.apoderados.map((a) => ({ ...a, estado: "no_verificado", bloquea: true }));
+    servidor({ apoderados: () => varios });
+    await montar();
+    const aviso = (await screen.findByText("Hay apoderados no verificados sin revisar")).closest("[role=alert]") as HTMLElement;
+    expect(aviso.textContent).toContain(
+      "CARLOS EDUARDO PINEDA RUIZ, LUIS FERNANDO OSPINA ARANGO y ANDREA PAOLA GIRALDO MONTOYA: márquelos como revisados en la pestaña Apoderados",
+    );
+  });
+
+  it("sin bloqueos o si no se pudo leer la lista, el envío sigue habilitado", async () => {
+    servidor({ apoderados: sinBloqueo });
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    expect(enviarBoton().disabled).toBe(false);
+    expect(screen.queryByText("Hay apoderados no verificados sin revisar")).toBeNull();
+  });
+
+  it("muestra el 409 del bloqueo tal como lo explica el servidor y vuelve a leer los apoderados", async () => {
+    let lecturas = 0;
+    const llamadas = servidor({
+      apoderados: () => {
+        lecturas += 1;
+        return lecturas === 1 ? sinBloqueo() : APODERADOS_BORRADOR;
+      },
+      run: () => json({ detail: BLOQUEO }, 409),
+    });
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.click(enviarBoton());
+    fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
+    const error = (await screen.findByText("No se pudo enviar la decisión")).closest("[role=alert]") as HTMLElement;
+    expect(error.textContent).toContain(BLOQUEO);
+    expect(error.textContent).not.toContain("Ya hay una ejecución en curso");
+    expect(within(error).getByRole("link", { name: "Ir al borrador" }).getAttribute("href")).toBe(`#/segunda/${CASO}/borrador`);
+    await waitFor(() => expect(llamadas.filter((l) => l.url.endsWith("/apoderados")).length).toBe(2));
+    expect(await screen.findByText("Hay apoderados no verificados sin revisar")).toBeTruthy();
+    expect(enviarBoton().disabled).toBe(true);
+    expect(location.hash).toBe("");
+  });
+
+  it("un 409 por una ejecución en curso conserva su mensaje y enlaza al proceso", async () => {
+    servidor({ run: () => json({ detail: "Ya hay una ejecución en curso para este caso." }, 409) });
+    await montar();
+    elegir("Confirmar");
+    escribir("Por qué, en pocas líneas", "Se confirma.");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.click(enviarBoton());
+    fireEvent.click(await screen.findByRole("button", { name: "Enviar decisión" }));
+    const error = (await screen.findByText("No se pudo enviar la decisión")).closest("[role=alert]") as HTMLElement;
+    expect(error.textContent).toContain("Ya hay una ejecución en curso para este caso.");
+    expect(within(error).getByRole("link", { name: "Ver el proceso" })).toBeTruthy();
   });
 });
 

@@ -1,46 +1,94 @@
-import type { ComponentChildren } from "preact";
-import type { Bloque, CitaVista, Segmento, Vista } from "../../api/contrato";
+import type { ComponentChildren, JSX } from "preact";
+import type { ApoderadoVista, Bloque, CitaVista, Segmento, Vista } from "../../api/contrato";
 import { cx, Hoja } from "../../ui";
+import { CLASE_MARCA, LECTURA_MARCA } from "./apoderados";
+import "./apoderados.css";
 import { agruparBloques, ETIQUETA_ESTADO_CITA } from "./datos";
 import "./documento.css";
+import type { Seleccion } from "./tipos";
 
 const COLUMNAS_ANCHA = 3;
 
 export interface ContextoDocumento {
   citas: Map<string, CitaVista>;
-  seleccionada: string | null;
+  /** Los abogados que devolvió `/apoderados`; mientras carga o si falla está vacío y los nombres van sin marca. */
+  apoderados: Map<string, ApoderadoVista>;
+  seleccionada: Seleccion | null;
   alCita: (id: string, ancla: HTMLElement) => void;
+  alApoderado: (id: string, ancla: HTMLElement) => void;
 }
 
 interface PropsSegmentos extends ContextoDocumento {
   segmentos: Segmento[];
 }
 
-function Fragmento({ segmento, citas, seleccionada, alCita }: ContextoDocumento & { segmento: Segmento }) {
-  let nodo: ComponentChildren = segmento.texto.replace(/\t/g, " ");
-  if (segmento.negrita) nodo = <strong>{nodo}</strong>;
-  if (segmento.cursiva) nodo = <em>{nodo}</em>;
+/** Las marcas del texto se comportan como botones: Enter y Espacio las abren sin desplazar la página. */
+function teclaDeBoton(abrir: (ancla: HTMLElement) => void) {
+  return (e: JSX.TargetedKeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    abrir(e.currentTarget);
+  };
+}
+
+/** El nombre con su última palabra aparte: el glifo del estado va pegado a ella y nunca baja solo al renglón siguiente. */
+function conCola(texto: string): ComponentChildren {
+  const cola = /\S+\s*$/.exec(texto);
+  if (!cola) return texto;
+  return (
+    <>
+      {texto.slice(0, cola.index)}
+      <span class="bor-apo-cola">{cola[0]}</span>
+    </>
+  );
+}
+
+function Fragmento({ segmento, citas, apoderados, seleccionada, alCita, alApoderado }: ContextoDocumento & { segmento: Segmento }) {
+  const texto = segmento.texto.replace(/\t/g, " ");
+  const conFormato = (contenido: ComponentChildren): ComponentChildren => {
+    let nodo = contenido;
+    if (segmento.negrita) nodo = <strong>{nodo}</strong>;
+    if (segmento.cursiva) nodo = <em>{nodo}</em>;
+    return nodo;
+  };
+  const nodo = conFormato(texto);
   const cita = segmento.cita_id ? citas.get(segmento.cita_id) : undefined;
-  if (!cita) return <>{nodo}</>;
-  const activa = seleccionada === cita.id;
+  if (cita) {
+    const activa = seleccionada?.tipo === "cita" && seleccionada.id === cita.id;
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        class={cx("bor-cita", cita.estado, activa && "sel")}
+        data-cita={cita.id}
+        aria-pressed={activa}
+        aria-haspopup="dialog"
+        aria-controls={activa ? "bor-detalle" : undefined}
+        onClick={(e) => alCita(cita.id, e.currentTarget)}
+        onKeyDown={teclaDeBoton((ancla) => alCita(cita.id, ancla))}
+      >
+        {nodo}
+        <span class="solo-lectura"> ({ETIQUETA_ESTADO_CITA[cita.estado]})</span>
+      </span>
+    );
+  }
+  const apoderado = segmento.apoderado_id ? apoderados.get(segmento.apoderado_id) : undefined;
+  if (!apoderado) return <>{nodo}</>;
+  const activo = seleccionada?.tipo === "apoderado" && seleccionada.id === apoderado.id;
   return (
     <span
       role="button"
       tabIndex={0}
-      class={cx("bor-cita", cita.estado, activa && "sel")}
-      data-cita={cita.id}
-      aria-pressed={activa}
+      class={cx("bor-apo", CLASE_MARCA[apoderado.estado], activo && "sel")}
+      data-apoderado={apoderado.id}
+      aria-pressed={activo}
       aria-haspopup="dialog"
-      aria-controls={activa ? "bor-detalle" : undefined}
-      onClick={(e) => alCita(cita.id, e.currentTarget)}
-      onKeyDown={(e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        alCita(cita.id, e.currentTarget);
-      }}
+      aria-controls={activo ? "bor-detalle" : undefined}
+      onClick={(e) => alApoderado(apoderado.id, e.currentTarget)}
+      onKeyDown={teclaDeBoton((ancla) => alApoderado(apoderado.id, ancla))}
     >
-      {nodo}
-      <span class="solo-lectura"> ({ETIQUETA_ESTADO_CITA[cita.estado]})</span>
+      {conFormato(conCola(texto))}
+      <span class="solo-lectura"> ({LECTURA_MARCA[apoderado.estado]})</span>
     </span>
   );
 }

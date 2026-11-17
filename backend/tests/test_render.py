@@ -213,6 +213,27 @@ def test_reexportaciones():
     assert render.decision_encabezado is formulas.encabezado_decision
 
 
+def test_el_mismo_documento_da_los_mismos_bytes_a_cualquier_hora(tmp_path, estado, monkeypatch):
+    """La vista del borrador guarda las citas revisadas bajo el sha256 del .docx: volver a generar el mismo
+    documento más tarde no debe cambiarlo (python-docx fecha cada entrada del zip con la hora)."""
+    import time
+    import zipfile
+
+    reloj = [1_800_000_000.0]
+    monkeypatch.setattr(time, "time", lambda: reloj[0])
+    uno = render_fallo(tmp_path, estado, "B", "uno.docx")
+    reloj[0] += 3600 + 7
+    dos = render_fallo(tmp_path, estado, "B", "dos.docx")
+    assert hashlib.sha256(uno.read_bytes()).hexdigest() == hashlib.sha256(dos.read_bytes()).hexdigest()
+    with zipfile.ZipFile(uno) as z:
+        assert {i.date_time for i in z.infolist()} == {(1980, 1, 1, 0, 0, 0)}
+        assert "word/document.xml" in z.namelist()
+    assert lineas(uno) == lineas(dos)
+    # Con otro contenido, otro sha256.
+    otro = construir_estado(False)
+    assert hashlib.sha256(render_fallo(tmp_path, otro, "B", "tres.docx").read_bytes()).hexdigest() != hashlib.sha256(uno.read_bytes()).hexdigest()
+
+
 
 def test_fecha_larga():
     assert render.fecha_larga("2026-09-21") == "veintiuno (21) de septiembre de dos mil veintiséis (2026)"
@@ -819,8 +840,8 @@ def test_informe(tmp_path, estado):
     ruta = render.render_informe(estado, Config(), tmp_path / "informe_verificacion.docx")
     texto = lineas(ruta)
     for titulo in ("I. CITAS DE JURISPRUDENCIA", "II. CITAS NORMATIVAS (NO VERIFICADAS AUTOMÁTICAMENTE)",
-                   "III. ALERTAS POR NODO", "IV. ERRORES BLOQUEANTES VIGENTES",
-                   "V. PENDIENTES Y VALORES POR DEFECTO", "VI. BITÁCORA DE LLAMADAS A LA IA"):
+                   "III. APODERADOS", "IV. ALERTAS POR NODO", "V. ERRORES BLOQUEANTES VIGENTES",
+                   "VI. PENDIENTES Y VALORES POR DEFECTO", "VII. BITÁCORA DE LLAMADAS A LA IA"):
         assert titulo in texto
     assert "BLOQUEA: error vigente de ejemplo" in texto
     assert "ALERTA: alerta de apertura de ejemplo" in texto
@@ -959,7 +980,7 @@ def test_informe_errores_bloqueantes_incluye_los_bloquea_de_las_alertas(tmp_path
         "caso_concreto": ["BLOQUEA: falta marcador de cita ok"],
     }
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx"))
-    errores = seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES")
+    errores = seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES")
     assert errores == ["BLOQUEA: menos de dos citas ok", "BLOQUEA: falta marcador de cita ok"]
     assert "No hay errores bloqueantes vigentes." not in texto
 
@@ -969,7 +990,7 @@ def test_informe_errores_bloqueantes_une_errores_y_alertas_sin_duplicar(tmp_path
     estado["errores"] = ["BLOQUEA: regla uno", "Error de otro tipo"]
     estado["alertas"] = {"consideraciones": ["BLOQUEA: regla uno", "BLOQUEA: regla dos"], "apertura": ["BLOQUEA: regla dos"]}
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx"))
-    errores = seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES")
+    errores = seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES")
     assert errores == ["BLOQUEA: regla uno", "Error de otro tipo", "BLOQUEA: regla dos"]
 
 
@@ -977,15 +998,15 @@ def test_informe_alertas_sin_bloquea_no_son_errores_bloqueantes(tmp_path):
     estado = estado_con_citas(cita("a"))
     estado["alertas"] = {"apertura": ["ALERTA: solo una alerta"]}
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx"))
-    assert seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES") == ["No hay errores bloqueantes vigentes."]
-    assert "ALERTA: solo una alerta" in seccion_informe(texto, "III. ALERTAS POR NODO")
+    assert seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES") == ["No hay errores bloqueantes vigentes."]
+    assert "ALERTA: solo una alerta" in seccion_informe(texto, "IV. ALERTAS POR NODO")
 
 
 def test_informe_lista_los_pendientes_y_valores_por_defecto(tmp_path):
     pendientes = ["Fecha del fallo tomada por defecto (hoy).", "  Formato de calidad sin puntajes.  ", "", "Fecha del fallo tomada por defecto (hoy)."]
     estado = estado_con_citas(cita("a"))
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx", pendientes=pendientes))
-    assert seccion_informe(texto, "V. PENDIENTES Y VALORES POR DEFECTO") == [
+    assert seccion_informe(texto, "VI. PENDIENTES Y VALORES POR DEFECTO") == [
         "Fecha del fallo tomada por defecto (hoy).",
         "Formato de calidad sin puntajes.",
     ]
@@ -996,7 +1017,7 @@ def test_informe_lista_los_pendientes_y_valores_por_defecto(tmp_path):
 def test_informe_sin_pendientes_lo_dice(tmp_path, pendientes):
     estado = estado_con_citas(cita("a"))
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx", pendientes=pendientes))
-    assert seccion_informe(texto, "V. PENDIENTES Y VALORES POR DEFECTO") == ["Sin pendientes registrados."]
+    assert seccion_informe(texto, "VI. PENDIENTES Y VALORES POR DEFECTO") == ["Sin pendientes registrados."]
 
 
 def test_informe_pendientes_es_opcional_y_va_por_nombre(tmp_path):
@@ -1017,7 +1038,7 @@ def test_informe_sin_citas_ok_avisa_que_falta_jurisprudencia_verificada(tmp_path
     texto = lineas(render.render_informe(estado_con_citas(*citas), Config(), tmp_path / "i.docx"))
     jurisprudencia = seccion_informe(texto, "I. CITAS DE JURISPRUDENCIA")
     assert any("falta jurisprudencia verificada" in linea for linea in jurisprudencia)
-    errores = seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES")
+    errores = seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES")
     assert "No hay errores bloqueantes vigentes." not in errores
     assert any("falta jurisprudencia verificada" in linea for linea in errores)
 
@@ -1026,7 +1047,7 @@ def test_informe_sin_citas_ok_con_bloquea_vigente_lista_el_bloquea(tmp_path):
     estado = estado_con_citas(cita("a", "alerta"))
     estado["alertas"] = {"consideraciones": ["BLOQUEA: menos de dos citas ok"]}
     texto = lineas(render.render_informe(estado, Config(), tmp_path / "i.docx"))
-    errores = seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES")
+    errores = seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES")
     assert "BLOQUEA: menos de dos citas ok" in errores
     assert any("falta jurisprudencia verificada" in linea for linea in seccion_informe(texto, "I. CITAS DE JURISPRUDENCIA"))
 
@@ -1041,7 +1062,7 @@ def test_informe_con_verificacion_de_relatoria_apagada_no_exige_citas_ok(tmp_pat
     estado = estado_con_citas(cita("a", "alerta"))
     texto = lineas(render.render_informe(estado, Config(verificar_relatoria=False), tmp_path / "i.docx"))
     assert "falta jurisprudencia verificada" not in "\n".join(texto)
-    assert seccion_informe(texto, "IV. ERRORES BLOQUEANTES VIGENTES") == ["No hay errores bloqueantes vigentes."]
+    assert seccion_informe(texto, "V. ERRORES BLOQUEANTES VIGENTES") == ["No hay errores bloqueantes vigentes."]
 
 
 def test_previo_sin_citas_ok_avisa_que_falta_jurisprudencia_verificada(tmp_path):
@@ -1456,3 +1477,153 @@ def test_informe_lista_citas_normativas_sin_verificar(tmp_path):
 def test_informe_sin_citas_normativas(tmp_path):
     texto = lineas(render.render_informe(construir_estado(), Config(), tmp_path / "i.docx"))
     assert "No se detectaron citas normativas en el texto generado." in texto
+
+
+# --- Nombres de apoderados en la prosa (solo la vista del borrador previo) ---
+
+
+def tramos_en(apoderados: list[tuple[str, str]], texto: str, ocupados=()) -> list[tuple[int, int, str]]:
+    return sorted(render._Docx(Config(), apoderados=apoderados)._apoderados_en(texto, list(ocupados)))
+
+
+def nombres_en(apoderados: list[tuple[str, str]], texto: str, ocupados=()) -> list[tuple[str, str]]:
+    return sorted((texto[a:b], marca) for a, b, marca in tramos_en(apoderados, texto, ocupados))
+
+
+ANDREA = [("ap-andrea", "ANDREA PAOLA GIRALDO MONTOYA")]
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("la doctora Andrea Paola Giraldo Montoya contestó.", "Andrea Paola Giraldo Montoya"),
+        ("la doctora Andrea Paola Giraldo contestó.", "Andrea Paola Giraldo"),
+        ("la doctora ANDREA PAOLA GIRALDO, apoderada.", "ANDREA PAOLA GIRALDO"),
+        ("por la doctora Andrea Paola Giraldo y la accionante.", "Andrea Paola Giraldo"),
+        ("la doctora Andrea Paola Giraldo.", "Andrea Paola Giraldo"),
+        ("la doctora Ándrea Páola Giráldo Montoyá contestó.", "Ándrea Páola Giráldo Montoyá"),
+        ("la doctora Andrea\xa0Paola  Giraldo\tMontoya contestó.", "Andrea\xa0Paola  Giraldo\tMontoya"),
+    ],
+)
+def test_marca_el_nombre_completo_y_sin_el_ultimo_apellido(texto, esperado):
+    assert nombres_en(ANDREA, texto) == [(esperado, "ap:ap-andrea")]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "la doctora andrea paola giraldo montoya contestó.",
+        "la señora Andrea Paola Giraldo Restrepo contestó.",
+        "la señora ANDREA PAOLA GIRALDO RESTREPO contestó.",
+        "la señora Andrea Paola Giraldo de la Torre contestó.",
+        "la señora Andrea Paola Giraldo-Restrepo contestó.",
+        "la señora Andrea Paola Giralda Montoya contestó.",
+        "la señora Andrea Paola Montoya contestó.",
+        "la señora Mariandrea Paola Giraldo Montoyas contestó.",
+    ],
+)
+def test_no_marca_otra_persona_ni_el_nombre_en_minuscula(texto):
+    assert nombres_en(ANDREA, texto) == []
+
+
+def test_las_tildes_del_nombre_registrado_no_impiden_marcar():
+    apoderados = [("ap-maria", "María José Pérez Gómez")]
+    assert nombres_en(apoderados, "la doctora MARIA JOSE PEREZ GOMEZ.") == [("MARIA JOSE PEREZ GOMEZ", "ap:ap-maria")]
+
+
+def test_las_tildes_descompuestas_quedan_dentro_del_tramo():
+    apoderados = [("ap-maria", "PÉREZ GÓMEZ, MARÍA JOSÉ")]
+    texto = "según Pérez Gómez María José, apoderada."
+    assert nombres_en(apoderados, texto) == [("Pérez Gómez María José", "ap:ap-maria")]
+
+
+def test_tratamientos_e_iniciales_del_nombre_registrado_se_ignoran():
+    apoderados = [("ap-ana", "Dra. Ana Lucía Gómez Ríos J.")]
+    assert nombres_en(apoderados, "la doctora Ana Lucía Gómez Ríos.") == [("Ana Lucía Gómez Ríos", "ap:ap-ana")]
+
+
+@pytest.mark.parametrize("nombre", ["PÉREZ", "Dr. Pérez", "de la Torre", "", "J. P."])
+def test_un_nombre_de_menos_de_dos_palabras_no_se_marca(nombre):
+    assert nombres_en([("ap-x", nombre)], "El doctor Pérez de la Torre, J. P., contestó.") == []
+
+
+def test_un_apellido_compuesto_no_deja_solo_los_nombres_de_pila():
+    apoderados = [("ap-jose", "JOSÉ MARÍA DE LA TORRE")]
+    assert nombres_en(apoderados, "el doctor José María de la Torre y José María.") == [
+        ("José María de la Torre", "ap:ap-jose")
+    ]
+
+
+@pytest.mark.parametrize("nombre", ["María del Carmen Ruiz", "MARÍA DE LOS ÁNGELES GÓMEZ", "Pedro de la Torre Ruiz"])
+def test_sin_variante_corta_si_el_nombre_lleva_particulas(nombre):
+    """Lo que queda sin el último apellido pueden ser solo nombres de pila compuestos, de otra persona."""
+    completo = " ".join(nombre.title().split())
+    corto = completo.rsplit(" ", 1)[0]
+    texto = f"doña {corto} dijo que la doctora {completo} contestó."
+    assert nombres_en([("ap-x", nombre)], texto) == [(completo, "ap:ap-x")]
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("el accionante Juan Pérez Rodríguez instauró la acción.", []),
+        ("el accionante JUAN PÉREZ RODRÍGUEZ instauró la acción.", []),
+        ("el accionante Juan Pérez de la Hoz instauró la acción.", []),
+        ("el doctor Juan Pérez contestó.", [("Juan Pérez", "ap:ap-juan")]),
+        ("el doctor Juan Pérez, apoderado, contestó.", [("Juan Pérez", "ap:ap-juan")]),
+        ("según Juan Pérez y la accionante.", [("Juan Pérez", "ap:ap-juan")]),
+    ],
+)
+def test_un_nombre_de_dos_palabras_no_se_marca_dentro_de_uno_mas_largo(texto, esperado):
+    assert nombres_en([("ap-juan", "JUAN PÉREZ")], texto) == esperado
+
+
+def test_la_variante_que_comparten_dos_apoderados_no_se_marca():
+    mismo = [("ap-1", "ANDREA PAOLA GIRALDO MONTOYA"), ("ap-2", "Andrea Paola Giraldo Montoya")]
+    assert nombres_en(mismo, "la doctora Andrea Paola Giraldo Montoya y Andrea Paola Giraldo.") == []
+    corto = [("ap-corto", "JUAN PÉREZ"), ("ap-largo", "JUAN PÉREZ GÓMEZ")]
+    assert nombres_en(corto, "Juan Pérez, y luego Juan Pérez Gómez.") == [("Juan Pérez Gómez", "ap:ap-largo")]
+
+
+def test_gana_el_nombre_mas_largo():
+    apoderados = [("ap-apellidos", "PÉREZ GÓMEZ"), ("ap-completo", "JUAN PÉREZ GÓMEZ")]
+    assert nombres_en(apoderados, "Juan Pérez Gómez y Pérez Gómez.") == [
+        ("Juan Pérez Gómez", "ap:ap-completo"),
+        ("Pérez Gómez", "ap:ap-apellidos"),
+    ]
+
+
+def test_no_se_cruza_con_una_cita():
+    texto = "la Sentencia T-1 de 2020, con ponencia de Andrea Paola Giraldo Montoya, y Andrea Paola Giraldo Montoya."
+    fin_cita = texto.index(", y")
+    assert tramos_en(ANDREA, texto, [(0, fin_cita, "c1")]) == [(texto.rindex("Andrea"), len(texto) - 1, "ap:ap-andrea")]
+    apellido = texto.index("Montoya")
+    assert tramos_en(ANDREA, texto[:fin_cita], [(apellido, apellido + 3, "c2")]) == []
+
+
+def test_cada_mencion_se_marca():
+    texto = "Andrea Paola Giraldo Montoya contestó; luego Andrea Paola Giraldo impugnó."
+    assert nombres_en(ANDREA, texto) == [
+        ("Andrea Paola Giraldo", "ap:ap-andrea"),
+        ("Andrea Paola Giraldo Montoya", "ap:ap-andrea"),
+    ]
+
+
+def test_sin_apoderados_no_hay_tramos():
+    assert nombres_en([], "Andrea Paola Giraldo Montoya contestó.") == []
+
+
+def test_leer_toma_los_apoderados_de_la_identificacion():
+    from tutela2.models import Apoderado, Identificacion
+
+    estado = construir_estado()
+    assert render._leer(estado).apoderados == []
+    ident = Identificacion(apoderados=[Apoderado(id="ap-0123456789", nombre="ANDREA PAOLA GIRALDO MONTOYA", parte="BANCO EJEMPLO S.A.")])
+    for valor in (ident, ident.model_dump(mode="json")):
+        assert render._leer({**estado, "apoderados": valor}).apoderados == [("ap-0123456789", "ANDREA PAOLA GIRALDO MONTOYA")]
+
+
+def test_leer_ignora_una_identificacion_invalida(caplog):
+    estado = {**construir_estado(), "apoderados": {"apoderados": [{"id": "ap-0123456789"}]}}
+    assert render._leer(estado).apoderados == []
+    assert "no es válida" in caplog.text

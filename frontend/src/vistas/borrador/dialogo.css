@@ -18,3 +18,4 @@ dialog.dialogo.bor-dialogo { width: min(34rem, calc(100vw - 2rem)); border-radiu
 @media (max-width: 760px) {
   .bor-dlg-opciones { grid-template-columns: 1fr; }
 }
+.bor-dlg-campos { display: grid; gap: 0.9rem; }

@@ -1176,3 +1176,80 @@ def texto_para_llm(
             cuerpo = f"{AVISO_REVISAR}\n{cuerpo}"
         bloques.append(f"### DOC {d.doc_id} | {d.rol} | {d.nombre}\n{cuerpo}")
     return "\n\n".join(bloques)
+
+
+ETIQUETA_CERTIFICADO = "· CERTIFICADO DE EXISTENCIA"
+ROLES_ESCRITOS = ("escrito_tutela", "contestacion", "impugnacion", "memorial")
+_CLAVES_APODERADOS = re.compile(
+    r"apoderad|abogad|poderdante|\bpoder(?:es)?\s+(?:especial|general|amplio)|\b(?:confiero|otorgo|sustituyo|reasumo)\b"
+    r"|\bt\.\s?p\.|\btp\b|tarjeta\s+profesional|representante\s+legal|sustitucion\s+de(?:l)?\s+poder"
+)
+_PRIORIDAD_CLAVE, _PRIORIDAD_BORDE = 0, 1
+
+
+def es_pagina_certificado(p: Pagina) -> bool:
+    return not p.sin_texto and (p.ruido or _es_certificado(p.texto))
+
+
+def documentos_para_apoderados(ing: Ingesta) -> list[Doc]:
+    return [
+        d
+        for d in ing.documentos
+        if d.doc_id not in ing.docs_ajenos
+        and d.rol != "producto_despacho"
+        and not (d.ruido and d.motivo_ruido.startswith("Duplicado"))
+    ]
+
+
+def paginas_para_apoderados(ing: Ingesta, max_chars: int = 150_000) -> tuple[str, list[str]]:
+    """Páginas del expediente que sirven para identificar a los abogados y sus poderes.
+
+    Toma las páginas que nombran poderes, apoderados, abogados, tarjetas profesionales o
+    representantes legales; la primera y la última de cada escrito de parte, y todas las páginas
+    de certificados de existencia y representación (que ``texto_para_llm`` omite por ser ruido),
+    marcadas con ``ETIQUETA_CERTIFICADO``. Usa el formato ``### DOC`` / ``[p. N]`` de
+    ``texto_para_llm``, que no cambia. Si las páginas superan ``max_chars``, deja primero las
+    más pertinentes y devuelve una alerta con lo omitido.
+    """
+    candidatas: list[tuple[int, int, int, Doc, Pagina]] = []
+    docs = documentos_para_apoderados(ing)
+    for i, d in enumerate(docs):
+        legibles = [p for p in d.paginas if p.texto.strip() and not p.sin_texto]
+        bordes = {legibles[0].n, legibles[-1].n} if legibles and d.rol in ROLES_ESCRITOS else set()
+        for p in legibles:
+            if es_pagina_certificado(p) or _CLAVES_APODERADOS.search(_plano(p.texto)):
+                candidatas.append((_PRIORIDAD_CLAVE, i, p.n, d, p))
+            elif p.n in bordes:
+                candidatas.append((_PRIORIDAD_BORDE, i, p.n, d, p))
+
+    def encabezado(d: Doc) -> str:
+        aviso = f"\n{AVISO_REVISAR}" if d.doc_id in ing.docs_revisar else ""
+        return f"### DOC {d.doc_id} | {d.rol} | {d.nombre}{aviso}"
+
+    restante = max_chars
+    elegidas: dict[int, dict[int, str]] = {}
+    omitidas, truncada = 0, False
+    for prioridad, i, n, d, p in sorted(candidatas, key=lambda c: c[:3]):
+        rotulo = f"[p. {p.n}] {ETIQUETA_CERTIFICADO}" if es_pagina_certificado(p) else f"[p. {p.n}]"
+        bloque = f"{rotulo}\n{p.texto}"
+        extra = 0 if i in elegidas else len(encabezado(d)) + 3
+        if len(bloque) + 1 + extra <= restante:
+            elegidas.setdefault(i, {})[n] = bloque
+            restante -= len(bloque) + 1 + extra
+        elif prioridad == _PRIORIDAD_CLAVE and restante - extra > 500:
+            elegidas.setdefault(i, {})[n] = bloque[: restante - extra - 30] + "\n[... TRUNCADO ...]"
+            restante, truncada = 0, True
+        else:
+            omitidas += 1
+
+    bloques = [
+        f"{encabezado(docs[i])}\n" + "\n".join(paginas[n] for n in sorted(paginas))
+        for i, paginas in sorted(elegidas.items())
+    ]
+    alertas: list[str] = []
+    if omitidas or truncada:
+        alertas.append(
+            f"ALERTA: Identificación de apoderados: las páginas pertinentes superan el tope de {max_chars} caracteres; "
+            f"se omitieron {omitidas}{' y se truncó una' if truncada else ''}. Puede faltar algún abogado o poder."
+        )
+    return "\n\n".join(bloques), alertas

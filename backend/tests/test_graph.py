@@ -17,20 +17,23 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+from test_apoderados import ABOGADA, CC_ABOGADA, CC_ABOGADA_PLANA, CONTESTACION as CONTESTACION_CON_ABOGADA, EPS, PODER, certificado
 from test_citas import CUERPO_CERCANO, NEAR_77, NEAR_79, S_CORTA, S_GRAVE, S_INMINENTE, S_SIGUE, _pagina
 from test_llm import sse
-from tutela2 import api, cli, graph, ingest, llm, prompts
+from tutela2 import api, apoderados, cli, eventos, graph, ingest, llm, prompts
 from tutela2 import citas as citas_real
-from tutela2.config import Config, LLMConfig
+from tutela2.config import ApoderadosConfig, Config, LLMConfig
 from tutela2.llm import AnthropicClient, ErrorLLM, FakeClient
 from tutela2.models import (
     AperturaLLM,
+    ApoderadosLLM,
     Contestacion,
     CasoConcretoLLM,
     CitaVerificada,
     ConsideracionesLLM,
     Doc,
     Fechas,
+    Identificacion,
     Ingesta,
     Metadatos,
     MetadatosLLM,
@@ -251,7 +254,8 @@ def test_topologia_exacta(cfg, tmp_path):
         ("__start__", "apertura"),
         ("apertura", "validar_apertura"),
         ("validar_apertura", "apertura"),
-        ("validar_apertura", "consideraciones"),
+        ("validar_apertura", "apoderados"),
+        ("apoderados", "consideraciones"),
         ("consideraciones", "verificar_consideraciones"),
         ("verificar_consideraciones", "consideraciones"),
         ("verificar_consideraciones", "decision"),
@@ -274,9 +278,9 @@ def test_pausa_antes_de_decidir(cfg, tmp_path):
     assert {c["id"] for c in payload["citas"]} == {"c1", "c2"}
     assert payload["errores"] == []
     assert payload["derechos_invocados"] == ["salud", "vida"]
-    assert [n for n, _ in cliente.llamadas] == ["apertura", "consideraciones"]
+    assert [n for n, _ in cliente.llamadas] == ["apertura", "apoderados", "consideraciones"]
     v = snap.values
-    assert [b["nodo"] for b in v["bitacora"]] == ["apertura", "consideraciones"]
+    assert [b["nodo"] for b in v["bitacora"]] == ["apertura", "apoderados", "consideraciones"]
     assert v["bitacora"][0]["prompt_id"] == f"apertura@{prompts.version_default('apertura')}"
     assert (
         v["bitacora"][0]["sha256_instrucciones"]
@@ -284,7 +288,7 @@ def test_pausa_antes_de_decidir(cfg, tmp_path):
     )
     assert v["metadatos"]["accionante"] == "Marta Ejemplo"
     assert v["metadatos"]["decision_a_quo"] == "negó el amparo solicitado"
-    assert v["intentos"] == {"apertura": 1, "consideraciones": 1}
+    assert v["intentos"] == {"apertura": 1, "apoderados": 1, "consideraciones": 1}
     assert v["decisiones"] == [] and v["caso"] is None
 
 
@@ -304,7 +308,7 @@ def test_flujo_completo(cfg, tmp_path):
     v = snap.values
     assert [d["accion"] for d in v["decisiones"]] == ["decidir"]
     assert v["decisiones"][0]["fecha"]
-    assert [b["nodo"] for b in v["bitacora"]] == ["apertura", "consideraciones", "caso_concreto"]
+    assert [b["nodo"] for b in v["bitacora"]] == ["apertura", "apoderados", "consideraciones", "caso_concreto"]
     assert "revocar" in v["caso"]["conclusion"] and "amparar" in v["caso"]["conclusion"]
     assert "[[CITA:" in " ".join(p["texto"] for p in v["caso"]["parrafos"])
     assert set(v["salidas"]) == {
@@ -365,11 +369,11 @@ def test_rehacer_consideraciones(cfg, tmp_path):
     out = g.invoke(Command(resume=rehacer), h, durability="sync")
     assert out["__interrupt__"]
     llamadas = cliente.llamadas
-    assert [n for n, _ in llamadas] == ["apertura", "consideraciones", "consideraciones"]
-    assert "=== INSTRUCCION ===\nEnfócate en la subsidiariedad." in llamadas[2][1]
-    assert "INSTRUCCION" not in llamadas[1][1]
+    assert [n for n, _ in llamadas] == ["apertura", "apoderados", "consideraciones", "consideraciones"]
+    assert "=== INSTRUCCION ===\nEnfócate en la subsidiariedad." in llamadas[3][1]
+    assert "INSTRUCCION" not in llamadas[2][1]
     v = g.get_state(h).values
-    assert v["intentos"] == {"apertura": 1, "consideraciones": 1}
+    assert v["intentos"] == {"apertura": 1, "apoderados": 1, "consideraciones": 1}
     assert [d["accion"] for d in v["decisiones"]] == ["rehacer_consideraciones"]
 
     g.invoke(Command(resume=DECISION), h, durability="sync")
@@ -382,9 +386,9 @@ def test_rehacer_apertura_reinicia_consideraciones(cfg, tmp_path):
     g.invoke(
         Command(resume={"accion": "rehacer_apertura", "instruccion": "Incluye la contestación."}), h, durability="sync"
     )
-    assert [n for n, _ in cliente.llamadas] == ["apertura", "consideraciones", "apertura", "consideraciones"]
-    assert "Incluye la contestación." in cliente.llamadas[2][1]
-    assert "INSTRUCCION" not in cliente.llamadas[3][1]
+    assert [n for n, _ in cliente.llamadas] == ["apertura", "apoderados", "consideraciones", "apertura", "consideraciones"]
+    assert "Incluye la contestación." in cliente.llamadas[3][1]
+    assert "INSTRUCCION" not in cliente.llamadas[4][1]
     assert g.get_state(h).next == ("decision",)
     assert g.get_state(h).values["intentos"]["apertura"] == 1
 
@@ -507,7 +511,7 @@ def test_api_ciclo_completo(caso):
     assert {AUTO, "trabajo/previo.docx"} <= set(r["salidas"])
     assert r["payload"]["accionadas"] == ["Entidad Prestadora Uno"] and r["payload"]["fecha_hoy"]
     assert [x["id"] for x in r["payload"]["reparos"]] == ["R1", "R2", "R3"]
-    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "consideraciones"]
+    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "apoderados", "consideraciones"]
     assert r["resumen"]["apertura"]["reparos"] and r["resumen"]["citas"]
     assert json.dumps(r)
 
@@ -544,7 +548,7 @@ def test_api_rehacer_regenera_previo(caso):
     r = api.decidir(caso, {"accion": "rehacer_consideraciones", "instruccion": "Más breve."})
     assert r["estado"] == "esperando_decision"
     assert previo.read_bytes() != b"obsoleto"
-    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "consideraciones", "consideraciones"]
+    assert [b["nodo"] for b in r["resumen"]["bitacora"]] == ["apertura", "apoderados", "consideraciones", "consideraciones"]
 
 
 def test_api_error_y_continuar(caso, monkeypatch):
@@ -585,7 +589,7 @@ def test_api_nuevo_incompleto_no_deja_salidas_viejas(caso, monkeypatch):
 
 def test_api_defaults():
     assert api.config_default() == Config().model_dump()
-    assert set(api.prompts_default()) == {"apertura", "consideraciones", "caso_concreto"}
+    assert set(api.prompts_default()) == {"apertura", "apoderados", "consideraciones", "caso_concreto"}
     assert all(api.prompts_default().values())
 
 
@@ -851,9 +855,10 @@ def test_caso_concreto_recibe_la_cita_literal_de_cada_evento(cfg, tmp_path):
 
 def test_bitacora_guarda_las_instrucciones_sin_documentos(cfg, tmp_path):
     g, h, _ = arrancar(cfg, tmp_path)
-    b = g.get_state(h).values["bitacora"]
-    assert "=== EXTENSION ===" in b[0]["instrucciones"] and "### DOC" not in b[0]["instrucciones"]
-    assert "=== LIMITES ===" in b[1]["instrucciones"] and "REPAROS" not in b[1]["instrucciones"]
+    b = {x["nodo"]: x for x in g.get_state(h).values["bitacora"]}
+    assert "=== EXTENSION ===" in b["apertura"]["instrucciones"] and "### DOC" not in b["apertura"]["instrucciones"]
+    assert "=== LIMITES ===" in b["consideraciones"]["instrucciones"] and "REPAROS" not in b["consideraciones"]["instrucciones"]
+    assert b["apoderados"]["instrucciones"] == ""
 
 
 def test_datos_escritos_por_el_juez_no_son_ajenos(cfg, tmp_path):
@@ -898,6 +903,7 @@ def test_sin_reparos_solo_alerta_y_no_reintenta(cfg, tmp_path):
         ),
         (ConsideracionesLLM, ConsideracionesLLM(procedibilidad="", bloques=[], citas=[])),
         (CasoConcretoLLM, CASO),
+        (ApoderadosLLM, ApoderadosLLM()),
     ],
 )
 def test_anthropic_sdk_real_con_transporte_simulado(schema, minimo):
@@ -1250,7 +1256,7 @@ def test_rehacer_por_el_grafo_envia_la_salida_anterior(cfg, tmp_path):
     g, h, cliente = arrancar(cfg, tmp_path)
     primera = g.get_state(h).values["consideraciones"]
     g.invoke(Command(resume={"accion": "rehacer_consideraciones", "instruccion": "Más breve."}), h, durability="sync")
-    secs = llm.leer_secciones(cliente.llamadas[2][1])
+    secs = llm.leer_secciones([u for n, u in cliente.llamadas if n == "consideraciones"][1])
     assert json.loads(secs["SALIDA ANTERIOR"]) == primera and secs["INSTRUCCION"] == "Más breve."
 
 
@@ -1674,3 +1680,177 @@ def test_cita_rechazada_conserva_su_detalle_completo_si_el_minimo_no_bloquea(cfg
     (rechazo,) = [e for e in salida["errores"] if "La cita c1" in e]
     assert f"dice textualmente: «{S_CORTA} {S_SIGUE}»" in rechazo and "ratio decidendi" in rechazo
     assert not any("se exigen al menos" in e for e in salida["errores"])
+
+
+# --- Nodo apoderados ---
+
+
+def ingesta_con_abogada() -> Ingesta:
+    ing = ingesta_sintetica()
+    ing.metadatos.accionadas = [EPS]
+    contestacion = _doc("1a", 3, "contestacion", "005RespuestaEntidadUno.pdf", [CONTESTACION_CON_ABOGADA, PODER, certificado()])
+    contestacion.paginas[2].ruido = True
+    ing.documentos[2] = contestacion
+    return ing
+
+
+def arrancar_con_abogada(cfg, tmp_path, cliente=None):
+    cliente = cliente or FakeClient()
+    g = graph.construir(cfg, cliente, InMemorySaver())
+    h = hilo()
+    g.invoke(graph.estado_inicial(tmp_path / "caso-1", cfg, ingesta_con_abogada()), h, durability="sync")
+    return g, h, cliente
+
+
+def test_apoderados_identifica_a_la_abogada_y_la_corrida_sigue(cfg, tmp_path):
+    g, h, cliente = arrancar_con_abogada(cfg, tmp_path)
+    assert g.get_state(h).next == ("decision",)
+    v = g.get_state(h).values
+    ident = Identificacion.model_validate(v["apoderados"])
+    [ap] = ident.apoderados
+    assert (ap.nombre, ap.parte, ap.cedula, ap.tarjeta) == (ABOGADA, EPS, CC_ABOGADA_PLANA, "287415")
+    assert [p.cadena.estado for p in ap.poderes] == ["confirmada"]
+    assert ident.ingesta_sha == apoderados.huella_ingesta(ingesta_con_abogada())
+    assert v["alertas"]["apoderados"] == ident.alertas == []
+    assert v["bitacora"][1]["nodo"] == "apoderados" and v["bitacora"][1]["prompt_id"].startswith("apoderados@")
+    usuarios = dict(cliente.llamadas)
+    assert "CÁMARA DE COMERCIO" not in usuarios["apertura"]
+    assert f"[p. 3] {ingest.ETIQUETA_CERTIFICADO}\nCÁMARA DE COMERCIO" in usuarios["apoderados"]
+    assert json.loads(llm.leer_secciones(usuarios["apoderados"])["METADATOS"])["accionadas"] == [EPS]
+    contestacion = v["apertura"]["contestaciones"][0]["texto"]
+    assert "la doctora Andrea Paola Giraldo Montoya" in contestacion
+
+
+def test_apoderados_no_se_repite_con_la_misma_ingesta(cfg, tmp_path):
+    g, h, cliente = arrancar_con_abogada(cfg, tmp_path)
+    antes = g.get_state(h).values["apoderados"]
+    g.invoke(Command(resume={"accion": "rehacer_apertura", "instruccion": "Más breve."}), h, durability="sync")
+    assert [n for n, _ in cliente.llamadas].count("apoderados") == 1
+    assert g.get_state(h).values["apoderados"] == antes
+
+    estado = {**g.get_state(h).values}
+    nuevo = FakeClient()
+    assert graph.nodo_apoderados(estado, cfg, nuevo) == {} and nuevo.llamadas == []
+    estado["apoderados"] = {**antes, "ingesta_sha": "otra"}
+    assert graph.nodo_apoderados(estado, cfg, nuevo)["apoderados"]["ingesta_sha"] == antes["ingesta_sha"]
+    assert [n for n, _ in nuevo.llamadas] == ["apoderados"]
+
+
+def test_apoderados_se_rehace_si_cambian_las_partes_con_la_misma_ingesta(cfg, tmp_path):
+    g, h, _ = arrancar_con_abogada(cfg, tmp_path)
+    estado = {**g.get_state(h).values}
+    antes = Identificacion.model_validate(estado["apoderados"])
+    assert antes.metadatos_sha == apoderados.huella_partes(Metadatos.model_validate(estado["metadatos"]))
+    assert [a.rol_parte for a in antes.apoderados] == ["accionada"]
+
+    # Un campo que no es de partes no cambia nada.
+    nuevo = FakeClient()
+    otro = {**estado, "metadatos": {**estado["metadatos"], "derechos_invocados": ["salud", "vida digna"]}}
+    assert graph.nodo_apoderados(otro, cfg, nuevo) == {} and nuevo.llamadas == []
+
+    # rehacer_apertura corrigió las partes: la EPS era vinculada, no accionada.
+    corregido = {**estado, "metadatos": {**estado["metadatos"], "accionadas": [], "vinculadas": [EPS]}}
+    salida = graph.nodo_apoderados(corregido, cfg, nuevo)
+    assert [n for n, _ in nuevo.llamadas] == ["apoderados"]
+    despues = Identificacion.model_validate(salida["apoderados"])
+    assert [a.rol_parte for a in despues.apoderados] == ["vinculada"]
+    assert despues.metadatos_sha != antes.metadatos_sha and despues.ingesta_sha == antes.ingesta_sha
+
+
+def test_apoderados_desactivado_no_llama_al_modelo(cfg, tmp_path):
+    cfg = cfg.model_copy(update={"apoderados": ApoderadosConfig(activo=False)})
+    g, h, cliente = arrancar_con_abogada(cfg, tmp_path)
+    v = g.get_state(h).values
+    assert "apoderados" not in [n for n, _ in cliente.llamadas]
+    assert v["apoderados"] is None and "apoderados" not in v["alertas"]
+    assert g.get_state(h).next == ("decision",)
+
+
+def test_error_del_modelo_en_apoderados_deja_alerta_y_la_corrida_sigue(cfg, tmp_path):
+    caido = ClienteCaido(FakeClient(), "apoderados")
+    g, h, _ = arrancar_con_abogada(cfg, tmp_path, cliente=caido)
+    assert g.get_state(h).next == ("decision",)
+    v = g.get_state(h).values
+    assert v["apoderados"]["apoderados"] == [] and v["apoderados"]["ingesta_sha"] == ""
+    assert v["alertas"]["apoderados"] == v["apoderados"]["alertas"] == [apoderados.ALERTA_FALLA]
+    assert [b["nodo"] for b in v["bitacora"]] == ["apertura", "consideraciones"]
+    assert "apoderados" not in v["intentos"]
+    assert pendientes(g, h)[0]["alertas"]["apoderados"] == [apoderados.ALERTA_FALLA]
+
+    caido.activo = False
+    g.invoke(Command(resume={"accion": "rehacer_apertura", "instruccion": "Revise de nuevo."}), h, durability="sync")
+    v = g.get_state(h).values
+    assert [a["nombre"] for a in v["apoderados"]["apoderados"]] == [ABOGADA]
+    assert v["alertas"]["apoderados"] == [] and v["intentos"]["apoderados"] == 1
+
+
+def test_error_en_la_verificacion_deja_alerta_sin_cedulas_en_el_registro(cfg, tmp_path, monkeypatch, caplog):
+    def falla(propuesta, ing, md):
+        raise ValueError(f"dato roto {CC_ABOGADA}")
+
+    monkeypatch.setattr(apoderados, "verificar", falla)
+    with caplog.at_level("INFO", logger="tutela2"):
+        g, h, _ = arrancar_con_abogada(cfg, tmp_path)
+    v = g.get_state(h).values
+    assert v["alertas"]["apoderados"] == [apoderados.ALERTA_FALLA_VERIFICACION]
+    assert g.get_state(h).next == ("decision",)
+    assert "ValueError" in caplog.text and CC_ABOGADA not in caplog.text and CC_ABOGADA_PLANA not in caplog.text
+
+
+def test_eventos_de_apoderados_van_en_apertura_y_sin_cedulas(cfg, tmp_path):
+    g, h, _ = arrancar_con_abogada(cfg, tmp_path)
+    estado = {**g.get_state(h).values, "apoderados": None}
+    buffer = eventos.Buffer()
+    token = eventos.activar(buffer)
+    try:
+        salida = graph.nodo_apoderados(estado, cfg, FakeClient())
+    finally:
+        eventos.desactivar(token)
+    lista, _ = buffer.leer(0)
+    assert lista and {e["etapa"] for e in lista} == {"apertura"}
+    assert [e["tipo"] for e in lista] == ["lee", "lee", "escribe", "verifica"]
+    assert lista[-1]["texto"] == "Apoderados: 1 identificado, 1 con poder hallado; 1 parte sin abogado."
+    volcado = json.dumps(lista, ensure_ascii=False)
+    assert CC_ABOGADA not in volcado and CC_ABOGADA_PLANA not in volcado
+    assert salida["apoderados"]["apoderados"][0]["cedula"] == CC_ABOGADA_PLANA
+
+
+def test_tope_de_paginas_para_apoderados_deja_alerta(cfg, tmp_path):
+    cfg = cfg.model_copy(update={"apoderados": ApoderadosConfig(max_chars=600)})
+    g, h, cliente = arrancar_con_abogada(cfg, tmp_path)
+    v = g.get_state(h).values
+    assert any(a.startswith("ALERTA: Identificación de apoderados") for a in v["alertas"]["apoderados"])
+    assert len(llm.leer_secciones(dict(cliente.llamadas)["apoderados"])["DOCUMENTOS"]) <= 600
+
+
+def test_la_identificacion_se_copia_al_registro_del_caso_y_se_renueva(cfg, tmp_path):
+    from tutela2 import registro_apoderados
+
+    caso_dir = tmp_path / "caso-1"
+    caso_dir.mkdir()
+    caido = ClienteCaido(FakeClient(), "apoderados")
+    g, h, _ = arrancar_con_abogada(cfg, tmp_path, cliente=caido)
+    reg = registro_apoderados.leer(caso_dir)
+    assert reg.identificacion is not None and reg.identificacion.alertas == [apoderados.ALERTA_FALLA]
+
+    caido.activo = False
+    g.invoke(Command(resume={"accion": "rehacer_apertura", "instruccion": "Otra vez."}), h, durability="sync")
+    reg = registro_apoderados.leer(caso_dir)
+    assert reg.identificacion == Identificacion.model_validate(g.get_state(h).values["apoderados"])
+    assert [a.nombre for a in reg.identificacion.apoderados] == [ABOGADA]
+
+
+def test_un_registro_que_no_se_puede_escribir_no_detiene_la_corrida(cfg, tmp_path, monkeypatch, caplog):
+    from tutela2 import registro_apoderados
+
+    (tmp_path / "caso-1").mkdir()
+
+    def falla(caso_dir, ident):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(registro_apoderados, "espejar", falla)
+    with caplog.at_level("WARNING", logger="tutela2"):
+        g, h, _ = arrancar_con_abogada(cfg, tmp_path)
+    assert g.get_state(h).next == ("decision",)
+    assert g.get_state(h).values["apoderados"]["apoderados"]
+    assert "no se pudo copiar la identificación" in caplog.text

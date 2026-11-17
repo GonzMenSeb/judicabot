@@ -13,6 +13,13 @@ export interface PropsIndice {
   abierto: boolean;
 }
 
+/** Lo que oye un lector de pantalla junto al número: «2 citas por revisar», «1 cita y 1 abogado por revisar». */
+export function lecturaMarca({ n, apoderados = 0 }: MarcaIndice): string {
+  const citas = n - apoderados;
+  const partes = [citas > 0 && `${citas} ${pluralizar(citas, "cita", "citas")}`, apoderados > 0 && `${apoderados} ${pluralizar(apoderados, "abogado", "abogados")}`];
+  return `${partes.filter(Boolean).join(" y ")} por revisar`;
+}
+
 export function Indice({ entradas, marcas, activa, alSeccion, redaccion, abierto }: PropsIndice) {
   const primerAnexo = entradas.findIndex((e) => e.anexo);
   return (
@@ -30,7 +37,7 @@ export function Indice({ entradas, marcas, activa, alSeccion, redaccion, abierto
                   {marca && (
                     <span class={cx("bor-marcador", marca.mal ? "mal" : "alerta")}>
                       <span aria-hidden="true">{marca.n}</span>
-                      <span class="solo-lectura"> {marca.n} {pluralizar(marca.n, "cita por revisar", "citas por revisar")}</span>
+                      <span class="solo-lectura"> {lecturaMarca(marca)}</span>
                     </span>
                   )}
                 </button>

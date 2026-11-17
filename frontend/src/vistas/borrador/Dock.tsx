@@ -7,6 +7,7 @@ export interface PropsDock {
   total: number;
   alertas?: "cargando" | "fallo" | "listo";
   enCurso: boolean;
+  bloqueo?: string | null;
   hrefDecision: string;
   puedeCorregir: boolean;
   motivoNoCorregir: string | null;
@@ -25,8 +26,9 @@ function Icono({ tono }: { tono: Tono }) {
   );
 }
 
-function mensaje({ pendientes, revisados, total, enCurso, alertas = "listo" }: PropsDock): { tono: Tono; titulo: string; linea: string } {
+function mensaje({ pendientes, revisados, total, enCurso, bloqueo, alertas = "listo" }: PropsDock): { tono: Tono; titulo: string; linea: string } {
   if (enCurso) return { tono: "info", titulo: "Hay una redacción en curso", linea: "Podrá decidir cuando termine." };
+  if (bloqueo) return { tono: "alerta", titulo: "Revise los apoderados no verificados", linea: bloqueo };
   if (total === 0 && alertas === "cargando") return { tono: "info", titulo: "Comprobando el borrador", linea: "Leyendo las alertas del caso." };
   if (total === 0 && alertas === "fallo") {
     return { tono: "alerta", titulo: "No se pudieron leer las alertas", linea: "Las citas no tienen objeciones; las demás comprobaciones no están disponibles." };
@@ -43,7 +45,7 @@ function mensaje({ pendientes, revisados, total, enCurso, alertas = "listo" }: P
 }
 
 export function Dock(props: PropsDock) {
-  const { enCurso, hrefDecision, puedeCorregir, motivoNoCorregir, alCorregir } = props;
+  const { enCurso, bloqueo, hrefDecision, puedeCorregir, motivoNoCorregir, alCorregir } = props;
   const { tono, titulo, linea } = mensaje(props);
   return (
     <div class="bor-dock">
@@ -52,14 +54,14 @@ export function Dock(props: PropsDock) {
           <Icono tono={tono} />
           <div>
             <b>{titulo}</b>
-            <span>{motivoNoCorregir && !enCurso ? motivoNoCorregir : linea}</span>
+            <span id="bor-dock-linea">{motivoNoCorregir && !enCurso && !bloqueo ? motivoNoCorregir : linea}</span>
           </div>
         </div>
         <div class="bor-dock-acciones">
           <Boton onClick={alCorregir} disabled={!puedeCorregir}>
             Pedir correcciones
           </Boton>
-          <Boton variante="sello" grande href={hrefDecision} disabled={enCurso}>
+          <Boton variante="sello" grande href={hrefDecision} disabled={enCurso || Boolean(bloqueo)} aria-describedby={bloqueo ? "bor-dock-linea" : undefined}>
             Pasar a la decisión
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" />

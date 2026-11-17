@@ -4,20 +4,23 @@ import functools
 import hashlib
 import logging
 import re
+import zipfile
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from importlib import metadata as importlib_metadata
+from io import BytesIO
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, Iterable, TypeVar
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from tutela2 import fallos, formato_b, formulas, normas, prompts, vista
+from tutela2.apoderados import es_particula, plegar, tokens_nombre
 from tutela2.config import Config
 from tutela2.formulas import encabezado_decision as decision_encabezado
 from tutela2.letras import fecha_larga, numero_a_letras
@@ -28,10 +31,15 @@ from tutela2.models import (
     ConsideracionesLLM,
     Decision,
     Fechas,
+    Identificacion,
     Ingesta,
     LlamadaIA,
     Metadatos,
 )
+
+if TYPE_CHECKING:
+    from tutela2.estado_apoderados import Evaluacion
+    from tutela2.registro_apoderados import Registro
 
 __all__ = ["decision_encabezado", "fecha_larga", "numero_a_letras"]
 
@@ -237,6 +245,81 @@ def _negritas_en(texto: str, negritas) -> list[tuple[str, bool]]:
     return salida
 
 
+_SIGUE_APELLIDO = re.compile(r"[\s-]+(?:(?:de|del|la|las|los)\s+)*(\w)")
+
+
+def _palabras_nombre(nombre: str) -> tuple[str, ...]:
+    """Palabras plegadas del nombre, sin tratamientos, partículas ni iniciales en los extremos."""
+    palabras = plegar(nombre).replace(",", " ").split()
+    while palabras and not tokens_nombre(palabras[0]):
+        palabras.pop(0)
+    while palabras and not tokens_nombre(palabras[-1]):
+        palabras.pop()
+    return tuple(palabras)
+
+
+def _patrones_apoderados(apoderados: Iterable[tuple[str, str]]) -> list[tuple[re.Pattern[str], str, bool]]:
+    """``(patrón, id, estricta)`` para marcar en la prosa el nombre de cada apoderado, del más largo al más corto.
+
+    Cada abogado se busca por su nombre completo y, si tiene al menos tres palabras de nombre, también
+    sin la última (la prosa suele omitir el segundo apellido). No hay variante corta si el nombre lleva
+    una partícula antes del último apellido: en "José María de la Torre" el apellido es uno solo, y en
+    "María del Carmen Ruiz" sin él quedarían solo los nombres de pila, que pueden ser de otra persona.
+    ``estricta`` señala las variantes de solo dos palabras de nombre y las cortas: no se marcan si el
+    texto sigue con otra palabra en mayúscula ("Juan Pérez" no es el accionante "Juan Pérez Rodríguez").
+    No se marcan los nombres de menos de dos palabras ni una variante que comparten dos apoderados (el
+    mismo abogado de dos partes, o "Juan Pérez" frente a "Juan Pérez Gómez"): no se sabría a cuál remite."""
+    variantes: dict[tuple[str, ...], set[str]] = {}
+    cortas: set[tuple[str, ...]] = set()
+    estrictas: set[tuple[str, ...]] = set()
+    for id_, nombre in apoderados:
+        completo = _palabras_nombre(nombre)
+        n = len(tokens_nombre(nombre))
+        if n < 2:
+            continue
+        variantes.setdefault(completo, set()).add(id_)
+        if n == 2:
+            estrictas.add(completo)
+        corto = completo[:-1]
+        if (
+            n >= 3
+            and corto
+            and tokens_nombre(corto[-1])
+            and not any(es_particula(p) for p in corto)
+            and len(tokens_nombre(" ".join(corto))) >= 2
+        ):
+            variantes.setdefault(corto, set()).add(id_)
+            cortas.add(corto)
+            estrictas.add(corto)
+    unicas = [(palabras, next(iter(ids))) for palabras, ids in variantes.items() if len(ids) == 1]
+    unicas.sort(key=lambda v: (-len(v[0]), v[0] in cortas))
+    return [
+        (re.compile(r"(?<!\w)" + r"\s+".join(map(re.escape, palabras)) + r"(?!\w)"), id_, palabras in estrictas)
+        for palabras, id_ in unicas
+    ]
+
+
+def _plegar_con_posiciones(texto: str) -> tuple[str, list[int]]:
+    """``texto`` plegado carácter a carácter y, por cada carácter plegado, su posición en ``texto``
+    (más una final, ``len(texto)``). Las marcas combinantes sueltas no dan carácter: un tramo del texto
+    plegado se lleva al original sin perder la tilde de la última letra."""
+    plegado: list[str] = []
+    origen: list[int] = []
+    for i, c in enumerate(texto):
+        for p in plegar(c):
+            plegado.append(p)
+            origen.append(i)
+    origen.append(len(texto))
+    return "".join(plegado), origen
+
+
+def _sigue_apellido(texto: str, fin: int) -> bool:
+    """Si tras ``fin`` el texto sigue con otra palabra en mayúscula (tras un espacio o un guion, quizá
+    con partículas de por medio): entonces el nombre es más largo que la variante hallada."""
+    m = _SIGUE_APELLIDO.match(texto, fin)
+    return bool(m) and m.group(1).isupper()
+
+
 def _tam_marca(par, tam: float) -> None:
     ppr = par._p.get_or_add_pPr()
     rpr = OxmlElement("w:rPr")
@@ -265,6 +348,28 @@ def _idioma_es(doc) -> None:
         lang.set(qn("w:eastAsia"), "es-CO")
 
 
+_FECHA_ZIP = (1980, 1, 1, 0, 0, 0)
+
+
+def _docx_determinista(doc) -> bytes:
+    """Los bytes del .docx con una fecha fija en cada entrada del zip.
+
+    python-docx fecha cada entrada con la hora de guardado, así que el mismo documento guardado dos
+    segundos después daba otro sha256: la vista del borrador lo usa como clave de las citas revisadas, que
+    se perdían cada vez que se volvía a generar el previo sin cambios. Se conservan los nombres, el orden,
+    la compresión y los atributos de cada entrada."""
+    crudo = BytesIO()
+    doc.save(crudo)
+    salida = BytesIO()
+    with zipfile.ZipFile(crudo) as origen, zipfile.ZipFile(salida, "w") as destino:
+        for info in origen.infolist():
+            fija = zipfile.ZipInfo(info.filename, date_time=_FECHA_ZIP)
+            fija.compress_type = info.compress_type
+            fija.external_attr = info.external_attr
+            destino.writestr(fija, origen.read(info.filename))
+    return salida.getvalue()
+
+
 class _Docx:
     def __init__(
         self,
@@ -272,9 +377,11 @@ class _Docx:
         citas: dict[str, CitaVerificada] | None = None,
         titulo: str = "",
         fallo: bool = False,
+        apoderados: Iterable[tuple[str, str]] = (),
     ):
         self.cfg = cfg
         self.citas = citas or {}
+        self.patrones_apoderados = _patrones_apoderados(apoderados)
         self.citadas: set[str] = set()
         self.en_caso = False
         self.seccion = 0
@@ -545,6 +652,29 @@ class _Docx:
         partes.append(texto[pos:])
         return "".join(partes), spans
 
+    def _apoderados_en(self, texto: str, ocupados: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+        """Tramos ``(inicio, fin, "ap:<id>")`` de los nombres de apoderados en ``texto``.
+
+        Solo cambia la vista previa, no el docx. Se compara sin tildes ni mayúsculas, pero el nombre debe
+        empezar con mayúscula, y una variante de dos palabras o sin el último apellido no se marca si el
+        texto sigue con otro ("Juan Pérez Rodríguez" no es "Juan Pérez Gómez" ni "Juan Pérez"). Se
+        descarta lo que se cruza con una cita (``ocupados``) o con un nombre ya marcado."""
+        if not self.patrones_apoderados:
+            return []
+        plegado, origen = _plegar_con_posiciones(texto)
+        tomados = [(a, b) for a, b, _ in ocupados]
+        salida: list[tuple[int, int, str]] = []
+        for patron, id_, estricta in self.patrones_apoderados:
+            for m in patron.finditer(plegado):
+                ini, fin = origen[m.start()], origen[m.end()]
+                if not texto[ini].isupper() or (estricta and _sigue_apellido(texto, fin)):
+                    continue
+                if any(ini < b and a < fin for a, b in tomados):
+                    continue
+                tomados.append((ini, fin))
+                salida.append((ini, fin, vista.PREFIJO_APODERADO + id_))
+        return salida
+
     def prosa(self, texto: str, *, citar: bool = False, esc: int = 100, modelo: bool = False) -> None:
         with self.reg.como(origen="modelo" if modelo else self.reg.origen):
             self._prosa(texto, citar=citar, esc=esc)
@@ -561,6 +691,7 @@ class _Docx:
                         self.parrafo(marcador, alinear="i")
                 elif parte.strip():
                     limpio, spans = self._citas_en(parte.strip())
+                    spans = sorted(spans + self._apoderados_en(limpio, spans))
                     with self.reg.como(spans=spans):
                         if self.b:
                             self.cuerpo(limpio, esc=esc)
@@ -627,7 +758,7 @@ class _Docx:
     def guardar(self, ruta: Path | str) -> Path:
         ruta = Path(ruta)
         ruta.parent.mkdir(parents=True, exist_ok=True)
-        self.doc.save(ruta)
+        ruta.write_bytes(_docx_determinista(self.doc))
         return ruta
 
     def guardar_con_vista(self, ruta: Path | str, tipo: str) -> Path:
@@ -666,6 +797,8 @@ class _Caso:
     errores: list[str]
     bitacora: list[LlamadaIA]
     fallos: list[dict] = field(default_factory=list)
+    apoderados: list[tuple[str, str]] = field(default_factory=list)
+    """``(id, nombre)`` de los apoderados identificados, para marcarlos en el borrador previo."""
 
     @property
     def citas_por_id(self) -> dict[str, CitaVerificada]:
@@ -687,6 +820,17 @@ def _rellenar(md: Metadatos, otro: Metadatos) -> Metadatos:
 
 def _opcional(cls: type[M], valor: Any) -> M | None:
     return _como(cls, valor) if valor else None
+
+
+def _pares_apoderados(valor: Any) -> list[tuple[str, str]]:
+    """``(id, nombre)`` de cada apoderado de la identificación; ninguno en los casos anteriores al nodo
+    ``apoderados`` o si la identificación guardada no es válida: el borrador sale igual, sin marcas."""
+    try:
+        identificacion = _opcional(Identificacion, valor)
+    except ValidationError:
+        log.warning("La identificación de apoderados no es válida; el borrador previo sale sin marcarlos")
+        return []
+    return [(a.id, a.nombre) for a in identificacion.apoderados] if identificacion else []
 
 
 def _leer(estado: dict) -> _Caso:
@@ -718,6 +862,7 @@ def _leer(estado: dict) -> _Caso:
         errores=list(estado.get("errores") or []),
         bitacora=[_como(LlamadaIA, b) for b in estado.get("bitacora") or []],
         fallos=fallos.leer(estado.get("caso_dir")),
+        apoderados=_pares_apoderados(estado.get("apoderados")),
     )
 
 
@@ -957,7 +1102,7 @@ def _alertas(d: _Docx, alertas: dict[str, list[str]]) -> None:
 def render_previo(estado: dict, cfg: Config | dict, ruta: Path) -> Path:
     cfg = _como(Config, cfg)
     c = _leer(estado)
-    d = _Docx(cfg, c.citas_por_id, "Borrador previo", fallo=True)
+    d = _Docx(cfg, c.citas_por_id, "Borrador previo", fallo=True, apoderados=c.apoderados)
     with d.reg.como("encabezado"):
         _encabezado(d, c, fecha=None, con_decision=False)
         d.parrafo("BORRADOR PREVIO A LA DECISIÓN (SECCIONES I A V)", alinear="c", negrita=True)
@@ -998,6 +1143,219 @@ def _pendientes(d: _Docx, pendientes: list[str] | None) -> None:
         d.item(linea)
 
 
+HORA_COLOMBIA = timezone(timedelta(hours=-5), "COT")
+"""Colombia no tiene horario de verano: UTC−5 todo el año."""
+
+_ESTADO_APODERADO = {"verificado": "Verificado", "revisar": "Por revisar", "no_verificado": "No verificado"}
+_TARJETA_APODERADO = {
+    "vigente": "Vigente",
+    "vigente_obs": "Vigente con observaciones",
+    "no_vigente": "No vigente",
+    "no_inscrito": "No inscrito en el Registro Nacional de Abogados",
+    "otra_persona": "El certificado es de otra persona",
+    "ilegible": "Certificado ilegible",
+    "inaccesible": "La Rama Judicial no respondió",
+    "sin_cedula": "Sin cédula para consultarla",
+    "sin_consultar": "Sin consultar",
+}
+_ORIGEN_CONSULTA = {
+    "extension": "Consulta automática desde el navegador",
+    "directa": "Consulta automática directa",
+    "manual": "Certificado subido por el despacho",
+    "fake": "Consulta simulada (modo de prueba)",
+}
+_TIPO_PODER = {
+    "poder": "Poder",
+    "sustitucion": "Sustitución de poder",
+    "certificado_existencia": "Certificado de existencia",
+}
+_ROL_APODERADO = {"accionante": "accionante", "accionada": "accionada", "vinculada": "vinculada", "otro": "otra parte"}
+_SIN_IDENTIFICACION = "verifique a mano la tarjeta profesional y el poder de cada abogado."
+
+
+def _agrupar_digitos(caracteres: str) -> str:
+    grupos = [caracteres[max(0, fin - 3) : fin] for fin in range(len(caracteres), 0, -3)]
+    return ".".join(reversed(grupos))
+
+
+def _mascara_cedula(cedula: str | None) -> str:
+    """``43000021`` → ``43.•••.•21``: solo los primeros dígitos de las cédulas largas y los dos últimos."""
+    d = re.sub(r"\D", "", cedula or "")
+    visibles = max(0, len(d) - 6)
+    return _agrupar_digitos("".join(c if i < visibles or i >= len(d) - 2 else "•" for i, c in enumerate(d)))
+
+
+def _momento(iso: str | None) -> str:
+    """Fecha y hora de Colombia de una marca ISO (las del registro de apoderados van en UTC)."""
+    if not iso:
+        return "—"
+    try:
+        t = datetime.fromisoformat(iso)
+    except ValueError:
+        return iso
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(HORA_COLOMBIA).strftime("%d/%m/%Y %H:%M")
+
+
+def _registro_apoderados(estado: dict) -> Registro | None:
+    """El registro de apoderados del caso (consultas, ajustes y revisiones) con la identificación que
+    muestra la pestaña Apoderados: la del espejo o, si falta, la del estado. ``None`` si el registro
+    existe pero está dañado."""
+    from tutela2 import registro_apoderados
+
+    caso_dir = estado.get("caso_dir")
+    try:
+        reg = registro_apoderados.leer(Path(caso_dir)) if caso_dir else registro_apoderados.Registro()
+    except registro_apoderados.RegistroInvalido:
+        return None
+    if reg.identificacion is None:
+        try:
+            reg.identificacion = _opcional(Identificacion, estado.get("apoderados"))
+        except ValidationError:
+            log.warning("La identificación de apoderados no es válida; el informe no la incluye")
+    return reg
+
+
+def _facultad(ev: Evaluacion) -> str:
+    p = ev.poder_mostrado
+    if p is None:
+        return "Poder descartado en la revisión" if ev.poder == "descartado" else "Sin poder en el expediente"
+    donde = f"Doc. {p.evidencia.doc_id}, p. {p.evidencia.pagina}"
+    if ev.poder == "manual":
+        return f"Señalado a mano · {donde}"
+    if ev.poder == "ajeno":
+        return f"Poder para {p.parte or 'otra parte'} · {donde}"
+    texto = f"{_TIPO_PODER.get(p.tipo, 'Poder')} · {donde}"
+    if ev.poder == "hallado_reserva":
+        texto += "\n(el certificado de existencia no acredita a quien lo otorga)"
+    return texto
+
+
+def _fila_apoderado(ev: Evaluacion, reg: Registro) -> list[str]:
+    ap, consulta = ev.apoderado, ev.consulta
+    datos = consulta.datos if consulta is not None else None
+    tarjeta = re.sub(r"\D", "", ap.tarjeta or "")
+    quien = [ap.nombre]
+    if ev.cedula:
+        quien.append(f"C.C. {_mascara_cedula(ev.cedula)}")
+    if tarjeta:
+        quien.append(f"T.P. {_agrupar_digitos(tarjeta)}")
+    vigencia = _TARJETA_APODERADO.get(ev.vigencia, ev.vigencia)
+    if consulta is not None:
+        vigencia += f"\n{_ORIGEN_CONSULTA.get(consulta.origen, consulta.origen)}"
+    codigo: list[str] = []
+    if datos is not None and datos.numero:
+        codigo.append(f"N.° {datos.numero}")
+    if datos is not None and datos.codigo_verificacion:
+        codigo.append(datos.codigo_verificacion)
+    revision = reg.revisiones.get(ap.id)
+    if ev.revisado:
+        revisado = f"Revisado el {_momento(revision.en)}"
+    elif ev.revision_vencida:
+        revisado = f"Revisión vencida (del {_momento(revision.en)})"
+    else:
+        revisado = "—"
+    estado = _ESTADO_APODERADO.get(ev.estado, ev.estado)
+    return [
+        "\n".join(quien),
+        f"{ap.parte}\n({_ROL_APODERADO.get(ap.rol_parte, ap.rol_parte)})",
+        vigencia,
+        _momento(consulta.consultado_en) if consulta is not None else "—",
+        "\n".join(codigo) or "—",
+        _facultad(ev),
+        estado if ev.estado == "verificado" else _Revisar(estado),
+        revisado,
+    ]
+
+
+def _correcciones_apoderado(ev: Evaluacion, reg: Registro) -> list[str]:
+    """Las correcciones a mano y la nota de revisión de un apoderado, sin la cédula."""
+    ap = ev.apoderado
+    ajuste, revision = reg.ajustes.get(ap.id), reg.revisiones.get(ap.id)
+    hechas: list[str] = []
+    if ajuste is not None:
+        if ajuste.poder_manual is not None:
+            hechas.append(f"poder señalado a mano en Doc. {ajuste.poder_manual.doc_id}, p. {ajuste.poder_manual.pagina}")
+        if ajuste.poder_descartado:
+            hechas.append("poder hallado descartado")
+        if ajuste.cedula and re.sub(r"\D", "", ajuste.cedula) != re.sub(r"\D", "", ap.cedula or ""):
+            subida = ev.consulta is not None and ev.consulta.origen == "manual"
+            hechas.append("cédula tomada del certificado subido" if subida else "cédula indicada a mano")
+    salida = []
+    if hechas:
+        cuando = f" ({_momento(ajuste.en)})" if ajuste.en else ""
+        nota = f" Nota: «{' '.join(ajuste.nota.split())}»." if ajuste.nota.strip() else ""
+        salida.append(f"{ap.nombre}: {'; '.join(hechas)}{cuando}.{nota}")
+    if revision is not None and revision.nota.strip():
+        salida.append(f"{ap.nombre}, nota de la revisión: «{' '.join(revision.nota.split())}».")
+    return salida
+
+
+def _apoderados_informe(d: _Docx, estado: dict) -> None:
+    """Tabla de los apoderados: tarjeta y cómo se consultó, poder, estado final y revisión. Las cédulas
+    van enmascaradas."""
+    from tutela2 import estado_apoderados
+
+    reg = _registro_apoderados(estado)
+    if reg is None:
+        d.parrafo(f"No se pudo leer el registro de apoderados del caso: {_SIN_IDENTIFICACION}", alinear="i")
+        return
+    ident = reg.identificacion
+    if ident is None:
+        d.parrafo(f"El caso no tiene identificación de apoderados: {_SIN_IDENTIFICACION}", alinear="i")
+        return
+    if estado_apoderados.fallida(ident):
+        d.parrafo(f"No se pudieron identificar los apoderados: {_SIN_IDENTIFICACION}", alinear="i")
+        return
+    evaluaciones = estado_apoderados.evaluar_todos(reg)
+    if not evaluaciones:
+        d.parrafo("No se identificaron apoderados en el expediente.", alinear="i")
+    else:
+        conteo = {e: sum(1 for ev in evaluaciones if ev.estado == e) for e in _ESTADO_APODERADO}
+
+        def cuenta(n: int, palabras: str) -> str:
+            return f"{n} {palabras}{'' if n == 1 else 's'}"
+
+        d.parrafo(
+            f"{cuenta(len(evaluaciones), 'apoderado')}: {cuenta(conteo['verificado'], 'verificado')}, "
+            f"{conteo['revisar']} por revisar, {cuenta(conteo['no_verificado'], 'no verificado')}. "
+            "Las cédulas van enmascaradas y las horas son de Colombia.",
+            alinear="i",
+        )
+        d.tabla(
+            [_fila_apoderado(ev, reg) for ev in evaluaciones],
+            [2.5, 2.1, 2.3, 1.6, 2.6, 2.3, 1.4, 1.3],
+            cabecera=[
+                "Apoderado",
+                "Parte",
+                "Tarjeta profesional",
+                "Consulta",
+                "Código de verificación",
+                "Facultad",
+                "Estado final",
+                "Revisión",
+            ],
+            tam=7,
+            margen_pt=2.5,
+        )
+        motivos = [
+            f"{ev.apoderado.nombre}: {ev.motivo}" for ev in evaluaciones if ev.estado != "verificado" and ev.motivo
+        ]
+        if motivos:
+            d.parrafo("Por qué no quedaron verificados:", alinear="i", negrita=True, mantener=True)
+            for linea in motivos:
+                d.item(linea)
+        correcciones = [linea for ev in evaluaciones for linea in _correcciones_apoderado(ev, reg)]
+        if correcciones:
+            d.parrafo("Correcciones a mano y notas de la revisión:", alinear="i", negrita=True, mantener=True)
+            for linea in correcciones:
+                d.item(linea)
+    if ident.sin_apoderado:
+        partes = "; ".join(f"{p.nombre} ({_ROL_APODERADO.get(p.rol_parte, p.rol_parte)})" for p in ident.sin_apoderado)
+        d.parrafo(f"Partes sin apoderado: {partes}.", alinear="i")
+
+
 def render_informe(estado: dict, cfg: Config | dict, ruta: Path, pendientes: list[str] | None = None) -> Path:
     cfg = _como(Config, cfg)
     c = _leer(estado)
@@ -1009,6 +1367,8 @@ def render_informe(estado: dict, cfg: Config | dict, ruta: Path, pendientes: lis
     _tabla_citas(d, c.citas)
     d.titulo("CITAS NORMATIVAS (NO VERIFICADAS AUTOMÁTICAMENTE)")
     _citas_normativas(d, c)
+    d.titulo("APODERADOS")
+    _apoderados_informe(d, estado)
     d.titulo("ALERTAS POR NODO")
     _alertas(d, c.alertas)
     d.titulo("ERRORES BLOQUEANTES VIGENTES")

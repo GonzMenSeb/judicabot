@@ -1,18 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Judicabot: relatoría de la Corte Constitucional",
-  "version": "1.0.0",
-  "description": "Descarga para judicabot las sentencias de la relatoría de la Corte Constitucional desde este navegador.",
+  "name": "Judicabot: consultas públicas",
+  "version": "1.1.0",
+  "description": "Hace para judicabot, desde este navegador, dos consultas públicas: la relatoría de la Corte y la vigencia de tarjetas de abogado.",
   "minimum_chrome_version": "120",
   "permissions": ["alarms", "storage"],
-  "host_permissions": ["https://www.corteconstitucional.gov.co/relatoria/*"],
+  "host_permissions": [
+    "https://www.corteconstitucional.gov.co/relatoria/*",
+    "https://vigenciaspublicas.ramajudicial.gov.co/Certificados.aspx"
+  ],
   "background": {
     "service_worker": "trabajador.js",
     "type": "module"
   },
   "action": {
     "default_popup": "ventana.html",
-    "default_title": "Judicabot: relatoría",
+    "default_title": "Judicabot: consultas públicas",
     "default_icon": {
       "16": "iconos/16.png",
       "32": "iconos/32.png",

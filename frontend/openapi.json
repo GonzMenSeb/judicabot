@@ -1,6 +1,55 @@
 {
   "components": {
     "schemas": {
+      "AjusteCuerpo": {
+        "description": "Correcciones a mano de un apoderado: un campo que no viene no cambia; uno en ``null`` quita esa corrección.",
+        "properties": {
+          "cedula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cédula del abogado si el expediente no la trae: de 5 a 10 dígitos (admite puntos y espacios).",
+            "title": "Cedula"
+          },
+          "nota": {
+            "default": "",
+            "description": "Razón de la corrección; queda en el informe de verificación.",
+            "maxLength": 2000,
+            "title": "Nota",
+            "type": "string"
+          },
+          "poder_descartado": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "El poder que se muestra no es correcto («No es correcto…»).",
+            "title": "Poder Descartado"
+          },
+          "poder_manual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoderManualCuerpo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Página donde está el poder; se comprueba que nombre al abogado y de ella se toma la cita."
+          }
+        },
+        "title": "AjusteCuerpo",
+        "type": "object"
+      },
       "ApiKeyBody": {
         "properties": {
           "key": {
@@ -12,6 +61,194 @@
           "key"
         ],
         "title": "ApiKeyBody",
+        "type": "object"
+      },
+      "ApoderadoVista": {
+        "properties": {
+          "bloquea": {
+            "title": "Bloquea",
+            "type": "boolean"
+          },
+          "cedula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cedula"
+          },
+          "cotejos": {
+            "items": {
+              "$ref": "#/components/schemas/Cotejo"
+            },
+            "title": "Cotejos",
+            "type": "array"
+          },
+          "estado": {
+            "enum": [
+              "verificado",
+              "revisar",
+              "no_verificado"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "fase": {
+            "enum": [
+              "en_cola",
+              "consultando",
+              "necesita_ayuda",
+              "listo"
+            ],
+            "title": "Fase",
+            "type": "string"
+          },
+          "huella": {
+            "title": "Huella",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "motivos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Motivos",
+            "type": "array"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "parte": {
+            "title": "Parte",
+            "type": "string"
+          },
+          "poder": {
+            "$ref": "#/components/schemas/PoderVista"
+          },
+          "revisado": {
+            "title": "Revisado",
+            "type": "boolean"
+          },
+          "revision_vencida": {
+            "title": "Revision Vencida",
+            "type": "boolean"
+          },
+          "rol_parte": {
+            "enum": [
+              "accionante",
+              "accionada",
+              "vinculada",
+              "otro"
+            ],
+            "title": "Rol Parte",
+            "type": "string"
+          },
+          "tarjeta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tarjeta"
+          },
+          "tipo_persona": {
+            "enum": [
+              "natural",
+              "juridica"
+            ],
+            "title": "Tipo Persona",
+            "type": "string"
+          },
+          "vigencia": {
+            "$ref": "#/components/schemas/VigenciaVista"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "parte",
+          "rol_parte",
+          "tipo_persona",
+          "estado",
+          "fase",
+          "motivos",
+          "cedula",
+          "tarjeta",
+          "vigencia",
+          "poder",
+          "cotejos",
+          "revisado",
+          "revision_vencida",
+          "bloquea",
+          "huella"
+        ],
+        "title": "ApoderadoVista",
+        "type": "object"
+      },
+      "ApoderadosRespuesta": {
+        "properties": {
+          "alertas": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alertas",
+            "type": "array"
+          },
+          "apoderados": {
+            "items": {
+              "$ref": "#/components/schemas/ApoderadoVista"
+            },
+            "title": "Apoderados",
+            "type": "array"
+          },
+          "bloquea_decision": {
+            "title": "Bloquea Decision",
+            "type": "boolean"
+          },
+          "consulta": {
+            "$ref": "#/components/schemas/ConsultaEstado"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "identificacion": {
+            "enum": [
+              "lista",
+              "no_disponible",
+              "fallida"
+            ],
+            "title": "Identificacion",
+            "type": "string"
+          },
+          "sin_apoderado": {
+            "items": {
+              "$ref": "#/components/schemas/ParteSinApoderadoVista"
+            },
+            "title": "Sin Apoderado",
+            "type": "array"
+          }
+        },
+        "required": [
+          "identificacion",
+          "apoderados",
+          "sin_apoderado",
+          "alertas",
+          "consulta",
+          "bloquea_decision",
+          "editable"
+        ],
+        "title": "ApoderadosRespuesta",
         "type": "object"
       },
       "Bloque": {
@@ -100,6 +337,20 @@
         "title": "Body_crear_caso_api_casos_post",
         "type": "object"
       },
+      "Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put": {
+        "properties": {
+          "archivo": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Archivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archivo"
+        ],
+        "title": "Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put",
+        "type": "object"
+      },
       "Body_subir_dataset_api_dataset_put": {
         "properties": {
           "archivo": {
@@ -112,6 +363,46 @@
           "archivo"
         ],
         "title": "Body_subir_dataset_api_dataset_put",
+        "type": "object"
+      },
+      "CadenaVista": {
+        "properties": {
+          "cargo": {
+            "title": "Cargo",
+            "type": "string"
+          },
+          "estado": {
+            "enum": [
+              "confirmada",
+              "contradicha",
+              "sin_certificado",
+              "no_aplica"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "evidencia": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenciaVista"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "otorgante": {
+            "title": "Otorgante",
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "otorgante",
+          "cargo",
+          "evidencia"
+        ],
+        "title": "CadenaVista",
         "type": "object"
       },
       "CampoFormato": {
@@ -364,6 +655,107 @@
           "detalle"
         ],
         "title": "CitaVista",
+        "type": "object"
+      },
+      "ConsultaEstado": {
+        "properties": {
+          "activa": {
+            "title": "Activa",
+            "type": "boolean"
+          },
+          "extension": {
+            "enum": [
+              "conectada",
+              "desactualizada",
+              "no_conectada"
+            ],
+            "title": "Extension",
+            "type": "string"
+          },
+          "modo": {
+            "enum": [
+              "extension",
+              "directa",
+              "fake",
+              "apagada"
+            ],
+            "title": "Modo",
+            "type": "string"
+          },
+          "pausa_hasta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pausa Hasta"
+          }
+        },
+        "required": [
+          "activa",
+          "extension",
+          "modo",
+          "pausa_hasta"
+        ],
+        "title": "ConsultaEstado",
+        "type": "object"
+      },
+      "ConsultarCuerpo": {
+        "properties": {
+          "forzar": {
+            "default": false,
+            "description": "Consultar de nuevo aunque ya haya un resultado, uno en caché o se hayan agotado los intentos del día; respeta la pausa tras quedar la Rama Judicial sin responder.",
+            "title": "Forzar",
+            "type": "boolean"
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Apoderados cuya vigencia se consulta; sin ids, todos los del caso.",
+            "title": "Ids"
+          }
+        },
+        "title": "ConsultarCuerpo",
+        "type": "object"
+      },
+      "Cotejo": {
+        "description": "Una comprobación automática: ``ok`` es ``None`` cuando no se pudo cotejar.",
+        "properties": {
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "texto"
+        ],
+        "title": "Cotejo",
         "type": "object"
       },
       "DecisionVistaRespuesta": {
@@ -884,6 +1276,105 @@
         "title": "EventosJob",
         "type": "object"
       },
+      "EvidenciaVista": {
+        "properties": {
+          "cita": {
+            "title": "Cita",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "documento": {
+            "title": "Documento",
+            "type": "string"
+          },
+          "fin": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fin"
+          },
+          "inicio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inicio"
+          },
+          "ocr": {
+            "title": "Ocr",
+            "type": "boolean"
+          },
+          "pagina": {
+            "title": "Pagina",
+            "type": "integer"
+          },
+          "rol": {
+            "anyOf": [
+              {
+                "enum": [
+                  "acta_reparto_1a",
+                  "acta_reparto_2a",
+                  "escrito_tutela",
+                  "auto_admisorio",
+                  "auto_vinculacion",
+                  "contestacion",
+                  "fallo_a_quo",
+                  "impugnacion",
+                  "auto_concede_impugnacion",
+                  "notificacion",
+                  "correo",
+                  "memorial",
+                  "indice",
+                  "anexo",
+                  "producto_despacho",
+                  "otro"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rol"
+          },
+          "total_paginas": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Paginas"
+          }
+        },
+        "required": [
+          "doc_id",
+          "documento",
+          "rol",
+          "pagina",
+          "total_paginas",
+          "cita",
+          "ocr",
+          "inicio",
+          "fin"
+        ],
+        "title": "EvidenciaVista",
+        "type": "object"
+      },
       "FaltanteDecision": {
         "properties": {
           "campo": {
@@ -1351,6 +1842,72 @@
         "title": "NumeralVista",
         "type": "object"
       },
+      "PaginaExpediente": {
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "documento": {
+            "title": "Documento",
+            "type": "string"
+          },
+          "es_pdf": {
+            "title": "Es Pdf",
+            "type": "boolean"
+          },
+          "ocr": {
+            "title": "Ocr",
+            "type": "boolean"
+          },
+          "pagina": {
+            "title": "Pagina",
+            "type": "integer"
+          },
+          "rol": {
+            "enum": [
+              "acta_reparto_1a",
+              "acta_reparto_2a",
+              "escrito_tutela",
+              "auto_admisorio",
+              "auto_vinculacion",
+              "contestacion",
+              "fallo_a_quo",
+              "impugnacion",
+              "auto_concede_impugnacion",
+              "notificacion",
+              "correo",
+              "memorial",
+              "indice",
+              "anexo",
+              "producto_despacho",
+              "otro"
+            ],
+            "title": "Rol",
+            "type": "string"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_id",
+          "documento",
+          "rol",
+          "pagina",
+          "total",
+          "texto",
+          "ocr",
+          "es_pdf"
+        ],
+        "title": "PaginaExpediente",
+        "type": "object"
+      },
       "PaginaVista": {
         "properties": {
           "bloques": {
@@ -1365,6 +1922,149 @@
           "bloques"
         ],
         "title": "PaginaVista",
+        "type": "object"
+      },
+      "ParteSinApoderadoVista": {
+        "properties": {
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nota": {
+            "title": "Nota",
+            "type": "string"
+          },
+          "rol_parte": {
+            "enum": [
+              "accionante",
+              "accionada",
+              "vinculada",
+              "otro"
+            ],
+            "title": "Rol Parte",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombre",
+          "rol_parte",
+          "nota"
+        ],
+        "title": "ParteSinApoderadoVista",
+        "type": "object"
+      },
+      "PoderManualCuerpo": {
+        "properties": {
+          "doc_id": {
+            "description": "doc_id de la ingesta, p. ej. 1a-014.",
+            "pattern": "^[12][a-z]-\\d{3,4}$",
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "pagina": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Pagina",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_id",
+          "pagina"
+        ],
+        "title": "PoderManualCuerpo",
+        "type": "object"
+      },
+      "PoderVista": {
+        "properties": {
+          "cadena": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CadenaVista"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documentos_revisados": {
+            "title": "Documentos Revisados",
+            "type": "integer"
+          },
+          "estado": {
+            "enum": [
+              "hallado",
+              "hallado_reserva",
+              "manual",
+              "sin_poder",
+              "ajeno",
+              "descartado"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "evidencia": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenciaVista"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hay_hallado": {
+            "description": "El código halló en el expediente un poder del abogado (aunque se muestre otro o se haya descartado): «Deshacer el descarte» solo tiene adónde volver si es así.",
+            "title": "Hay Hallado",
+            "type": "boolean"
+          },
+          "mencion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenciaVista"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "otorgante": {
+            "title": "Otorgante",
+            "type": "string"
+          },
+          "parte": {
+            "title": "Parte",
+            "type": "string"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "enum": [
+                  "poder",
+                  "sustitucion",
+                  "certificado_existencia"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo"
+          }
+        },
+        "required": [
+          "estado",
+          "tipo",
+          "evidencia",
+          "otorgante",
+          "parte",
+          "cadena",
+          "mencion",
+          "documentos_revisados",
+          "hay_hallado"
+        ],
+        "title": "PoderVista",
         "type": "object"
       },
       "Preferencias": {
@@ -1487,6 +2187,38 @@
         "title": "RevisionBody",
         "type": "object"
       },
+      "RevisionCuerpo": {
+        "properties": {
+          "huella": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Huella del estado que vio quien revisa (ApoderadoVista.huella); obligatoria para marcar como revisado.",
+            "title": "Huella"
+          },
+          "nota": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Nota",
+            "type": "string"
+          },
+          "revisado": {
+            "title": "Revisado",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revisado"
+        ],
+        "title": "RevisionCuerpo",
+        "type": "object"
+      },
       "RunBody": {
         "properties": {
           "cmd": {
@@ -1525,6 +2257,10 @@
       },
       "Segmento": {
         "properties": {
+          "apoderado_id": {
+            "title": "Apoderado Id",
+            "type": "string"
+          },
           "cita_id": {
             "title": "Cita Id",
             "type": "string"
@@ -1586,6 +2322,142 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VigenciaVista": {
+        "properties": {
+          "cedula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cedula"
+          },
+          "certificado_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Certificado Url"
+          },
+          "codigo_verificacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Verificacion"
+          },
+          "consultado_en": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consultado En"
+          },
+          "detalle": {
+            "title": "Detalle",
+            "type": "string"
+          },
+          "estado": {
+            "enum": [
+              "vigente",
+              "vigente_obs",
+              "no_vigente",
+              "no_inscrito",
+              "otra_persona",
+              "ilegible",
+              "inaccesible",
+              "sin_cedula",
+              "sin_consultar"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "fase": {
+            "enum": [
+              "en_cola",
+              "consultando",
+              "necesita_ayuda",
+              "listo"
+            ],
+            "title": "Fase",
+            "type": "string"
+          },
+          "grave": {
+            "description": "La vigencia por sí sola deja al abogado sin verificar (se muestra en rojo): tarjeta no vigente, o cédula no inscrita que consta en una página del expediente leída sin OCR. Una cédula no inscrita que pudo leerse o escribirse mal no es grave, aunque el abogado quede sin verificar por otra razón.",
+            "title": "Grave",
+            "type": "boolean"
+          },
+          "numero_certificado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Certificado"
+          },
+          "origen": {
+            "anyOf": [
+              {
+                "enum": [
+                  "extension",
+                  "directa",
+                  "manual",
+                  "fake"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origen"
+          },
+          "tarjeta_registro": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tarjeta Registro"
+          }
+        },
+        "required": [
+          "estado",
+          "fase",
+          "cedula",
+          "tarjeta_registro",
+          "consultado_en",
+          "origen",
+          "certificado_url",
+          "numero_certificado",
+          "codigo_verificacion",
+          "detalle",
+          "grave"
+        ],
+        "title": "VigenciaVista",
         "type": "object"
       },
       "Vista": {
@@ -1740,6 +2612,406 @@
           }
         },
         "summary": "Crear Caso"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados": {
+      "get": {
+        "operationId": "leer_apoderados_api_casos__caso_id__apoderados_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadosRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso no encontrado."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Leer Apoderados"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados/consultar": {
+      "post": {
+        "description": "Pone en la cola de consultas automáticas la cédula de los apoderados pedidos (todos, sin ``ids``).\n\nSin ``forzar`` se saltan los que ya tienen un resultado y los que agotaron sus intentos del día;\n``forzar`` (el botón «Reintentar consulta automática») consulta de nuevo, pero respeta la pausa\ntras quedar la Rama Judicial sin responder. Responde enseguida con el estado de los apoderados:\nla consulta sigue aparte y el borrador la sigue con el GET.",
+        "operationId": "consultar_apoderados_api_casos__caso_id__apoderados_consultar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsultarCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadosRespuesta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o apoderado no encontrado."
+          },
+          "409": {
+            "description": "El caso no está esperando la decisión, o la consulta automática está apagada."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Consultar Apoderados"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados/identificar": {
+      "post": {
+        "operationId": "identificar_apoderados_api_casos__caso_id__apoderados_identificar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadosRespuesta"
+                }
+              }
+            },
+            "description": "El caso ya tiene a sus apoderados identificados; no se hizo nada."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadosRespuesta"
+                }
+              }
+            },
+            "description": "La identificación empezó en un trabajo del caso (cabecera Location: /api/jobs/{id}); la respuesta es el estado actual, que se vuelve a leer con GET …/apoderados."
+          },
+          "404": {
+            "description": "Caso no encontrado."
+          },
+          "409": {
+            "description": "El caso no está esperando la decisión, ya hay una ejecución en curso o la identificación está desactivada."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Identificar Apoderados"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados/{ap_id}/ajustes": {
+      "put": {
+        "operationId": "ajustar_apoderado_api_casos__caso_id__apoderados__ap_id__ajustes_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ap_id",
+            "required": true,
+            "schema": {
+              "title": "Ap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AjusteCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadoVista"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o apoderado no encontrado."
+          },
+          "409": {
+            "description": "El caso no está esperando la decisión, la cédula ya consta en el expediente o no hay un poder que descartar."
+          },
+          "422": {
+            "description": "No hay nada que ajustar, la cédula no es válida, o la página no existe, es de otro radicado o no nombra al abogado."
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Ajustar Apoderado"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados/{ap_id}/certificado": {
+      "get": {
+        "operationId": "descargar_certificado_api_casos__caso_id__apoderados__ap_id__certificado_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ap_id",
+            "required": true,
+            "schema": {
+              "title": "Ap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso, apoderado o certificado no encontrado."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Descargar Certificado"
+      },
+      "put": {
+        "operationId": "subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ap_id",
+            "required": true,
+            "schema": {
+              "title": "Ap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_subir_certificado_api_casos__caso_id__apoderados__ap_id__certificado_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadoVista"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o apoderado no encontrado."
+          },
+          "409": {
+            "description": "El caso no está esperando la decisión."
+          },
+          "413": {
+            "description": "El archivo pasa de 2 MiB."
+          },
+          "422": {
+            "description": "No es un PDF, no se pudo leer el certificado, es de otra persona o no trae nombre (cédula no inscrita) y el abogado no tiene cédula."
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Subir Certificado"
+      }
+    },
+    "/api/casos/{caso_id}/apoderados/{ap_id}/revision": {
+      "put": {
+        "operationId": "revisar_apoderado_api_casos__caso_id__apoderados__ap_id__revision_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ap_id",
+            "required": true,
+            "schema": {
+              "title": "Ap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionCuerpo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApoderadoVista"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o apoderado no encontrado."
+          },
+          "409": {
+            "description": "El caso no está esperando la decisión, o el estado del apoderado cambió desde que se vio."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "El registro de apoderados del caso está dañado."
+          }
+        },
+        "summary": "Revisar Apoderado"
       }
     },
     "/api/casos/{caso_id}/config": {
@@ -1924,6 +3196,122 @@
           }
         },
         "summary": "Estado Caso"
+      }
+    },
+    "/api/casos/{caso_id}/expediente/{doc_id}/archivo": {
+      "get": {
+        "operationId": "archivo_expediente_api_casos__caso_id__expediente__doc_id__archivo_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "doc_id de la ingesta, p. ej. 1a-014",
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "description": "doc_id de la ingesta, p. ej. 1a-014",
+              "pattern": "^[12][a-z]-\\d{3,4}$",
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {},
+              "application/pdf": {},
+              "text/plain": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso o documento inexistente, o archivo fuera de insumos/."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archivo Expediente"
+      }
+    },
+    "/api/casos/{caso_id}/expediente/{doc_id}/paginas/{n}": {
+      "get": {
+        "operationId": "pagina_expediente_api_casos__caso_id__expediente__doc_id__paginas__n__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caso_id",
+            "required": true,
+            "schema": {
+              "title": "Caso Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "doc_id de la ingesta, p. ej. 1a-014",
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "description": "doc_id de la ingesta, p. ej. 1a-014",
+              "pattern": "^[12][a-z]-\\d{3,4}$",
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "N",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginaExpediente"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Caso, documento o página inexistente."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pagina Expediente"
       }
     },
     "/api/casos/{caso_id}/resumen": {

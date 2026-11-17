@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -9,7 +10,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tutela2.models import limpiar_control
 
-NODOS_LLM = ("apertura", "consideraciones", "caso_concreto")
+log = logging.getLogger("tutela2")
+
+NODOS_LLM = ("apertura", "apoderados", "consideraciones", "caso_concreto")
 MODELOS = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
 MODELOS_GEMINI = ("gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen")
 CATALOGO = {"anthropic": MODELOS, "gemini": MODELOS_GEMINI}
@@ -25,6 +28,10 @@ RAZONAMIENTO_GEMINI = "high"
 RESPALDO_CLIENTE = {"claude-haiku-5-5": "claude-sonnet-5-5"}
 VARIABLE_MODELOS_PERMITIDOS = "TUTELA2_MODELOS_PERMITIDOS"
 VARIABLE_CACHE = "TUTELA2_CACHE_DIR"
+VARIABLE_CONSULTA_VIGENCIA = "TUTELA2_CONSULTA_VIGENCIA"
+MODOS_CONSULTA_REALES = ("extension", "directa", "apagada")
+"""Modos de consulta de la vigencia que se pueden fijar con TUTELA2_CONSULTA_VIGENCIA; ``fake`` solo
+llega con el proveedor falso, para que un certificado ficticio nunca deje en verde a un abogado real."""
 
 
 def _modelos_pedidos() -> set[str]:
@@ -69,6 +76,20 @@ class JevConfig(BaseModel):
     max_chars_cabecera: int = 1500
     max_chars_sentido: int = 2500
     concurrencia: int = 6
+
+
+class ApoderadosConfig(BaseModel):
+    """Identificación de los abogados del expediente y consulta de la vigencia de su tarjeta profesional.
+
+    ``consulta`` es apagada por defecto: la consulta automática en la Rama Judicial (que envía el
+    número de cédula del abogado) solo se enciende cuando la URNA y el área jurídica lo aprueben por
+    escrito, con ``"consulta": "extension"`` (o ``"directa"``, solo en servidores en Colombia) en el
+    config.json del caso o con TUTELA2_CONSULTA_VIGENCIA para toda la instalación. Apagada, nada se
+    pone en cola ni sale hacia la Rama Judicial y el borrador ofrece subir el certificado a mano."""
+
+    activo: bool = True
+    consulta: Literal["extension", "directa", "fake", "apagada"] = "apagada"
+    max_chars: int = Field(150_000, gt=0)
 
 
 class Despacho(BaseModel):
@@ -120,6 +141,7 @@ class Config(BaseModel):
     despacho: Despacho = Despacho()
     llm: LLMConfig = LLMConfig()
     jev: JevConfig = JevConfig()
+    apoderados: ApoderadosConfig = ApoderadosConfig()
     max_intentos: int = 3
     ocr: bool = True
     verificar_relatoria: bool = True
@@ -164,16 +186,48 @@ class Config(BaseModel):
         return p
 
 
+_avisadas: set[str] = set()
+
+
+def _avisar_consulta_invalida(valor: str) -> None:
+    """Avisa una vez por valor (``cargar`` corre en cada petición) de que TUTELA2_CONSULTA_VIGENCIA no se entiende."""
+    if valor in _avisadas:
+        return
+    _avisadas.add(valor)
+    log.warning(
+        "%s no tiene un modo válido (%s): la consulta automática de la vigencia queda apagada",
+        VARIABLE_CONSULTA_VIGENCIA,
+        ", ".join(MODOS_CONSULTA_REALES),
+    )
+
+
 def cargar(caso_dir: str | Path, entorno: bool = True) -> Config:
+    """La configuración del caso; con ``entorno``, con las preferencias y variables de entorno encima.
+
+    La consulta de la vigencia: TUTELA2_CONSULTA_VIGENCIA (``extension``, ``directa`` o ``apagada``)
+    manda sobre el config.json del caso, que guarda el valor por defecto de cuando se escribió; con
+    cualquier otro valor no vacío queda apagada (y se avisa en el registro). El proveedor falso la deja
+    en ``fake``, y ``fake`` sin el proveedor falso queda apagada."""
     f = Path(caso_dir) / "config.json"
     cfg = Config.model_validate(json.loads(f.read_text(encoding="utf-8"))) if f.exists() else Config()
     if entorno:
         from tutela2 import preferencias
 
         preferencias.superponer(cfg, preferencias.desde_entorno())
+        modo = os.environ.get(VARIABLE_CONSULTA_VIGENCIA, "").strip().lower()
+        if modo in MODOS_CONSULTA_REALES:
+            cfg.apoderados.consulta = modo
+        elif modo:
+            # Un valor que no se entiende («off», «no», «fake»…) apaga la consulta: quien lo puso quería
+            # cambiarla y, ante la duda, nada sale hacia la Rama Judicial.
+            _avisar_consulta_invalida(modo)
+            cfg.apoderados.consulta = "apagada"
         if os.environ.get("TUTELA2_PROVEEDOR", "").strip() == "fake":
             cfg.llm.proveedor = "fake"
             cfg.verificar_relatoria = False
+            cfg.apoderados.consulta = "fake"
+        elif cfg.apoderados.consulta == "fake" and cfg.llm.proveedor != "fake":
+            cfg.apoderados.consulta = "apagada"
     return cfg
 
 

@@ -108,6 +108,8 @@ export interface Segmento {
   negrita?: boolean;
   cursiva?: boolean;
   cita_id?: string;
+  /** Nombre de un abogado en el borrador previo; el estado se lee de `/apoderados`, no viene en la vista. */
+  apoderado_id?: string;
 }
 
 export type TipoBloque =
@@ -231,4 +233,177 @@ export interface JobInicio {
 
 export interface ErroresCampo {
   errores: { campo: string; mensaje: string }[];
+}
+
+export type RolDocumento =
+  | "acta_reparto_1a"
+  | "acta_reparto_2a"
+  | "escrito_tutela"
+  | "auto_admisorio"
+  | "auto_vinculacion"
+  | "contestacion"
+  | "fallo_a_quo"
+  | "impugnacion"
+  | "auto_concede_impugnacion"
+  | "notificacion"
+  | "correo"
+  | "memorial"
+  | "indice"
+  | "anexo"
+  | "producto_despacho"
+  | "otro";
+
+export type RolParte = "accionante" | "accionada" | "vinculada" | "otro";
+export type EstadoApoderado = "verificado" | "revisar" | "no_verificado";
+export type FaseApoderado = "en_cola" | "consultando" | "necesita_ayuda" | "listo";
+export type EstadoVigencia =
+  | "vigente"
+  | "vigente_obs"
+  | "no_vigente"
+  | "no_inscrito"
+  | "otra_persona"
+  | "ilegible"
+  | "inaccesible"
+  | "sin_cedula"
+  | "sin_consultar";
+export type EstadoPoder = "hallado" | "hallado_reserva" | "manual" | "sin_poder" | "ajeno" | "descartado";
+export type EstadoCadena = "confirmada" | "contradicha" | "sin_certificado" | "no_aplica";
+export type TipoPoder = "poder" | "sustitucion" | "certificado_existencia";
+export type OrigenVigencia = "extension" | "directa" | "manual" | "fake";
+export type EstadoExtension = "conectada" | "desactualizada" | "no_conectada";
+export type ModoConsulta = "extension" | "directa" | "fake" | "apagada";
+
+export interface Cotejo {
+  ok: boolean | null;
+  texto: string;
+}
+
+export interface EvidenciaVista {
+  doc_id: string;
+  documento: string;
+  rol: RolDocumento | null;
+  pagina: number;
+  total_paginas: number | null;
+  cita: string;
+  ocr: boolean;
+  inicio: number | null;
+  fin: number | null;
+}
+
+export interface CadenaVista {
+  estado: EstadoCadena;
+  otorgante: string;
+  cargo: string;
+  evidencia: EvidenciaVista | null;
+}
+
+export interface VigenciaVista {
+  estado: EstadoVigencia;
+  fase: FaseApoderado;
+  cedula: string | null;
+  tarjeta_registro: string | null;
+  consultado_en: string | null;
+  origen: OrigenVigencia | null;
+  certificado_url: string | null;
+  numero_certificado: string | null;
+  codigo_verificacion: string | null;
+  detalle: string;
+  /** La vigencia por sí sola deja al abogado sin verificar (en rojo): tarjeta no vigente, o cédula no inscrita que consta en
+   * una página del expediente leída sin OCR. Una cédula no inscrita que pudo leerse o escribirse mal no lo es, aunque el
+   * abogado quede sin verificar por otra razón (un poder de otra parte). */
+  grave: boolean;
+}
+
+export interface PoderVista {
+  estado: EstadoPoder;
+  tipo: TipoPoder | null;
+  evidencia: EvidenciaVista | null;
+  otorgante: string;
+  parte: string;
+  cadena: CadenaVista | null;
+  mencion: EvidenciaVista | null;
+  documentos_revisados: number;
+  /** El código halló un poder del abogado (aunque se muestre otro o se haya descartado): «Deshacer el descarte» vuelve a él. */
+  hay_hallado: boolean;
+}
+
+export interface ApoderadoVista {
+  id: string;
+  nombre: string;
+  parte: string;
+  rol_parte: RolParte;
+  tipo_persona: "natural" | "juridica";
+  estado: EstadoApoderado;
+  fase: FaseApoderado;
+  motivos: string[];
+  cedula: string | null;
+  tarjeta: string | null;
+  vigencia: VigenciaVista;
+  poder: PoderVista;
+  cotejos: Cotejo[];
+  revisado: boolean;
+  revision_vencida: boolean;
+  bloquea: boolean;
+  huella: string;
+}
+
+export interface ParteSinApoderadoVista {
+  nombre: string;
+  rol_parte: RolParte;
+  nota: string;
+}
+
+export interface ConsultaEstado {
+  activa: boolean;
+  extension: EstadoExtension;
+  modo: ModoConsulta;
+  pausa_hasta: string | null;
+}
+
+export interface ApoderadosRespuesta {
+  identificacion: "lista" | "no_disponible" | "fallida";
+  apoderados: ApoderadoVista[];
+  sin_apoderado: ParteSinApoderadoVista[];
+  alertas: string[];
+  consulta: ConsultaEstado;
+  bloquea_decision: boolean;
+  editable: boolean;
+}
+
+export interface RevisionCuerpo {
+  revisado: boolean;
+  nota?: string;
+  /** La `huella` del apoderado que vio quien revisa; obligatoria para marcar como revisado (409 si el estado cambió). */
+  huella?: string | null;
+}
+
+export interface ConsultarCuerpo {
+  /** Apoderados cuya vigencia se consulta; sin ids, todos los del caso. */
+  ids?: string[] | null;
+  /** «Reintentar consulta automática»: consulta de nuevo aunque haya resultado, caché o se agotaran los intentos del día. */
+  forzar?: boolean;
+}
+
+export interface PoderManualCuerpo {
+  doc_id: string;
+  pagina: number;
+}
+
+/** Correcciones a mano de un apoderado: un campo que no viene no cambia; uno en `null` quita esa corrección. */
+export interface AjusteCuerpo {
+  poder_manual?: PoderManualCuerpo | null;
+  poder_descartado?: boolean | null;
+  cedula?: string | null;
+  nota?: string;
+}
+
+export interface PaginaExpediente {
+  doc_id: string;
+  documento: string;
+  rol: RolDocumento;
+  pagina: number;
+  total: number;
+  texto: string;
+  ocr: boolean;
+  es_pdf: boolean;
 }

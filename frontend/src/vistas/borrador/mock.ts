@@ -1,5 +1,20 @@
-import type { Bloque, CitaVista, Segmento, TipoBloque, Vista } from "../../api/contrato";
-import type { MockRuta } from "../../api/mock";
+import { ErrorApi } from "../../api/cliente";
+import type {
+  AjusteCuerpo,
+  ApoderadosRespuesta,
+  ApoderadoVista,
+  Bloque,
+  CitaVista,
+  ConsultarCuerpo,
+  EvidenciaVista,
+  PaginaExpediente,
+  RevisionCuerpo,
+  Segmento,
+  TipoBloque,
+  Vista,
+} from "../../api/contrato";
+import type { MockRuta, PeticionMock } from "../../api/mock";
+import { conRevision, partirResaltado } from "./apoderados";
 import type { EstadoCaso } from "./tipos";
 
 export const CASO_MOCK_BORRADOR = "borrador-quintero";
@@ -8,6 +23,11 @@ type Origen = Bloque["origen"];
 
 const t = (texto: string, extra: Partial<Segmento> = {}): Segmento => ({ texto, ...extra });
 const c = (texto: string, cita_id: string): Segmento => ({ texto, cita_id });
+const a = (texto: string, apoderado_id: string): Segmento => ({ texto, apoderado_id });
+
+const ID_VERIFICADA = "ap-3f9c2a71d0";
+const ID_POR_REVISAR = "ap-81be04c5f2";
+const ID_NO_VERIFICADO = "ap-c47d19e6a8";
 
 function bloque(id: string, tipo: TipoBloque, origen: Origen, seccion: string | null, ...segmentos: (Segmento | string)[]): Bloque {
   return { id, tipo, origen, seccion, segmentos: segmentos.map((s) => (typeof s === "string" ? t(s) : s)) };
@@ -70,7 +90,9 @@ const pagina1: Bloque[] = [
     "parrafo",
     "modelo",
     "antecedentes-del-caso",
-    "La señora MARTA INÉS QUINTERO BEDOYA, identificada con cédula de ciudadanía 43.999.101, presentó acción de tutela el catorce (14) de septiembre de dos mil veintiséis (2026) contra la EPS HORIZONTE SALUD S.A.S., entidad a la que se encuentra afiliada en el régimen contributivo, por considerar vulnerados sus derechos fundamentales a la salud y al mínimo vital.",
+    "La señora MARTA INÉS QUINTERO BEDOYA, identificada con cédula de ciudadanía 43.999.101, por medio de apoderado judicial, el doctor ",
+    a("Luis Fernando Ospina Arango", ID_POR_REVISAR),
+    ", presentó acción de tutela el catorce (14) de septiembre de dos mil veintiséis (2026) contra la EPS HORIZONTE SALUD S.A.S., entidad a la que se encuentra afiliada en el régimen contributivo, por considerar vulnerados sus derechos fundamentales a la salud y al mínimo vital.",
   ),
   bloque(
     "antecedentes-del-caso-2",
@@ -91,7 +113,11 @@ const pagina1: Bloque[] = [
     "parrafo",
     "modelo",
     "antecedentes-del-caso",
-    "El Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín admitió la acción el quince (15) de septiembre de dos mil veintiséis (2026) y ordenó notificar a la accionada. La EPS HORIZONTE SALUD S.A.S. contestó el diecisiete (17) de septiembre siguiente; manifestó que el medicamento no figuraba autorizado para la afiliada y que esta podía acudir a la Superintendencia Nacional de Salud, por lo que solicitó negar el amparo.",
+    "El Juzgado Noveno Penal Municipal con Función de Control de Garantías de Medellín admitió la acción el quince (15) de septiembre de dos mil veintiséis (2026) y ordenó notificar a la accionada. La EPS HORIZONTE SALUD S.A.S. contestó el diecisiete (17) de septiembre siguiente por intermedio de su apoderada judicial, la doctora ",
+    a("Andrea Paola Giraldo Montoya", ID_VERIFICADA),
+    "; manifestó que el medicamento no figuraba autorizado para la afiliada y que esta podía acudir a la Superintendencia Nacional de Salud, por lo que solicitó negar el amparo. La CLÍNICA SANTA AURORA S.A.S., vinculada al trámite, intervino por medio del doctor ",
+    a("Carlos Eduardo Pineda Ruiz", ID_NO_VERIFICADO),
+    ", quien solicitó su desvinculación por falta de legitimación en la causa por pasiva.",
   ),
 ];
 
@@ -322,8 +348,621 @@ export const ESTADO_BORRADOR: EstadoCaso = {
   },
 };
 
+const CONTESTACION = "007_007RespuestaEPSHorizonteSaludSAS_ContestacionTutela_Radicado2026-00412_Anexos.pdf";
+
+const evidencia = (doc_id: string, documento: string, rol: EvidenciaVista["rol"], pagina: number, total: number, cita: string): EvidenciaVista => ({
+  doc_id,
+  documento,
+  rol,
+  pagina,
+  total_paginas: total,
+  cita,
+  ocr: false,
+  inicio: null,
+  fin: null,
+});
+
+const VERIFICADA: ApoderadoVista = {
+  id: ID_VERIFICADA,
+  nombre: "ANDREA PAOLA GIRALDO MONTOYA",
+  parte: "EPS HORIZONTE SALUD S.A.S.",
+  rol_parte: "accionada",
+  tipo_persona: "juridica",
+  estado: "verificado",
+  fase: "listo",
+  motivos: [],
+  cedula: "1017234568",
+  tarjeta: "287415",
+  vigencia: {
+    estado: "vigente",
+    fase: "listo",
+    cedula: "1017234568",
+    tarjeta_registro: "287415",
+    consultado_en: "2026-11-17T10:42:00-05:00",
+    origen: "extension",
+    certificado_url: null,
+    numero_certificado: "4471203",
+    codigo_verificacion: null,
+    detalle: "",
+    grave: false,
+  },
+  poder: {
+    estado: "hallado",
+    tipo: "poder",
+    evidencia: evidencia(
+      "1a-007",
+      CONTESTACION,
+      "contestacion",
+      4,
+      12,
+      "confiero poder especial, amplio y suficiente a la doctora ANDREA PAOLA GIRALDO MONTOYA, identificada con la cédula de ciudadanía No. 1.017.234.568 y tarjeta profesional No. 287.415 del C. S. de la J., para que en nombre de la entidad que represento conteste la acción de tutela de la referencia",
+    ),
+    otorgante: "JUAN CARLOS RESTREPO URIBE",
+    parte: "EPS HORIZONTE SALUD S.A.S.",
+    cadena: {
+      estado: "confirmada",
+      otorgante: "JUAN CARLOS RESTREPO URIBE",
+      cargo: "representante legal",
+      evidencia: evidencia("1a-007", CONTESTACION, "contestacion", 6, 12, "Representante legal: JUAN CARLOS RESTREPO URIBE, identificado con cédula de ciudadanía"),
+    },
+    mencion: evidencia("1a-007", CONTESTACION, "contestacion", 1, 12, "actuando como apoderada judicial de la EPS HORIZONTE SALUD S.A.S., según el poder que se adjunta"),
+    documentos_revisados: 14,
+    hay_hallado: true,
+  },
+  cotejos: [
+    { ok: true, texto: "El nombre coincide con quien actúa en el expediente" },
+    { ok: true, texto: "T.P. 287415 coincide con el certificado de vigencia" },
+    { ok: true, texto: "Representa a EPS HORIZONTE SALUD S.A.S., accionada" },
+    { ok: true, texto: "Lo otorga JUAN CARLOS RESTREPO URIBE, representante legal, acreditado en el certificado de existencia (Doc. 1a-007, p. 6)" },
+  ],
+  revisado: false,
+  revision_vencida: false,
+  bloquea: false,
+  huella: "5d0c8e1f2a3b4c6d",
+};
+
+const POR_REVISAR: ApoderadoVista = {
+  id: ID_POR_REVISAR,
+  nombre: "LUIS FERNANDO OSPINA ARANGO",
+  parte: "MARTA INÉS QUINTERO BEDOYA",
+  rol_parte: "accionante",
+  tipo_persona: "natural",
+  estado: "revisar",
+  fase: "necesita_ayuda",
+  motivos: ["Aún no se ha consultado la vigencia de la tarjeta profesional en la Rama Judicial."],
+  cedula: "71654320",
+  tarjeta: "198344",
+  vigencia: {
+    estado: "sin_consultar",
+    fase: "necesita_ayuda",
+    cedula: "71654320",
+    tarjeta_registro: null,
+    consultado_en: null,
+    origen: null,
+    certificado_url: null,
+    numero_certificado: null,
+    codigo_verificacion: null,
+    detalle: "",
+    grave: false,
+  },
+  poder: {
+    estado: "hallado",
+    tipo: "poder",
+    evidencia: evidencia(
+      "1a-002",
+      "002_002EscritoTutelaQuinteroBedoya.pdf",
+      "escrito_tutela",
+      6,
+      6,
+      "Yo, MARTA INÉS QUINTERO BEDOYA, mayor de edad, confiero poder especial, amplio y suficiente al doctor LUIS FERNANDO OSPINA ARANGO, abogado con T.P. 198.344 del C. S. de la J., para que en mi nombre presente acción de tutela",
+    ),
+    otorgante: "MARTA INÉS QUINTERO BEDOYA",
+    parte: "MARTA INÉS QUINTERO BEDOYA",
+    cadena: { estado: "no_aplica", otorgante: "", cargo: "", evidencia: null },
+    mencion: null,
+    documentos_revisados: 14,
+    hay_hallado: true,
+  },
+  cotejos: [
+    { ok: true, texto: "El nombre coincide con quien actúa en el expediente" },
+    { ok: null, texto: "La T.P. aún no se ha cotejado con el certificado de vigencia" },
+    { ok: true, texto: "Representa a MARTA INÉS QUINTERO BEDOYA, accionante" },
+  ],
+  revisado: false,
+  revision_vencida: false,
+  bloquea: false,
+  huella: "9a8b7c6d5e4f3a2b",
+};
+
+const NO_VERIFICADO: ApoderadoVista = {
+  id: ID_NO_VERIFICADO,
+  nombre: "CARLOS EDUARDO PINEDA RUIZ",
+  parte: "CLÍNICA SANTA AURORA S.A.S.",
+  rol_parte: "vinculada",
+  tipo_persona: "juridica",
+  estado: "no_verificado",
+  fase: "listo",
+  motivos: ["La tarjeta profesional 97551 figura como «SUSPENDIDA» en el certificado N.° 4471388."],
+  cedula: "16000040",
+  tarjeta: "097551",
+  vigencia: {
+    estado: "no_vigente",
+    fase: "listo",
+    cedula: "16000040",
+    tarjeta_registro: "97551",
+    consultado_en: "2026-11-17T10:43:00-05:00",
+    origen: "extension",
+    certificado_url: null,
+    numero_certificado: "4471388",
+    codigo_verificacion: null,
+    detalle: "",
+    grave: true,
+  },
+  poder: {
+    estado: "hallado",
+    tipo: "poder",
+    evidencia: evidencia(
+      "1a-011",
+      "011_011RespuestaClinicaSantaAurora.pdf",
+      "contestacion",
+      5,
+      7,
+      "otorgo poder especial al doctor CARLOS EDUARDO PINEDA RUIZ, con T.P. 097.551, para que represente a la clínica en la acción de tutela",
+    ),
+    otorgante: "",
+    parte: "CLÍNICA SANTA AURORA S.A.S.",
+    cadena: { estado: "sin_certificado", otorgante: "", cargo: "", evidencia: null },
+    mencion: null,
+    documentos_revisados: 14,
+    hay_hallado: true,
+  },
+  cotejos: [
+    { ok: true, texto: "El nombre coincide con quien actúa en el expediente" },
+    { ok: true, texto: "T.P. 097551 coincide con el certificado de vigencia" },
+    { ok: true, texto: "Representa a CLÍNICA SANTA AURORA S.A.S., vinculada" },
+    { ok: null, texto: "No hay certificado de existencia y representación de CLÍNICA SANTA AURORA S.A.S. en el expediente" },
+  ],
+  revisado: false,
+  revision_vencida: false,
+  bloquea: true,
+  huella: "0f1e2d3c4b5a6978",
+};
+
+const MOTIVO_NO_INSCRITO =
+  "El Registro Nacional de Abogados certifica que la cédula del abogado no está inscrita como abogado(a). Verifique el número; si actúa con licencia temporal, esta consulta no la cubre.";
+
+/**
+ * El mismo abogado de la clínica cuando el Registro Nacional de Abogados certifica que su cédula no está inscrita
+ * como abogado(a): la cédula consta en una página del expediente leída sin OCR, así que queda en rojo. En el
+ * simulacro sale con `?consulta=no_inscrito`.
+ */
+export const NO_INSCRITO: ApoderadoVista = {
+  ...NO_VERIFICADO,
+  motivos: [MOTIVO_NO_INSCRITO],
+  vigencia: {
+    ...NO_VERIFICADO.vigencia,
+    estado: "no_inscrito",
+    tarjeta_registro: null,
+    numero_certificado: "4471391",
+    grave: true,
+  },
+  cotejos: [
+    { ok: true, texto: "El nombre coincide con quien actúa en el expediente" },
+    { ok: false, texto: "La cédula no figura inscrita como abogado(a) en el Registro Nacional de Abogados" },
+    { ok: true, texto: "Representa a CLÍNICA SANTA AURORA S.A.S., vinculada" },
+    { ok: null, texto: "No hay certificado de existencia y representación de CLÍNICA SANTA AURORA S.A.S. en el expediente" },
+  ],
+  huella: "7e6d5c4b3a291807",
+};
+
+export const APODERADOS_BORRADOR: ApoderadosRespuesta = {
+  identificacion: "lista",
+  apoderados: [NO_VERIFICADO, POR_REVISAR, VERIFICADA],
+  sin_apoderado: [{ nombre: "SUPERINTENDENCIA NACIONAL DE SALUD", rol_parte: "accionada", nota: "Actúa por su representante legal o por un funcionario." }],
+  alertas: [],
+  consulta: { activa: false, extension: "no_conectada", modo: "extension", pausa_hasta: null },
+  bloquea_decision: true,
+  editable: true,
+};
+
+/** Lo que responde el mock para cualquier otro caso (p. ej., el de la decisión): sin identificación, nada bloquea. */
+export const APODERADOS_SIN_IDENTIFICACION: ApoderadosRespuesta = {
+  identificacion: "no_disponible",
+  apoderados: [],
+  sin_apoderado: [],
+  alertas: [],
+  consulta: { activa: false, extension: "no_conectada", modo: "extension", pausa_hasta: null },
+  bloquea_decision: false,
+  editable: true,
+};
+
+/**
+ * Variantes del simulacro de apoderados, con ?consulta=… en la URL de `VITE_MOCK=1 pnpm dev`:
+ * - sin parámetro: extensión conectada; la consulta de quien sigue sin consultar pasa por En cola → Consultando… → vigente;
+ * - `ayuda`: la primera consulta no obtiene respuesta (Necesita su ayuda, con la pausa de la Rama Judicial) y
+ *   «Reintentar consulta automática» la resuelve;
+ * - `apagada`: la consulta automática está apagada (el certificado se sube a mano);
+ * - `sin_extension` / `desactualizada`: la extensión no está o es vieja, y la cola espera;
+ * - `sin_identificar`: el caso es anterior a la identificación y «Identificar apoderados» la hace;
+ * - `no_inscrito`: el abogado de la clínica tiene una cédula que no está inscrita como abogado(a) (en rojo).
+ */
+type EscenarioConsulta = "" | "ayuda" | "apagada" | "sin_extension" | "desactualizada" | "sin_identificar" | "no_inscrito";
+
+function escenarioConsulta(): EscenarioConsulta {
+  if (typeof location === "undefined") return "";
+  const valor = new URLSearchParams(location.search).get("consulta") ?? "";
+  return (["ayuda", "apagada", "sin_extension", "desactualizada", "sin_identificar", "no_inscrito"] as const).find((e) => e === valor) ?? "";
+}
+
+function estadoInicialMock(): ApoderadosRespuesta {
+  const datos = structuredClone(APODERADOS_BORRADOR);
+  const escenario = escenarioConsulta();
+  datos.consulta.extension = escenario === "sin_extension" ? "no_conectada" : escenario === "desactualizada" ? "desactualizada" : "conectada";
+  if (escenario === "apagada") datos.consulta.modo = "apagada";
+  if (escenario === "sin_identificar") return { ...structuredClone(APODERADOS_SIN_IDENTIFICACION), consulta: datos.consulta };
+  if (escenario === "no_inscrito") datos.apoderados = datos.apoderados.map((a) => (a.id === NO_INSCRITO.id ? structuredClone(NO_INSCRITO) : a));
+  return datos;
+}
+
+let apoderadosMock = estadoInicialMock();
+/** La cola simulada: cada lectura de /apoderados la hace avanzar un paso (en cola → consultando → resultado). */
+let colaMock: { id: string; consultando: boolean; forzada: boolean }[] = [];
+/** Lecturas que faltan para que termine la identificación simulada (null: no se está identificando). */
+let identificacionMock: number | null = null;
+
+function revisarMock({ ruta, cuerpo }: PeticionMock): ApoderadoVista {
+  const id = decodeURIComponent(/\/apoderados\/([^/]+)\/revision$/.exec(ruta)?.[1] ?? "");
+  const actual = apoderadosMock.apoderados.find((a) => a.id === id);
+  if (!actual) throw new ErrorApi(404, "Apoderado no encontrado.", "Apoderado no encontrado.");
+  if (!editableMock()) throw falla(409, NO_EDITABLE);
+  const revision = cuerpo as RevisionCuerpo | undefined;
+  if (revision?.revisado && revision.huella !== actual.huella) {
+    throw new ErrorApi(409, "El estado del apoderado cambió; revíselo de nuevo.", "El estado del apoderado cambió; revíselo de nuevo.");
+  }
+  const vista = conRevision(actual, Boolean(revision?.revisado));
+  const apoderados = apoderadosMock.apoderados.map((a) => (a.id === id ? vista : a));
+  apoderadosMock = { ...apoderadosMock, apoderados, bloquea_decision: apoderados.some((a) => a.bloquea) };
+  return structuredClone(vista);
+}
+
+const RUTA_APODERADOS = `/api/casos/${CASO_MOCK_BORRADOR}/apoderados`;
+const RUTA_EXPEDIENTE = `/api/casos/${CASO_MOCK_BORRADOR}/expediente`;
+
+const falla = (estado: number, detalle: string): ErrorApi => new ErrorApi(estado, detalle, detalle);
+
+/** Los documentos del expediente simulado: nombre, rol, total de páginas y las citas que las evidencias toman de ellos. */
+interface DocumentoMock {
+  documento: string;
+  rol: PaginaExpediente["rol"];
+  total: number;
+  citas: Map<number, string[]>;
+}
+
+function documentosMock(): Map<string, DocumentoMock> {
+  const documentos = new Map<string, DocumentoMock>();
+  for (const ap of APODERADOS_BORRADOR.apoderados) {
+    for (const e of [ap.poder.evidencia, ap.poder.cadena?.evidencia, ap.poder.mencion]) {
+      if (!e?.rol) continue;
+      const doc = documentos.get(e.doc_id) ?? { documento: e.documento, rol: e.rol, total: e.total_paginas ?? e.pagina, citas: new Map<number, string[]>() };
+      doc.citas.set(e.pagina, [...(doc.citas.get(e.pagina) ?? []), e.cita]);
+      documentos.set(e.doc_id, doc);
+    }
+  }
+  return documentos;
+}
+
+/** Parte la cita en renglones como los de un PDF, para que el visor tenga que encontrarla a través de los saltos. */
+function renglones(texto: string, ancho = 78): string {
+  const lineas: string[] = [];
+  let actual = "";
+  for (const palabra of texto.split(/\s+/)) {
+    if (actual && actual.length + palabra.length + 1 > ancho) {
+      lineas.push(actual);
+      actual = palabra;
+    } else {
+      actual = actual ? `${actual} ${palabra}` : palabra;
+    }
+  }
+  if (actual) lineas.push(actual);
+  return lineas.join("\n");
+}
+
+export function paginaMock(docId: string, n: number): PaginaExpediente {
+  const doc = documentosMock().get(docId);
+  if (!doc) throw falla(404, "Documento no encontrado en el expediente.");
+  if (!Number.isInteger(n) || n < 1 || n > doc.total) throw falla(404, "La página no existe en el documento.");
+  const citas = doc.citas.get(n) ?? [];
+  const texto = [
+    `Señor\nJUEZ NOVENO PENAL MUNICIPAL CON FUNCIÓN DE CONTROL DE GARANTÍAS\nMedellín\nRef.: Acción de tutela 05001 40 88 009 2026 00412 00`,
+    ...citas.map((cita) => renglones(`Por medio del presente escrito, ${cita}, en los términos que siguen.`)),
+    `Página ${n} de ${doc.total} · ${doc.documento}`,
+  ].join("\n\n");
+  return { doc_id: docId, documento: doc.documento, rol: doc.rol, pagina: n, total: doc.total, texto, ocr: false, es_pdf: true };
+}
+
+const certificadosMock = new Map<string, Blob>();
+const MAX_CERTIFICADO = 2 * 1024 * 1024;
+
+/** Lo que haría el servidor al leer un certificado subido: la tarjeta queda vigente o no y el estado del abogado se vuelve a evaluar. */
+function conCertificado(ap: ApoderadoVista, vigente: boolean, url: string): ApoderadoVista {
+  const tarjeta = ap.tarjeta ?? ap.vigencia.tarjeta_registro;
+  const poderOk = ap.poder.estado === "hallado" || ap.poder.estado === "manual";
+  const estado = !vigente ? "no_verificado" : poderOk ? "verificado" : "revisar";
+  const sobreTarjeta = /tarjeta|vigencia/i;
+  const motivos = vigente
+    ? estado === "verificado"
+      ? []
+      : ap.motivos.filter((m) => !sobreTarjeta.test(m))
+    : [`La tarjeta profesional${tarjeta ? ` ${tarjeta}` : ""} figura como «SUSPENDIDA» en el certificado subido por el despacho.`];
+  const cotejoTarjeta = { ok: true, texto: `T.P. ${tarjeta ?? "sin número"} coincide con el certificado de vigencia` };
+  return {
+    ...ap,
+    estado,
+    fase: "listo",
+    motivos,
+    vigencia: {
+      ...ap.vigencia,
+      estado: vigente ? "vigente" : "no_vigente",
+      fase: "listo",
+      tarjeta_registro: tarjeta,
+      consultado_en: new Date().toISOString(),
+      origen: "manual",
+      certificado_url: url,
+      numero_certificado: vigente ? "4471999" : "4472000",
+      codigo_verificacion: "5e1d0c9b8a7f6e5d4c3b2a19f8e7d6c5b4a39281706f5e4d3c2b1a0918273645",
+      detalle: "Certificado subido por el despacho.",
+    },
+    cotejos: ap.cotejos.map((c) => (/^(La )?T\.P\./.test(c.texto) ? cotejoTarjeta : c)),
+    revisado: false,
+    revision_vencida: ap.revisado || ap.revision_vencida,
+    bloquea: estado === "no_verificado",
+    huella: `${vigente ? "c0" : "d1"}${ap.huella.slice(2)}`,
+  };
+}
+
+/**
+ * La subida del certificado de vigencia. El nombre del archivo no viaja (useApoderados lo cambia por
+ * certificado.pdf para que no lleve la cédula), así que el simulacro lo decide por el contenido: un PDF cuyo
+ * texto dice «NO VIGENTE» o «SUSPENDIDO» deja al abogado en rojo, cualquier otro PDF completo lo deja vigente,
+ * un PDF truncado no se puede leer y lo que no es un PDF se rechaza.
+ */
+async function subirMock({ ruta, cuerpo }: PeticionMock): Promise<ApoderadoVista> {
+  const id = decodeURIComponent(/\/apoderados\/([^/]+)\/certificado$/.exec(ruta)?.[1] ?? "");
+  const actual = apoderadosMock.apoderados.find((ap) => ap.id === id);
+  if (!actual) throw falla(404, "Apoderado no encontrado.");
+  if (!editableMock()) throw falla(409, "El caso no está esperando la decisión: no se puede subir el certificado ahora.");
+  const archivo = cuerpo instanceof FormData ? cuerpo.get("archivo") : null;
+  if (!(archivo instanceof Blob)) throw falla(422, "No se recibió el archivo.");
+  if (archivo.size > MAX_CERTIFICADO) throw falla(413, "El archivo pesa más de 2 MB.");
+  const contenido = new TextDecoder("latin1").decode(await archivo.arrayBuffer());
+  if (!contenido.startsWith("%PDF-")) throw falla(422, "El archivo no es un PDF.");
+  if (!contenido.includes("%%EOF")) throw falla(422, "No se pudo leer el certificado.");
+  const vigente = !/NO\s+VIGENTE|SUSPENDID|no_vigente/i.test(contenido);
+  certificadosMock.set(id, archivo);
+  // En el navegador el PDF se abre desde la memoria; sin URL.createObjectURL (pruebas) queda la ruta del servidor.
+  const url = typeof URL.createObjectURL === "function" ? URL.createObjectURL(archivo) : `${RUTA_APODERADOS}/${encodeURIComponent(id)}/certificado`;
+  const vista = conCertificado(actual, vigente, url);
+  const apoderados = apoderadosMock.apoderados.map((ap) => (ap.id === id ? vista : ap));
+  apoderadosMock = { ...apoderadosMock, apoderados, bloquea_decision: apoderados.some((ap) => ap.bloquea) };
+  return structuredClone(vista);
+}
+
+function certificadoMock({ ruta }: PeticionMock): Blob {
+  const id = decodeURIComponent(/\/apoderados\/([^/]+)\/certificado$/.exec(ruta)?.[1] ?? "");
+  const pdf = certificadosMock.get(id);
+  if (!pdf) throw falla(404, "No hay certificado guardado para este apoderado.");
+  return pdf;
+}
+
+/** Vuelve el simulacro de /apoderados a su estado inicial (para las pruebas). */
+export function reiniciarApoderadosMock(): void {
+  apoderadosMock = estadoInicialMock();
+  colaMock = [];
+  identificacionMock = null;
+  certificadosMock.clear();
+}
+
+const CONSULTA_APAGADA = "La consulta automática de la vigencia está apagada en esta instalación: descargue el certificado en la página de la Rama Judicial y súbalo aquí.";
+const NO_EDITABLE = "El caso no está esperando la decisión: la revisión de los apoderados no se puede cambiar ahora.";
+
+/** Vuelve a evaluar al abogado como lo haría el servidor (las reglas de estado_apoderados.py, simplificadas). */
+function evaluarMock(ap: ApoderadoVista): ApoderadoVista {
+  const { estado: v, fase } = ap.vigencia;
+  const p = ap.poder.estado;
+  // La cédula no inscrita es grave si consta en el expediente sin OCR; el simulador no lo sabe y se queda con lo que dijo el servidor.
+  const grave = v === "no_vigente" || (v === "no_inscrito" && ap.vigencia.grave);
+  const estado = grave || p === "ajeno" ? "no_verificado" : v === "vigente" && (p === "hallado" || p === "manual") ? "verificado" : "revisar";
+  const motivos: string[] = [];
+  if (v === "no_vigente") motivos.push(`La tarjeta profesional ${ap.tarjeta ?? ""} figura como «SUSPENDIDA» en el certificado.`.replace("  ", " "));
+  else if (v === "no_inscrito") motivos.push(MOTIVO_NO_INSCRITO);
+  else if (v === "inaccesible") motivos.push("La Rama Judicial no respondió a la consulta de la vigencia.");
+  else if (v === "sin_cedula") motivos.push("No se encontró la cédula del abogado en el expediente: no se pudo consultar su tarjeta.");
+  else if (v === "sin_consultar") motivos.push("Aún no se ha consultado la vigencia de la tarjeta profesional en la Rama Judicial.");
+  if (p === "descartado") motivos.push("El poder hallado se descartó en la revisión: señale el poder a mano.");
+  if (p === "sin_poder") motivos.push(`No se halló en el expediente un poder que lo faculte para representar a ${ap.parte}.`);
+  const enCurso = fase === "en_cola" || fase === "consultando";
+  const ayuda = !enCurso && ["sin_consultar", "inaccesible", "sin_cedula", "ilegible", "otra_persona"].includes(v);
+  const nueva = { ...ap, estado, motivos: estado === "verificado" ? [] : motivos } as ApoderadoVista;
+  nueva.fase = enCurso ? fase : ayuda ? "necesita_ayuda" : "listo";
+  nueva.vigencia = { ...nueva.vigencia, fase: nueva.fase, grave };
+  const huella = `${estado}-${v}-${p}-${ap.poder.evidencia?.doc_id ?? ""}${ap.poder.evidencia?.pagina ?? ""}`;
+  const cambio = huella !== ap.huella;
+  return { ...nueva, huella, revisado: cambio ? false : ap.revisado, revision_vencida: cambio ? ap.revisado || ap.revision_vencida : ap.revision_vencida, bloquea: estado === "no_verificado" && !(cambio ? false : ap.revisado) };
+}
+
+function guardarMock(vista: ApoderadoVista): ApoderadoVista {
+  const apoderados = apoderadosMock.apoderados.map((ap) => (ap.id === vista.id ? vista : ap));
+  apoderadosMock = { ...apoderadosMock, apoderados, bloquea_decision: apoderados.some((ap) => ap.bloquea) };
+  return vista;
+}
+
+const conFase = (ap: ApoderadoVista, fase: ApoderadoVista["fase"]): ApoderadoVista => ({ ...ap, fase, vigencia: { ...ap.vigencia, fase } });
+
+/** Lo que trae la consulta simulada: en el escenario `ayuda`, la primera vez la Rama Judicial no responde. */
+function resultadoConsulta(ap: ApoderadoVista, forzada: boolean): ApoderadoVista {
+  if (escenarioConsulta() === "ayuda" && !forzada) {
+    apoderadosMock.consulta.pausa_hasta = new Date(Date.now() + 15 * 60_000).toISOString();
+    return evaluarMock({ ...ap, fase: "listo", vigencia: { ...ap.vigencia, estado: "inaccesible", fase: "listo", detalle: "La Rama Judicial no respondió." } });
+  }
+  apoderadosMock.consulta.pausa_hasta = null;
+  const tarjeta = ap.tarjeta ?? ap.vigencia.tarjeta_registro;
+  return evaluarMock({
+    ...ap,
+    fase: "listo",
+    vigencia: {
+      ...ap.vigencia,
+      estado: "vigente",
+      fase: "listo",
+      tarjeta_registro: tarjeta,
+      consultado_en: new Date().toISOString(),
+      origen: "extension",
+      numero_certificado: "4471777",
+      detalle: "",
+    },
+    cotejos: ap.cotejos.map((c) => (/^(La )?T\.P\./.test(c.texto) ? { ok: true, texto: `T.P. ${tarjeta ?? "sin número"} coincide con el certificado de vigencia` } : c)),
+  });
+}
+
+/** Cada lectura avanza la cola un paso: el primero de la fila pasa a consultarse y, a la siguiente, tiene resultado. */
+function avanzarColaMock(): void {
+  const [primero] = colaMock;
+  if (primero) {
+    const ap = apoderadosMock.apoderados.find((a) => a.id === primero.id);
+    if (!ap) colaMock.shift();
+    else if (!primero.consultando) {
+      primero.consultando = true;
+      guardarMock(conFase(ap, "consultando"));
+    } else {
+      colaMock.shift();
+      guardarMock(resultadoConsulta(ap, primero.forzada));
+    }
+  }
+  apoderadosMock.consulta.activa = colaMock.length > 0;
+}
+
+/** Como el servidor: mientras corre el trabajo de la identificación el caso no admite cambios. */
+const editableMock = (): boolean => apoderadosMock.editable && identificacionMock === null;
+
+function leerApoderadosMock(): ApoderadosRespuesta {
+  if (identificacionMock !== null) {
+    identificacionMock -= 1;
+    if (identificacionMock <= 0) {
+      identificacionMock = null;
+      apoderadosMock = { ...structuredClone(APODERADOS_BORRADOR), consulta: apoderadosMock.consulta };
+    }
+  }
+  avanzarColaMock();
+  return { ...structuredClone(apoderadosMock), editable: editableMock() };
+}
+
+/** Pone en la cola simulada la consulta de los abogados pedidos, como POST …/consultar. */
+function encolarMock(ids: readonly string[], forzar: boolean): void {
+  const { consulta } = apoderadosMock;
+  for (const id of ids) {
+    const ap = apoderadosMock.apoderados.find((a) => a.id === id);
+    if (!ap?.cedula || colaMock.some((e) => e.id === id)) continue;
+    if (!forzar && !["sin_consultar", "inaccesible"].includes(ap.vigencia.estado)) continue;
+    // Sin una extensión que sepa consultar, la cola espera: el abogado sigue necesitando ayuda.
+    if (consulta.modo === "extension" && consulta.extension !== "conectada") continue;
+    colaMock.push({ id, consultando: false, forzada: forzar });
+    guardarMock(conFase(ap, "en_cola"));
+  }
+  apoderadosMock.consulta.activa = colaMock.length > 0;
+}
+
+function consultarMock({ cuerpo }: PeticionMock): ApoderadosRespuesta {
+  const pedido = (cuerpo ?? {}) as ConsultarCuerpo;
+  if (!editableMock()) throw falla(409, NO_EDITABLE);
+  if (apoderadosMock.consulta.modo === "apagada") throw falla(409, CONSULTA_APAGADA);
+  const ids = pedido.ids ?? apoderadosMock.apoderados.map((a) => a.id);
+  if (ids.some((id) => !apoderadosMock.apoderados.some((a) => a.id === id))) throw falla(404, "Apoderado no encontrado.");
+  encolarMock(ids, Boolean(pedido.forzar));
+  return structuredClone(apoderadosMock);
+}
+
+/** La página señalada a mano: debe nombrar al abogado; la cita es el párrafo donde aparece. */
+function poderManualMock(ap: ApoderadoVista, docId: string, n: number): EvidenciaVista {
+  let pagina: PaginaExpediente;
+  try {
+    pagina = paginaMock(docId, n);
+  } catch {
+    throw falla(422, "La página indicada no existe en el expediente.");
+  }
+  const parrafo = pagina.texto.split("\n\n").find((p) => partirResaltado(p, ap.nombre).some((t) => t.marcado));
+  if (!parrafo) throw falla(422, "El nombre del abogado no aparece en esa página.");
+  return { ...evidencia(docId, pagina.documento, pagina.rol, n, pagina.total, parrafo.replace(/\s+/g, " ").trim()), ocr: pagina.ocr };
+}
+
+function ajustarMock({ ruta, cuerpo }: PeticionMock): ApoderadoVista {
+  const id = decodeURIComponent(/\/apoderados\/([^/]+)\/ajustes$/.exec(ruta)?.[1] ?? "");
+  if (!editableMock()) throw falla(409, NO_EDITABLE);
+  const actual = apoderadosMock.apoderados.find((ap) => ap.id === id);
+  if (!actual) throw falla(404, "Apoderado no encontrado.");
+  const pedido = (cuerpo ?? {}) as AjusteCuerpo;
+  if (!("poder_manual" in pedido) && !("poder_descartado" in pedido) && !("cedula" in pedido)) {
+    throw falla(422, "Indique qué corregir: el poder señalado a mano, si el poder hallado no es correcto o la cédula del abogado.");
+  }
+  let ap = structuredClone(actual);
+  const original = APODERADOS_BORRADOR.apoderados.find((a) => a.id === id)?.poder;
+  if (pedido.cedula !== undefined && pedido.cedula !== null) {
+    const digitos = pedido.cedula.replace(/\D/g, "");
+    if (!/^[\d.\s]+$/.test(pedido.cedula.trim()) || digitos.length < 5 || digitos.length > 10) throw falla(422, "La cédula debe tener entre 5 y 10 dígitos.");
+    if (ap.cedula && ap.cedula !== digitos) throw falla(409, "La cédula del abogado consta en el expediente; no se puede cambiar a mano.");
+    ap = { ...ap, cedula: digitos, vigencia: { ...ap.vigencia, cedula: digitos, estado: ap.vigencia.estado === "sin_cedula" ? "sin_consultar" : ap.vigencia.estado } };
+  }
+  if (pedido.poder_manual) {
+    const ev = poderManualMock(ap, pedido.poder_manual.doc_id, pedido.poder_manual.pagina);
+    ap = { ...ap, poder: { ...ap.poder, estado: "manual", tipo: "poder", evidencia: ev, parte: ap.parte, cadena: null } };
+  } else if (pedido.poder_descartado === true) {
+    if (!ap.poder.evidencia) throw falla(409, "No hay un poder hallado que se pueda descartar.");
+    ap = { ...ap, poder: { ...ap.poder, estado: "descartado", evidencia: null, cadena: null } };
+  } else if ((pedido.poder_descartado === false || pedido.poder_manual === null) && original) {
+    ap = { ...ap, poder: structuredClone(original) };
+  }
+  guardarMock(evaluarMock(ap));
+  if (pedido.cedula && apoderadosMock.consulta.modo !== "apagada") encolarMock([id], false);
+  return structuredClone(apoderadosMock.apoderados.find((a) => a.id === id) as ApoderadoVista);
+}
+
+/** «Identificar apoderados» en el escenario `sin_identificar`: el trabajo dura dos lecturas y deja la identificación lista. */
+function identificarMock(): ApoderadosRespuesta {
+  if (apoderadosMock.identificacion === "lista") return structuredClone(apoderadosMock);
+  if (identificacionMock !== null) throw falla(409, "Ya hay una ejecución en curso para este caso.");
+  identificacionMock = 2;
+  return { ...structuredClone(apoderadosMock), editable: editableMock() };
+}
+
+const noEncontrado = (detalle: string) => () => {
+  throw falla(404, detalle);
+};
+
 export const mocks: MockRuta[] = [
   { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/vista\/borrador$/, respuesta: VISTA_BORRADOR },
+  { metodo: "GET", ruta: RUTA_APODERADOS, respuesta: leerApoderadosMock },
+  { metodo: "POST", ruta: `${RUTA_APODERADOS}/consultar`, respuesta: consultarMock },
+  { metodo: "POST", ruta: `${RUTA_APODERADOS}/identificar`, respuesta: identificarMock },
+  { metodo: "PUT", ruta: new RegExp(`^${RUTA_APODERADOS}/[^/]+/ajustes$`), respuesta: ajustarMock },
+  { metodo: "PUT", ruta: new RegExp(`^${RUTA_APODERADOS}/[^/]+/revision$`), respuesta: revisarMock },
+  { metodo: "PUT", ruta: new RegExp(`^${RUTA_APODERADOS}/[^/]+/certificado$`), respuesta: subirMock },
+  { metodo: "GET", ruta: new RegExp(`^${RUTA_APODERADOS}/[^/]+/certificado$`), respuesta: certificadoMock },
+  {
+    metodo: "GET",
+    ruta: new RegExp(`^${RUTA_EXPEDIENTE}/([^/]+)/paginas/(\\d+)$`),
+    respuesta: ({ ruta }) => {
+      const [, docId = "", n = "0"] = /\/expediente\/([^/]+)\/paginas\/(\d+)$/.exec(ruta) ?? [];
+      return paginaMock(decodeURIComponent(docId), Number(n));
+    },
+  },
+  { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/apoderados$/, respuesta: APODERADOS_SIN_IDENTIFICACION },
+  { metodo: "PUT", ruta: /^\/api\/casos\/[^/]+\/apoderados\/[^/]+\/(?:revision|certificado|ajustes)$/, respuesta: noEncontrado("Apoderado no encontrado.") },
+  {
+    metodo: "POST",
+    ruta: /^\/api\/casos\/[^/]+\/apoderados\/(?:consultar|identificar)$/,
+    respuesta: () => {
+      throw falla(409, "El caso no está esperando la decisión: no se pueden identificar ni consultar los apoderados ahora.");
+    },
+  },
+  { metodo: "GET", ruta: /^\/api\/casos\/[^/]+\/expediente\/[^/]+\/paginas\/\d+$/, respuesta: noEncontrado("Documento no encontrado en el expediente.") },
   { metodo: "GET", ruta: `/api/casos/${CASO_MOCK_BORRADOR}/estado`, respuesta: ESTADO_BORRADOR },
   {
     metodo: "POST",
