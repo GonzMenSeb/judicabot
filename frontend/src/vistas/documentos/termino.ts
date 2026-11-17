@@ -1,5 +1,5 @@
 import type { Termino, TerminoRespuesta, UnidadTermino } from "../../api/contrato";
-import { plural } from "../../estado";
+import { textoDiasRestantes } from "../../estado";
 
 export const DIAS_POR_DEFECTO = 20;
 export const DIAS_MAXIMO = 365;
@@ -93,12 +93,13 @@ export function fechaLarga(iso: string): string | null {
   return `${SEMANA[dia.getDay()]} ${dia.getDate()} de ${MESES[dia.getMonth()]} de ${dia.getFullYear()}`;
 }
 
-/** "faltan 2 días hábiles", "vence hoy" o "vencido hace 1 día corrido"; null si el servidor no calculó el plazo. */
+/**
+ * "faltan 2 días hábiles", "vence hoy" o "venció hace 1 día calendario" (el texto del chip de la lista, en minúscula
+ * porque va tras "Vence el …"); null si el servidor no calculó el plazo.
+ */
 export function textoRestantes(respuesta: TerminoRespuesta): string | null {
   const { termino, dias_restantes: n } = respuesta;
   if (!termino || n === null) return null;
-  const [uno, varios] = termino.unidad === "habiles" ? ["día hábil", "días hábiles"] : ["día corrido", "días corridos"];
-  if (n === 0) return "vence hoy";
-  if (n > 0) return `${n === 1 ? "falta" : "faltan"} ${plural(n, uno, varios)}`;
-  return `vencido hace ${plural(-n, uno, varios)}`;
+  const texto = textoDiasRestantes(n, termino.unidad);
+  return texto.charAt(0).toLowerCase() + texto.slice(1);
 }

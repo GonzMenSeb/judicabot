@@ -36,10 +36,10 @@ describe("Inicio", () => {
     }
     expect(screen.getAllByRole("link")).toEqual(expect.arrayContaining([activo]));
     expect(await screen.findByText("1 espera su decisión")).toBeTruthy();
-    expect(screen.getByText("4 casos abiertos")).toBeTruthy();
+    expect(screen.getByText("5 casos abiertos")).toBeTruthy();
   });
 
-  it("muestra el despacho, la fecha y «Mi trabajo» con los casos abiertos, lo primero que toca arriba", async () => {
+  it("muestra el despacho, la fecha y «Mi trabajo» con los casos abiertos, lo vencido y lo que vence hoy arriba", async () => {
     simularFetch({ "GET /api/casos": () => json(casosMock), "GET /api/formato": () => json(formato) });
     render(<Inicio />);
     expect(await screen.findByText(/^Juzgado Tercero Penal del Circuito, /)).toBeTruthy();
@@ -48,9 +48,10 @@ describe("Inicio", () => {
       .getAllByRole("heading", { level: 3 })
       .map((h) => h.textContent);
     expect(titulos).toEqual([
-      "Quintero Bedoya c. EPS Horizonte Salud",
       "Cárdenas Ospina c. Aseguradora Montaña Azul",
       "Arango Londoño c. EPS Ceiba Salud",
+      "Quintero Bedoya c. EPS Horizonte Salud",
+      "Zapata Henao c. EPS Sendero",
       "Restrepo Gil c. Fondo Pensional Altamira",
     ]);
     expect(within(seccion).getByRole("link", { name: /^Decidir:/ }).getAttribute("href")).toBe("#/segunda/quintero-bedoya/borrador");
@@ -81,7 +82,7 @@ describe("Inicio", () => {
     expect((await screen.findByRole("status")).textContent).toMatch(/No se pudo cargar el resumen de los casos/);
     expect(screen.getByRole("link", { name: "Fallo de tutela de segunda instancia" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    expect(await screen.findByText("4 casos abiertos")).toBeTruthy();
+    expect(await screen.findByText("5 casos abiertos")).toBeTruthy();
     expect(screen.queryByText(/No se pudo cargar el resumen/)).toBeNull();
   });
 });

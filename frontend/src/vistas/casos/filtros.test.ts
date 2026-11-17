@@ -12,21 +12,29 @@ import {
   infoProceso,
   procesoDe,
   PROCESOS,
+  PLAZOS,
+  plazoDe,
   PROPIAS,
   propias,
   propiasVisibles,
+  textoPlazo,
+  tonoPlazo,
+  tituloPlazo,
+  urgente,
   type EstadoUi,
 } from "./facetas";
 import { casosMock } from "./mock";
 import {
   activos,
   actividad,
+  AGRUPACIONES,
   agruparPor,
   alternar,
   conteoEstados,
   conteoFechas,
   conteoOpciones,
   conteoPestanas,
+  conteoPlazos,
   contar,
   datosFila,
   deserializar,
@@ -38,6 +46,7 @@ import {
   fijarRango,
   inicial,
   limpiar,
+  ORDENES,
   ordenarPor,
   pasa,
   predicados,
@@ -78,6 +87,10 @@ function caso(id: string, estado: EstadoCasoApi, actualizado: string, extra: Par
     n_alertas: 0,
     job_activo: null,
     actualizado,
+    creado: null,
+    termino: null,
+    vence: null,
+    dias_restantes: null,
     ...extra,
   };
 }
@@ -757,5 +770,131 @@ describe("facetas propias de segunda instancia", () => {
     const f = elegir(elegir(ABIERTOS, "revisar", "jev"), "pruebas", "con");
     expect(datosFila(porId("zuluaga"), f).filter((d) => d.eco).map((d) => d.texto)).toEqual(["Pruebas nuevas en 2ª", "Jev discrepa"]);
     expect(datosFila(porId("quintero"), f).some((d) => d.eco)).toBe(false);
+  });
+});
+
+describe("plazos", () => {
+  const termino = (inicio: string, dias = 20, unidad: "habiles" | "calendario" = "habiles") => ({ inicio, dias, unidad });
+  const plazo = (vence: string | null, dias_restantes: number | null, t = termino("2026-10-15")) => ({ termino: t, vence, dias_restantes });
+  // Hoy es el martes 17 de noviembre de 2026 (el lunes 16 fue festivo). mejia trae un plazo viejo aunque terminó.
+  const PLAZOS_DE: Record<string, Partial<CasoResumen>> = {
+    quintero: plazo("2026-11-20", 3, termino("2026-10-21")),
+    zuluaga: plazo("2026-11-13", -1),
+    cardenas: plazo("2026-11-17", 0),
+    arango: plazo("2026-11-18", 1),
+    gaviria: plazo("2026-11-27", 8),
+    restrepo: plazo("2026-12-01", 14, termino("2026-11-03", 28, "calendario")),
+    mejia: plazo("2026-11-10", -5),
+  };
+  const PLZ = CASOS.map((c) => ({ ...c, ...PLAZOS_DE[c.id] }));
+  const de = (id: string) => PLZ.find((c) => c.id === id)!;
+  const defaults = inicial();
+  const visiblesPlz = (f: Filtros) => ids(PLZ.filter((c) => pasa(c, predicados(f, HOY))));
+
+  it("cubetas en orden de urgencia; sin término o terminado, «sin»", () => {
+    expect(PLAZOS.map((p) => [p.id, p.etiqueta])).toEqual([
+      ["vencido", "Vencidos"],
+      ["pronto", "Vencen hoy o en 1 día"],
+      ["semana", "Vencen en 2 a 5 días"],
+      ["despues", "Vencen en 6 días o más"],
+      ["sin", "Sin término calculado"],
+    ]);
+    expect(Object.fromEntries(PLZ.map((c) => [c.id, plazoDe(c)]))).toEqual({
+      quintero: "semana",
+      zuluaga: "vencido",
+      restrepo: "despues",
+      cardenas: "pronto",
+      arango: "pronto",
+      gaviria: "despues",
+      nuevo: "sin",
+      mejia: "sin",
+      ocampo: "sin",
+    });
+    const con = (r: number) => plazoDe({ ...de("quintero"), dias_restantes: r });
+    expect([-30, -1, 0, 1, 2, 5, 6, 40].map(con)).toEqual(["vencido", "vencido", "pronto", "pronto", "semana", "semana", "despues", "despues"]);
+    expect(PLZ.filter(urgente).map((c) => c.id)).toEqual(["zuluaga", "cardenas"]);
+    // El chip toma el tono de su baldosa: rojo vencido u hoy, ámbar de 1 a 5 días, neutro después o sin término.
+    expect([-3, 0, 1, 5, 6].map((r) => tonoPlazo({ ...de("quintero"), dias_restantes: r }))).toEqual(["mal", "mal", "alerta", "alerta", "neutro"]);
+    expect(tonoPlazo(de("nuevo"))).toBe("neutro");
+    expect(tonoPlazo(de("mejia"))).toBe("neutro");
+    expect(facetaPorClave("plazo")?.opciones.map((o) => o.id)).toEqual(["vencido", "pronto", "semana", "despues", "sin"]);
+  });
+
+  it("el texto del chip cuenta en la unidad del término; «mañana» solo si vence al día siguiente", () => {
+    expect(textoPlazo(de("zuluaga"), HOY)).toBe("Venció hace 1 día hábil");
+    expect(textoPlazo({ ...de("zuluaga"), dias_restantes: -2 }, HOY)).toBe("Venció hace 2 días hábiles");
+    expect(textoPlazo(de("cardenas"), HOY)).toBe("Vence hoy");
+    expect(textoPlazo(de("arango"), HOY)).toBe("Vence mañana");
+    expect(textoPlazo(de("quintero"), HOY)).toBe("Faltan 3 días hábiles");
+    expect(textoPlazo(de("restrepo"), HOY)).toBe("Faltan 14 días calendario");
+    expect(textoPlazo({ ...de("restrepo"), dias_restantes: -2 }, HOY)).toBe("Venció hace 2 días calendario");
+    expect(textoPlazo({ ...de("restrepo"), dias_restantes: 1, vence: "2026-11-18" }, HOY)).toBe("Vence mañana");
+    // Un viernes, el siguiente día hábil es el lunes: no es «mañana».
+    expect(textoPlazo({ ...de("arango"), vence: "2026-11-23" }, new Date(2026, 10, 20, 9))).toBe("Falta 1 día hábil");
+    expect(textoPlazo(de("nuevo"), HOY)).toBeNull();
+    expect(textoPlazo(de("mejia"), HOY)).toBeNull();
+  });
+
+  it("el título dice desde cuándo corre, cuándo vence y la regla", () => {
+    expect(tituloPlazo(de("quintero"))).toBe("Recibido el 21 de octubre de 2026; vence el 20 de noviembre de 2026 (20 días hábiles)");
+    expect(tituloPlazo(de("restrepo"))).toBe("Recibido el 3 de noviembre de 2026; vence el 1 de diciembre de 2026 (28 días calendario)");
+    expect(tituloPlazo({ ...de("quintero"), termino: termino("2026-11-16", 1) })).toContain("(1 día hábil)");
+    expect(tituloPlazo(de("nuevo"))).toBe("");
+  });
+
+  it("el filtro deja los casos de las cubetas elegidas y se nombra en los filtros aplicados", () => {
+    const f = fijar(defaults, "plazo", ["vencido", "pronto"]);
+    expect(visiblesPlz(f)).toEqual(["zuluaga", "cardenas", "arango"]);
+    expect(activos(f, defaults, [])).toEqual([{ clave: "plazo", texto: "Plazo: Vencidos, Vencen hoy o en 1 día" }]);
+    expect(quitarFiltro(f, "plazo", defaults).sel).toEqual({});
+    expect(limpiar(f, defaults).filtros.sel).toEqual({});
+    expect(visiblesPlz(fijar(defaults, "plazo", ["sin"]))).toEqual(["nuevo"]);
+  });
+
+  it("las baldosas cuentan ignorando solo el plazo", () => {
+    const f = fijar(defaults, "plazo", ["vencido"]);
+    expect(conteoPlazos(PLZ, predicados(f, HOY))).toEqual({ vencido: 1, pronto: 2, semana: 1, despues: 2, sin: 1 });
+    const conAlertas = alternar(f, "alertas", "con");
+    expect(conteoPlazos(PLZ, predicados(conAlertas, HOY))).toEqual({ vencido: 1, pronto: 1, semana: 1, despues: 1, sin: 0 });
+    // El estado sí cuenta: con los terminados a la vista, «sin» los suma.
+    expect(conteoPlazos(PLZ, predicados(elegirEstado(f, "terminado"), HOY)).sin).toBe(3);
+  });
+
+  it("«Lo que me toca primero» pone primero lo vencido y lo que vence hoy, y luego el orden de siempre", () => {
+    expect(ids(ordenarPor(PLZ, "prioridad"))).toEqual(["zuluaga", "cardenas", "quintero", "gaviria", "arango", "nuevo", "restrepo", "mejia", "ocampo"]);
+  });
+
+  it("«Vence primero» va por fecha de vencimiento; sin término al final y los terminados detrás", () => {
+    expect(ORDENES.map((o) => o.id)).toEqual(["prioridad", "vence", "reciente", "antiguo", "radicado"]);
+    expect(ids(ordenarPor(PLZ, "vence"))).toEqual(["zuluaga", "cardenas", "arango", "quintero", "gaviria", "restrepo", "nuevo", "mejia", "ocampo"]);
+  });
+
+  it("agrupa por plazo en orden de urgencia, sin grupos vacíos", () => {
+    expect(AGRUPACIONES.map((a) => a.id)).toEqual(["ninguno", "estado", "plazo"]);
+    const grupos = agruparPor(ordenarPor(PLZ, "vence"), "plazo");
+    expect(grupos.map((g) => [g.id, g.titulo, ids(g.casos), g.total])).toEqual([
+      ["vencido", "Vencidos", ["zuluaga"], 1],
+      ["pronto", "Vencen hoy o en 1 día", ["cardenas", "arango"], 2],
+      ["semana", "Vencen en 2 a 5 días", ["quintero"], 1],
+      ["despues", "Vencen en 6 días o más", ["gaviria", "restrepo"], 2],
+      ["sin", "Sin término calculado", ["nuevo", "mejia", "ocampo"], 3],
+    ]);
+    expect(agruparPor(ordenarPor(CASOS, "vence"), "plazo").map((g) => g.id)).toEqual(["sin"]);
+  });
+
+  it("ida y vuelta por la URL con la clave pl, en orden de urgencia y descartando lo desconocido", () => {
+    const contexto = { defaults, casos: PLZ };
+    let f = fijar(defaults, "plazo", ["pronto", "vencido"]);
+    f = { ...alternar(elegirPreset(f, "semana"), "alertas", "con"), orden: "vence", agrupar: "plazo" };
+    const q = serializar(f, defaults);
+    expect(q).toBe("f=semana&pl=vencido,pronto&s.alertas=con&o=vence&g=plazo");
+    const leido = deserializar(q, contexto);
+    expect(leido.sel).toEqual({ plazo: ["vencido", "pronto"], alertas: ["con"] });
+    expect([leido.orden, leido.agrupar]).toEqual(["vence", "plazo"]);
+    expect(serializar(leido, defaults)).toBe(q);
+    expect(deserializar("pl=vencido,zzz,vencido", contexto).sel).toEqual({ plazo: ["vencido"] });
+    expect(deserializar("pl=zzz", contexto).sel).toEqual({});
+    expect(deserializar("pl=", contexto).sel).toEqual({});
+    expect(deserializar("o=vence&g=plazo", { defaults: inicial("segunda") })).toMatchObject({ orden: "vence", agrupar: "plazo" });
   });
 });

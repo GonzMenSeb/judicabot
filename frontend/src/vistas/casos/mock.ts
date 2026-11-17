@@ -177,37 +177,33 @@ export const casosMock = [
       jev_discrepa: null,
     },
   },
+  // Sin fecha de reparto ni término: sin plazo. Su resumen lo sirve el mock de Documentos.
+  {
+    id: "demo-sin-leer",
+    nombre: "Zapata Henao c. EPS Sendero",
+    proceso: "segunda",
+    radicado: null,
+    accionante: null,
+    accionadas: [],
+    juzgado_a_quo: null,
+    estado: "sin_iniciar",
+    etapa: 0,
+    siguiente_paso: "Procesar los documentos",
+    n_insumos: 6,
+    n_alertas: 0,
+    job_activo: null,
+    actualizado: minutos(60 * 5),
+    creado: "2026-11-16T17:10:00-05:00",
+    termino: null,
+    vence: null,
+    dias_restantes: null,
+    segunda: VACIA,
+  },
 ] satisfies CasoResumen[];
 
-/**
- * Caso sin fecha de reparto ni término, que no está en casosMock para no cambiar los conteos de las pruebas de la
- * lista; solo la demostración (VITE_MOCK) lo suma. Su resumen lo sirve el mock de Documentos.
- */
-export const casoSinFechaMock = {
-  id: "demo-sin-leer",
-  nombre: "Zapata Henao c. EPS Sendero",
-  proceso: "segunda",
-  radicado: null,
-  accionante: null,
-  accionadas: [],
-  juzgado_a_quo: null,
-  estado: "sin_iniciar",
-  etapa: 0,
-  siguiente_paso: "Procesar los documentos",
-  n_insumos: 6,
-  n_alertas: 0,
-  job_activo: null,
-  actualizado: minutos(60 * 5),
-  creado: "2026-11-16T17:10:00-05:00",
-  termino: null,
-  vence: null,
-  dias_restantes: null,
-  segunda: VACIA,
-} satisfies CasoResumen;
-
 export const mocks: MockRuta[] = [
-  { metodo: "GET", ruta: "/api/casos", respuesta: [...casosMock, casoSinFechaMock] },
-  ...casosMock.map((caso): MockRuta => ({ metodo: "GET", ruta: `/api/casos/${caso.id}/resumen`, respuesta: caso })),
+  { metodo: "GET", ruta: "/api/casos", respuesta: casosMock },
+  ...casosMock.filter((caso) => caso.id !== "demo-sin-leer").map((caso): MockRuta => ({ metodo: "GET", ruta: `/api/casos/${caso.id}/resumen`, respuesta: caso })),
   { metodo: "POST", ruta: "/api/casos", respuesta: () => ({ id: "nuevo-caso-demo", n_insumos: 9 }) },
   { metodo: "POST", ruta: "/api/casos/nuevo-caso-demo/run", respuesta: { job_id: "job-demo" } },
 ];

@@ -29,10 +29,22 @@
  *   FILA[proceso](caso): DatoFila[]           datos propios que la fila muestra; clave/valor dicen qué filtro
  *                                             reflejan (filtros.datosFila calcula el resaltado).
  *   facetaPorClave(clave, casos?)             la faceta de una clave de filtro, o undefined si no existe.
+ *
+ * Plazos (término para fallar: caso.vence y caso.dias_restantes, calculados por el servidor)
+ *   PLAZOS: { id, etiqueta, tono }[]          cubetas en orden de urgencia: vencido (< 0), pronto (hoy o en 1 día: 0 y 1),
+ *                                             semana (2 a 5), despues (6 o más) y sin (sin término, o terminado). Los
+ *                                             días se cuentan en la unidad del término (hábiles o calendario).
+ *   plazoDe(caso): PlazoId                    la cubeta del caso. PLAZO es su faceta (clave "plazo", en la URL pl=);
+ *                                             no tiene pastilla: la filtran las baldosas del Tablero.
+ *   textoPlazo(caso, hoy), tituloPlazo(caso)  el chip de la fila («Venció hace 2 días hábiles», «Vence hoy»,
+ *                                             «Faltan 3 días hábiles») y su título («Recibido el …; vence el …»).
+ *   tonoPlazo(caso)                           el tono del chip: "mal" si venció o vence hoy, "alerta" si faltan de
+ *                                             1 a 5 días, "neutro" después (el de las baldosas, como el prototipo).
+ *   urgente(caso)                             vencido o vence hoy.
  *   esPropia(clave), opciones(...etiquetas)   ayudas.
  */
 import type { CasoResumen, DatosSegunda, EstadoCasoApi, ImpugnanteCaso, ResultadoCaso, SentidoAQuo, SustitutivaCaso } from "../../api/contrato";
-import { plural } from "../../estado/formato";
+import { diaIso, plural, textoDiasRestantes } from "../../estado/formato";
 import { plano, type TonoFicha } from "./agrupar";
 import type { TipoProceso } from "./iconos";
 
@@ -382,8 +394,83 @@ export const FILA: Readonly<Record<TipoProceso, (caso: CasoResumen) => readonly 
   penal: sinDatos,
 };
 
+/* ---------- Plazos ---------- */
+
+export type PlazoId = "vencido" | "pronto" | "semana" | "despues" | "sin";
+
+export interface InfoPlazo {
+  id: PlazoId;
+  etiqueta: string;
+  tono: "mal" | "alerta" | "";
+}
+
+/** Cubetas del término en orden de urgencia; las tres primeras son las baldosas del Tablero. */
+export const PLAZOS: readonly InfoPlazo[] = [
+  { id: "vencido", etiqueta: "Vencidos", tono: "mal" },
+  { id: "pronto", etiqueta: "Vencen hoy o en 1 día", tono: "alerta" },
+  { id: "semana", etiqueta: "Vencen en 2 a 5 días", tono: "" },
+  { id: "despues", etiqueta: "Vencen en 6 días o más", tono: "" },
+  { id: "sin", etiqueta: "Sin término calculado", tono: "" },
+];
+
+/** Días que faltan (0 = vence hoy, negativo = vencido), o null si el caso terminó o no tiene término. */
+const restantes = (c: CasoResumen): number | null => (c.estado === "terminado" || c.vence == null ? null : c.dias_restantes);
+
+export function plazoDe(c: CasoResumen): PlazoId {
+  const r = restantes(c);
+  if (r == null) return "sin";
+  if (r < 0) return "vencido";
+  if (r <= 1) return "pronto";
+  return r <= 5 ? "semana" : "despues";
+}
+
+/** Vencido o vence hoy: va primero en «Lo que me toca primero» y su chip va en rojo. */
+export const urgente = (c: CasoResumen): boolean => (restantes(c) ?? 1) <= 0;
+
+/** Tono del chip de plazo de la fila: rojo si venció o vence hoy, ámbar si faltan de 1 a 5 días, neutro después. */
+export function tonoPlazo(c: CasoResumen): "mal" | "alerta" | "neutro" {
+  if (urgente(c)) return "mal";
+  const p = plazoDe(c);
+  return p === "pronto" || p === "semana" ? "alerta" : "neutro";
+}
+
+/** Texto del chip de plazo de la fila, o null sin plazo. `hoy` decide si el día que falta es «mañana». */
+export function textoPlazo(c: CasoResumen, hoy: Date): string | null {
+  const r = restantes(c);
+  if (r == null) return null;
+  const manana = diaIso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1));
+  if (r === 1 && c.vence === manana) return "Vence mañana";
+  return textoDiasRestantes(r, c.termino?.unidad ?? "habiles");
+}
+
+const fechaLarga = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric" });
+const dia = (iso: string) => {
+  const [a, m, d] = iso.split("-").map(Number);
+  return fechaLarga.format(new Date(a!, m! - 1, d));
+};
+
+/** Título del chip de plazo: «Recibido el 21 de octubre de 2026; vence el 20 de noviembre de 2026 (20 días hábiles)». */
+export function tituloPlazo(c: CasoResumen): string {
+  if (!c.vence) return "";
+  if (!c.termino) return `Vence el ${dia(c.vence)}`;
+  const { inicio, dias, unidad } = c.termino;
+  const plazo = unidad === "calendario" ? `${plural(dias, "día")} calendario` : plural(dias, "día hábil", "días hábiles");
+  return `Recibido el ${dia(inicio)}; vence el ${dia(c.vence)} (${plazo})`;
+}
+
+/** El plazo como faceta: lo filtran las baldosas del Tablero (sin pastilla); en la URL va como pl=. */
+export const PLAZO: Faceta = {
+  clave: "plazo",
+  etiqueta: "Plazo",
+  corto: "Plazo",
+  tipo: "varias",
+  opciones: PLAZOS.map((p) => ({ id: p.id, etiqueta: p.etiqueta })),
+  valor: plazoDe,
+};
+
 /** La faceta que corresponde a una clave de filtro (general o propia). Sin `casos`, las dinámicas vienen sin opciones. */
 export function facetaPorClave(clave: string, casos: readonly CasoResumen[] = []): Faceta | undefined {
+  if (clave === "plazo") return PLAZO;
   if (clave === "juzgado") return juzgado(null, casos);
   if (clave === "entidad") return entidad(null, casos);
   if (clave === "alertas") return ALERTAS;

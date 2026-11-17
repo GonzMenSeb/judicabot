@@ -2,7 +2,7 @@ import type { CasoResumen } from "../../api/contrato";
 import { fechaRelativa, plural } from "../../estado";
 import { Boton, Chip, cx } from "../../ui";
 import { accionDe, descripcionAvance, hrefCaso, partesDe, tonoDe, tramosDe, varianteDe } from "./agrupar";
-import { estadoDe, infoEstado, infoProceso, procesoDe, type DatoFila } from "./facetas";
+import { estadoDe, infoEstado, infoProceso, procesoDe, textoPlazo, tituloPlazo, tonoPlazo, type DatoFila } from "./facetas";
 import { IconoProceso } from "./iconos";
 import "./ficha.css";
 
@@ -33,6 +33,16 @@ const Alertas = ({ n }: { n: number }) =>
       {plural(n, "alerta")}
     </Chip>
   ) : null;
+
+/** El chip del término para fallar, en el tono de su baldosa (tonoPlazo); el título dice desde cuándo corre y la regla. */
+function Plazo({ caso }: { caso: CasoResumen }) {
+  const texto = textoPlazo(caso, new Date());
+  return texto ? (
+    <Chip tono={tonoPlazo(caso)} title={tituloPlazo(caso)}>
+      {texto}
+    </Chip>
+  ) : null;
+}
 
 type Dato = DatoFila & { eco?: boolean };
 
@@ -93,6 +103,7 @@ export function Ficha({ caso, nivel = 4, mostrarProceso, datos }: PropsFicha) {
         </div>
         <div class="siguiente">
           <small>{caso.siguiente_paso}</small>
+          <Plazo caso={caso} />
           <Alertas n={caso.n_alertas} />
         </div>
       </div>
@@ -123,6 +134,7 @@ export function FichaCompacta({ caso, nivel = 4, mostrarProceso, datos = [] }: P
       </div>
       <p class="c-sig">{caso.siguiente_paso}</p>
       <div class="c-marcas">
+        <Plazo caso={caso} />
         <Datos datos={datos.filter((d) => d.eco).slice(0, 1)} />
         <Alertas n={caso.n_alertas} />
       </div>

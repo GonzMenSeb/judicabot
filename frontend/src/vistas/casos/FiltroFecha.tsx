@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { CasoResumen } from "../../api/contrato";
-import { diaIso, fechaCorta, plural } from "../../estado";
+import { diaIso, estadoServidor, fechaCorta, plural } from "../../estado";
 import { cx } from "../../ui";
 import { actividad, conteoFechas, elegirDia, elegirPreset, FECHAS, fijarRango, pasa, rangoDe, type Filtros, type Predicado } from "./filtros";
 
@@ -34,6 +34,8 @@ export function FiltroFecha({ filtros, casos, preds, hoy, cambiar }: PropsFiltro
   // Solo espera el segundo toque mientras el filtro siga siendo ese día; «Quitar», Limpiar o Atrás lo descartan.
   const pendiente = filtros.fecha === "rango" && desde === primerDia && hasta === primerDia ? primerDia : null;
   const hoyIso = diaIso(hoy);
+  // Los festivos los calcula el servidor (/api/estado-servidor); sin ellos solo se rayan los fines de semana.
+  const festivos = new Set(estadoServidor.value?.festivos ?? []);
   const fijar = (f: Filtros) => {
     setPrimerDia(null);
     cambiar(f);
@@ -58,13 +60,15 @@ export function FiltroFecha({ filtros, casos, preds, hoy, cambiar }: PropsFiltro
         </p>
         <div class="barras">
           {dias.map((d) => {
-            const texto = nombreDia.format(fechaDe(d.iso));
+            const festivo = festivos.has(d.iso);
+            const finDeSemana = d.diaSemana === 0 || d.diaSemana === 6;
+            const texto = `${nombreDia.format(fechaDe(d.iso))}${festivo ? ", festivo" : finDeSemana ? ", fin de semana" : ""}`;
             const dentro = (desde || hasta) && (!desde || d.iso >= desde) && (!hasta || d.iso <= hasta);
             return (
               <button
                 key={d.iso}
                 type="button"
-                class={cx("barra-d", d.n === 0 && "vacia", (d.diaSemana === 0 || d.diaSemana === 6) && "inhabil", dentro && "en")}
+                class={cx("barra-d", d.n === 0 && "vacia", (festivo || finDeSemana) && "inhabil", dentro && "en")}
                 style={{ height: `${d.n === 0 ? 4 : Math.round(10 + (d.n / maximo) * 46)}px` }}
                 aria-label={`${texto}: ${plural(d.n, "caso")}`}
                 aria-pressed={Boolean(dentro)}
@@ -83,7 +87,7 @@ export function FiltroFecha({ filtros, casos, preds, hoy, cambiar }: PropsFiltro
             <span key={i}>{fechaCorta(dias[i]!.iso)}</span>
           ))}
         </p>
-        <p class="histo-pie">{pendiente ? "Ahora toque el último día del rango." : "Toque un día, o dos para un rango. Rayado: fin de semana."}</p>
+        <p class="histo-pie">{pendiente ? "Ahora toque el último día del rango." : "Toque un día, o dos para un rango. Rayado: fin de semana o festivo."}</p>
       </div>
       <div class="rango">
         <label>

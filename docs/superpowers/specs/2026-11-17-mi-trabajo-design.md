@@ -53,14 +53,14 @@ La franja reemplaza a una pastilla de estado: sus tramos miden según su número
 
 - Por defecto están activos todos menos Terminados.
 - `elegirEstado`: desde el valor por defecto, el primer toque muestra solo ese estado; los siguientes alternan; Terminados alterna aparte; una selección vacía vuelve al valor por defecto.
-- Orden de prioridad: Por decidir, luego Faltan documentos y Con error, Por preparar, En redacción y Terminados.
+- Orden de prioridad («Lo que me toca primero»): desde el PR3, primero los vencidos y los que vencen hoy; luego Por decidir, Faltan documentos y Con error, Por preparar, En redacción y Terminados; dentro de cada estado, el vencimiento más cercano y después lo trabajado más reciente.
 - La franja cuenta ignorando el propio filtro de estado.
 
 ### Carriles de filtros
 
 Dos carriles, uno al lado del otro y nunca uno bajo el otro; en pantallas angostas se apilan.
 
-- **Generales** (todos los procesos): Trabajado, Juzgado, Entidad accionada y Con alertas. (Plazos, en el PR3, como baldosas.)
+- **Generales** (todos los procesos): Trabajado, Juzgado, Entidad accionada y Con alertas. Los plazos no son pastilla: son baldosas junto a la franja de estados (ver «Plazos»).
 - **Propios de <proceso>**: carril teñido, siempre visible cuando el proceso está fijo, con su icono y el número de filtros aplicados. Es el único lugar que cambia entre procesos (`PROPIAS` en `facetas.ts`); cada fila de la lista muestra además los datos que más pesan en ese proceso (`FILA`). En el PR1 este carril no se dibuja; desde el PR2 se dibuja el de segunda instancia, a la derecha de Generales y algo más ancho (pasa debajo a 960 px o menos), también en Inicio mientras todos los casos sean de segunda. Sin carril propio a la vista (Inicio con varios procesos, pestaña «Todos») las fichas tampoco muestran datos propios. El número de filtros aplicados se lee en voz alta como «N filtros propios aplicados».
 
 Cada filtro es una pastilla plegada que muestra su valor y su ✕; al tocarla abre un popover con el control que le corresponde:
@@ -85,8 +85,8 @@ Un filtro sin datos para los casos visibles se oculta.
 | Entidad accionada | casillas con buscador | `accionadas[]`, normalizadas sin tildes ni mayúsculas | existe hoy |
 | Con alertas | interruptor | `n_alertas` | existe hoy |
 | Buscar | texto | radicado, partes, juzgado y accionadas; `coincideBusqueda` de `agrupar.ts`, sin tildes y con radicado compacto | existe hoy |
-| Ordenar | menú | prioridad (lo que me toca primero), reciente, antiguo, radicado | existe hoy |
-| Agrupar | menú | sin agrupar, por estado | existe hoy |
+| Ordenar | menú | prioridad (lo que me toca primero), vence primero (PR3), reciente, antiguo, radicado | existe hoy |
+| Agrupar | menú | sin agrupar, por estado, por plazo (PR3) | existe hoy |
 | Densidad | Fichas / Compacta | preferencia local | existe hoy |
 | Propios de segunda | casillas, buscador e interruptor | Decisión 1ª inst., Impugnó, Sentido 2ª inst., Derecho, Por revisar, Con pruebas nuevas | PR2 (dato nuevo) |
 | Plazos | baldosas | `vence`, `dias_restantes` | PR3 (dato nuevo) |
@@ -103,7 +103,23 @@ Los propios de segunda leen `CasoResumen.segunda` (`DatosSegunda`); con `segunda
 | Por revisar (`revisar`) | Citas por revisar, Jev discrepa | `n_citas_revisar > 0`, `jev_discrepa` | «2 citas por revisar», «Jev discrepa» |
 | Con pruebas nuevas (`pruebas`, interruptor) | — | `pruebas_nuevas === true` | «Pruebas nuevas en 2ª» |
 
-«Trabajado» es la última actividad sobre los archivos, incluida la del sistema; el título del popover lo dice.
+«Trabajado» es la última actividad sobre los archivos, incluida la del sistema; el título del popover lo dice. Su histograma raya los fines de semana y los festivos; los festivos los publica el servidor en `/api/estado-servidor` (`festivos`, del año anterior al siguiente, de `festivos.py`), así que el frontend no calcula festivos. Cada barra se lee como «lunes, 16 de noviembre, festivo: 1 caso» o «sábado, 14 de noviembre, fin de semana: 0 casos».
+
+### Plazos (PR3)
+
+El término para fallar de cada caso (`termino = {inicio, dias, unidad}`) se confirma o edita en **Documentos** («Término para fallar», junto a «Fecha de reparto»); mientras no se guarde, se propone desde la fecha de reparto: 20 días hábiles. El servidor calcula en cada respuesta `vence` y `dias_restantes` (en la unidad del término: 0 vence hoy, negativo vencido; `null` para los terminados y sin fecha). La lista solo los lee (`facetas.PLAZOS`, `plazoDe`, `textoPlazo`, `tituloPlazo`):
+
+| Cubeta (`pl=`) | `dias_restantes` | Etiqueta |
+|---|---|---|
+| `vencido` | < 0 | Vencidos |
+| `pronto` | 0 o 1 | Vencen hoy o en 1 día |
+| `semana` | 2 a 5 | Vencen en 2 a 5 días |
+| `despues` | 6 o más | Vencen en 6 días o más |
+| `sin` | `null` o terminado | Sin término calculado |
+
+- **Baldosas**: las tres primeras cubetas, junto a la franja (debajo a 960 px o menos), con su conteo; un toque alterna el filtro (`aria-pressed`). Solo se dibujan si algún caso del alcance (página o pestaña) tiene vencimiento. Las etiquetas dicen «días» sin unidad porque cada caso cuenta en la suya.
+- **Chip de la fila** (fichas y compacta): «Venció hace 2 días hábiles», «Vence hoy», «Vence mañana» (solo si vence al día siguiente; un viernes con vencimiento el lunes dice «Falta 1 día hábil»), «Faltan 3 días hábiles»; en días calendario, «Faltan 14 días calendario» (el mismo texto que Documentos, de `textoDiasRestantes`). Tono de su baldosa: rojo si venció o vence hoy, ámbar si faltan de 1 a 5 días, neutro después. El título dice la regla: «Recibido el 21 de octubre de 2026; vence el 20 de noviembre de 2026 (20 días hábiles)».
+- **Vence primero**: por `vence` ascendente; sin vencimiento al final y, entre ellos, los terminados detrás. **Por plazo** agrupa en el orden de la tabla.
 
 ### Conteos facetados
 
@@ -120,7 +136,7 @@ Las opciones en 0 se atenúan pero no desaparecen, para que la lista no salte. L
 
 ### Estado en la URL
 
-- Los filtros viven en la consulta del hash, por ejemplo `#/segunda?e=decidir,error&f=semana&s.juzgado=…&o=radicado`. Claves cortas: `q`, `p`, `e`, `f`/`d`/`h`, `s.<clave>`, `o`, `g`; las propias llevan el proceso delante (`s.segunda.aquo=niega,sin_dato`). Una clave o un valor desconocido se descarta (`validar`), y también una clave propia de un proceso cuyo carril no se ve (la misma regla que al cambiar de pestaña) y, en un interruptor, cualquier valor que no sea el que enciende (`s.alertas=sin`).
+- Los filtros viven en la consulta del hash, por ejemplo `#/segunda?e=decidir,error&f=semana&pl=vencido,pronto&s.juzgado=…&o=vence&g=plazo`. Claves cortas: `q`, `p`, `e`, `f`/`d`/`h`, `pl` (plazo), `s.<clave>`, `o`, `g`; las propias llevan el proceso delante (`s.segunda.aquo=niega,sin_dato`). Una clave o un valor desconocido se descarta (`validar`), y también una clave propia de un proceso cuyo carril no se ve (la misma regla que al cambiar de pestaña) y, en un interruptor, cualquier valor que no sea el que enciende (`s.alertas=sin`).
 - Se escribe con `history.replaceState`: filtrar no añade entradas al historial, no dispara `hashchange`, no remonta ni desplaza la página. Atrás desde un caso restaura la vista; el enlace sirve de marcador.
 - `coincidir` interpreta solo el camino, así que `#/segunda?…` no cae en Inicio. El panel de Configuración, al cerrarse, vuelve a la ruta de fondo con su consulta.
 - Solo la densidad se guarda en `localStorage`, siempre dentro de `try/catch`.

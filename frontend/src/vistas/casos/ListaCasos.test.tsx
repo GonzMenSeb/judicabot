@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, fireEvent, render, screen, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CasoResumen } from "../../api/contrato";
+import type { CasoResumen, EstadoServidor } from "../../api/contrato";
+import { estadoServidor } from "../../estado";
 import { consulta, ruta } from "../../rutas";
 import { ListaCasos } from "./ListaCasos";
 import { casosMock } from "./mock";
@@ -11,7 +14,7 @@ const CASOS: CasoResumen[] = casosMock;
 const en = (dia: number, hora = 10) => new Date(2026, 10, dia, hora).toISOString();
 const FECHADOS: CasoResumen[] = CASOS.map((c) => ({
   ...c,
-  actualizado: { "quintero-bedoya": en(17, 14), "cardenas-ospina": en(16, 9), "arango-londono": en(13, 11), "restrepo-gil": en(17, 12), "mejia-rios": en(4), "duque-salazar": en(1) }[c.id]!,
+  actualizado: { "quintero-bedoya": en(17, 14), "cardenas-ospina": en(16, 9), "arango-londono": en(13, 11), "restrepo-gil": en(17, 12), "mejia-rios": en(4), "duque-salazar": en(1), "demo-sin-leer": en(10) }[c.id]!,
 }));
 
 const nombres = () =>
@@ -31,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  estadoServidor.value = null;
 });
 
 describe("ListaCasos", () => {
@@ -43,13 +47,13 @@ describe("ListaCasos", () => {
       ["Por decidir", "true", "1"],
       ["Faltan documentos", "true", "1"],
       ["Con error", "true", "0"],
-      ["Por preparar", "true", "1"],
+      ["Por preparar", "true", "2"],
       ["En redacción", "true", "1"],
       ["Terminados", "false", "2"],
     ]);
     expect(boton("Terminados").textContent).toContain("Terminados · ocultos");
     expect(boton("Terminados").style.flexGrow).toBe("2");
-    expect(cuenta()).toBe("4 casos abiertos");
+    expect(cuenta()).toBe("5 casos abiertos");
 
     const generales = screen.getByRole("group", { name: "Filtros generales" });
     for (const nombre of ["Trabajado", "Juzgado de 1ª inst.", "Entidad accionada"]) {
@@ -93,7 +97,7 @@ describe("ListaCasos", () => {
       ["Declaró improcedente0", "0 casos"],
       ["Carencia actual de objeto1", "1 caso"],
       ["Otra0", "0 casos"],
-      ["Sin dato2", "2 casos"],
+      ["Sin dato3", "3 casos"],
     ];
     expect(conteos()).toEqual(esperados);
 
@@ -141,7 +145,7 @@ describe("ListaCasos", () => {
     fireEvent.click(boton("Terminados"));
     expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud", "Duque Salazar c. EPS Ceiba Salud"]);
     fireEvent.click(pruebas);
-    expect(nombres()).toHaveLength(6);
+    expect(nombres()).toHaveLength(7);
     expect(document.querySelector(".dato.eco")).toBeNull();
   });
 
@@ -150,11 +154,11 @@ describe("ListaCasos", () => {
     fireEvent.click(boton("Por decidir"));
     expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud"]);
     expect(boton("Faltan documentos").getAttribute("aria-pressed")).toBe("false");
-    expect(cuenta()).toBe("1 de 6 casos");
+    expect(cuenta()).toBe("1 de 7 casos");
     expect(location.hash).toBe("#/?e=decidir");
 
     fireEvent.click(boton("Ver todos los abiertos"));
-    expect(nombres()).toHaveLength(4);
+    expect(nombres()).toHaveLength(5);
     expect(location.hash).toBe("#/");
   });
 
@@ -173,7 +177,7 @@ describe("ListaCasos", () => {
       ["Aseguradora Montaña Azul1", "1 caso"],
       ["EPS Horizonte Salud S.A.S.1", "1 caso"],
     ]);
-    expect(within(dialogo).getByRole("button", { name: "Listo · 4 casos" })).toBeTruthy();
+    expect(within(dialogo).getByRole("button", { name: "Listo · 5 casos" })).toBeTruthy();
 
     fireEvent.input(within(dialogo).getByRole("searchbox"), { target: { value: "horiz" } });
     expect(within(dialogo).getAllByRole("checkbox")).toHaveLength(1);
@@ -191,7 +195,7 @@ describe("ListaCasos", () => {
     expect(document.activeElement).toBe(conValor);
 
     fireEvent.click(boton("Quitar el filtro Entidad accionada"));
-    expect(nombres()).toHaveLength(4);
+    expect(nombres()).toHaveLength(5);
     expect(document.activeElement).toBe(boton("Entidad accionada"));
     expect(screen.queryByRole("button", { name: /^Quitar el filtro/ })).toBeNull();
   });
@@ -204,7 +208,7 @@ describe("ListaCasos", () => {
     expect(alertas.getAttribute("aria-pressed")).toBe("true");
     expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud", "Cárdenas Ospina c. Aseguradora Montaña Azul"]);
     fireEvent.click(alertas);
-    expect(nombres()).toHaveLength(4);
+    expect(nombres()).toHaveLength(5);
   });
 
   it("Trabajado: un preset y luego dos días del histograma", () => {
@@ -216,14 +220,14 @@ describe("ListaCasos", () => {
     const presets = Object.fromEntries(
       ["Hoy", "Ayer", "Últimos 7 días", "Este mes", "Mes pasado", "Cualquier fecha"].map((p) => [p, within(dialogo).getByRole("button", { name: p }).getAttribute("title")]),
     );
-    expect(presets).toEqual({ Hoy: "2 casos", Ayer: "1 caso", "Últimos 7 días": "4 casos", "Este mes": "4 casos", "Mes pasado": "0 casos", "Cualquier fecha": "4 casos" });
+    expect(presets).toEqual({ Hoy: "2 casos", Ayer: "1 caso", "Últimos 7 días": "4 casos", "Este mes": "5 casos", "Mes pasado": "0 casos", "Cualquier fecha": "5 casos" });
 
     fireEvent.click(within(dialogo).getByRole("button", { name: "Hoy" }));
     expect(nombres()).toEqual(["Quintero Bedoya c. EPS Horizonte Salud", "Restrepo Gil c. Fondo Pensional Altamira"]);
     expect(within(dialogo).getByRole("button", { name: "Hoy" }).getAttribute("aria-pressed")).toBe("true");
     expect(boton("Trabajado: Hoy")).toBeTruthy();
 
-    const barras = within(dialogo).getAllByRole("button", { name: /de (octubre|noviembre): \d+ casos?$/ });
+    const barras = within(dialogo).getAllByRole("button", { name: /de (octubre|noviembre)(, fin de semana)?: \d+ casos?$/ });
     expect(barras).toHaveLength(30);
     const dia13 = within(dialogo).getByRole("button", { name: /13 de noviembre: 1 caso$/ });
     expect(dia13.getAttribute("aria-pressed")).toBe("false");
@@ -237,7 +241,93 @@ describe("ListaCasos", () => {
     expect(boton("Trabajado: 13 nov. – 16 nov.")).toBeTruthy();
     expect(location.hash).toBe("#/?d=2026-11-13&h=2026-11-16");
     expect((within(dialogo).getByLabelText("Desde") as HTMLInputElement).value).toBe("2026-11-13");
-    expect(within(dialogo).getAllByRole("button", { pressed: true, name: /de noviembre:/ })).toHaveLength(4);
+    expect(within(dialogo).getAllByRole("button", { pressed: true, name: /de noviembre/ })).toHaveLength(4);
+  });
+
+  it("el histograma raya los fines de semana y los festivos que publica el servidor", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 17, 15, 0));
+    estadoServidor.value = { festivos: ["2026-11-02", "2026-11-16", "2026-12-08"] } as EstadoServidor;
+    render(<ListaCasos casos={FECHADOS} />);
+    fireEvent.click(boton("Trabajado"));
+    const dialogo = panel("Trabajado (última actividad en el caso)");
+    const barra = (nombre: RegExp) => within(dialogo).getByRole("button", { name: nombre });
+    const rayada = (nombre: RegExp) => barra(nombre).classList.contains("inhabil");
+    expect(barra(/16 de noviembre/).getAttribute("aria-label")).toBe("lunes, 16 de noviembre, festivo: 1 caso");
+    expect(barra(/14 de noviembre/).getAttribute("aria-label")).toBe("sábado, 14 de noviembre, fin de semana: 0 casos");
+    expect(barra(/13 de noviembre/).getAttribute("aria-label")).toBe("viernes, 13 de noviembre: 1 caso");
+    expect([rayada(/16 de noviembre/), rayada(/ 2 de noviembre/), rayada(/15 de noviembre/), rayada(/13 de noviembre/), rayada(/17 de noviembre/)]).toEqual([true, true, true, false, false]);
+    expect(within(dialogo).getAllByRole("button", { name: /, festivo:/ })).toHaveLength(2);
+    expect(within(dialogo).getByText("Toque un día, o dos para un rango. Rayado: fin de semana o festivo.")).toBeTruthy();
+  });
+
+  it("las baldosas de Plazos cuentan sin su propio filtro, filtran de un toque y quedan en la URL", () => {
+    render(<ListaCasos casos={CASOS} proceso="segunda" />);
+    const plazos = screen.getByRole("group", { name: "Plazos" });
+    const baldosas = () => within(plazos).getAllByRole("button").map((b) => [b.getAttribute("aria-label"), b.getAttribute("aria-pressed")]);
+    expect(baldosas()).toEqual([
+      ["Vencidos: 1 caso", "false"],
+      ["Vencen hoy o en 1 día: 1 caso", "false"],
+      ["Vencen en 2 a 5 días: 1 caso", "false"],
+    ]);
+
+    fireEvent.click(boton(/^Vencidos/));
+    expect(boton(/^Vencidos/).getAttribute("aria-pressed")).toBe("true");
+    expect(nombres()).toEqual(["Cárdenas Ospina c. Aseguradora Montaña Azul"]);
+    expect(location.hash).toBe("#/?pl=vencido");
+    fireEvent.click(boton(/^Vencen hoy o en 1 día/));
+    expect(nombres()).toEqual(["Cárdenas Ospina c. Aseguradora Montaña Azul", "Arango Londoño c. EPS Ceiba Salud"]);
+    expect(location.hash).toBe("#/?pl=vencido,pronto");
+    expect(cuenta()).toBe("2 de 7 casos");
+    expect(baldosas()).toEqual([
+      ["Vencidos: 1 caso", "true"],
+      ["Vencen hoy o en 1 día: 1 caso", "true"],
+      ["Vencen en 2 a 5 días: 1 caso", "false"],
+    ]);
+
+    // Las demás facetas sí cuentan: con alertas, nada vence hoy.
+    fireEvent.click(boton("Con alertas"));
+    expect(boton(/^Vencen hoy o en 1 día/).getAttribute("aria-label")).toBe("Vencen hoy o en 1 día: 0 casos");
+    expect(boton(/^Vencen hoy o en 1 día/).className).not.toContain("cero");
+    fireEvent.click(boton(/^Vencen hoy o en 1 día/));
+    expect(boton(/^Vencen hoy o en 1 día/).className).toBe("plazo alerta cero");
+    expect(location.hash).toBe("#/?pl=vencido&s.alertas=con");
+
+    fireEvent.click(boton("Limpiar filtros"));
+    expect(baldosas().every(([, pulsada]) => pulsada === "false")).toBe(true);
+    expect(location.hash).toBe("#/");
+  });
+
+  it("sin ningún caso con término no muestra las baldosas de Plazos", () => {
+    render(<ListaCasos casos={CASOS.map((c) => ({ ...c, termino: null, vence: null, dias_restantes: null }))} proceso="segunda" />);
+    expect(screen.getByRole("group", { name: "Estado" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Plazos" })).toBeNull();
+    const chips = [...document.querySelectorAll("article .chip")].map((c) => c.textContent);
+    expect(chips.filter((t) => /^(Vence|Venció|Falta)/.test(t ?? ""))).toEqual([]);
+  });
+
+  it("cada ficha muestra su plazo en el tono de su baldosa, con la regla en el título", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 17, 15, 0));
+    render(<ListaCasos casos={CASOS} proceso="segunda" />);
+    const chip = (texto: string) => screen.getByText(texto);
+    expect(chip("Venció hace 2 días hábiles").className).toBe("chip mal");
+    expect(chip("Venció hace 2 días hábiles").getAttribute("title")).toBe(
+      "Recibido el 14 de octubre de 2026; vence el 12 de noviembre de 2026 (20 días hábiles)",
+    );
+    expect(chip("Vence hoy").className).toBe("chip mal");
+    expect(chip("Faltan 3 días hábiles").className).toBe("chip alerta");
+    expect(chip("Faltan 14 días calendario").className).toBe("chip");
+    expect(chip("Faltan 14 días calendario").getAttribute("title")).toBe("Recibido el 3 de noviembre de 2026; vence el 1 de diciembre de 2026 (28 días calendario)");
+    const zapata = screen.getByRole("link", { name: /Zapata Henao/ }).closest("article")!;
+    expect(zapata.querySelector(".chip")).toBeNull();
+
+    fireEvent.click(boton("Compacta"));
+    const cardenas = screen.getByRole("link", { name: /Cárdenas Ospina/ }).closest("article")!;
+    expect([...cardenas.querySelectorAll(".c-marcas .chip")].map((c) => c.textContent)).toEqual(["Venció hace 2 días hábiles", "2 alertas"]);
+    fireEvent.click(boton("Terminados"));
+    const mejia = screen.getByRole("link", { name: /Mejía Ríos/ }).closest("article")!;
+    expect(mejia.querySelector(".chip")).toBeNull();
   });
 
   it("«Quitar» en el pie de Trabajado descarta el primer toque del rango", () => {
@@ -259,8 +349,8 @@ describe("ListaCasos", () => {
     render(<ListaCasos casos={CASOS} proceso="segunda" />);
     fireEvent.input(screen.getByRole("searchbox", { name: "Buscar casos" }), { target: { value: "zzz" } });
     expect(screen.getByText("Ningún caso coincide con «zzz».")).toBeTruthy();
-    fireEvent.click(boton("Quitar Búsqueda «zzz» · 4 casos"));
-    expect(nombres()).toHaveLength(4);
+    fireEvent.click(boton("Quitar Búsqueda «zzz» · 5 casos"));
+    expect(nombres()).toHaveLength(5);
     expect((screen.getByRole("searchbox", { name: "Buscar casos" }) as HTMLInputElement).value).toBe("");
 
     fireEvent.click(boton("Con alertas"));
@@ -283,15 +373,15 @@ describe("ListaCasos", () => {
     render(<ListaCasos casos={CASOS} proceso="segunda" />);
     fireEvent.click(boton("Con alertas"));
     fireEvent.click(boton("Terminados"));
-    expect(cuenta()).toBe("2 de 6 casos");
+    expect(cuenta()).toBe("2 de 7 casos");
     fireEvent.click(boton("Limpiar filtros"));
-    expect(cuenta()).toBe("4 casos abiertos");
+    expect(cuenta()).toBe("5 casos abiertos");
     expect(screen.getByText(/Filtros limpiados/)).toBeTruthy();
     expect(document.activeElement).toBe(boton("Deshacer"));
     expect(location.hash).toBe("#/");
 
     fireEvent.click(boton("Deshacer"));
-    expect(cuenta()).toBe("2 de 6 casos");
+    expect(cuenta()).toBe("2 de 7 casos");
     expect(boton("Con alertas").getAttribute("aria-pressed")).toBe("true");
     expect(boton("Terminados").getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("button", { name: "Deshacer" })).toBeNull();
@@ -302,10 +392,12 @@ describe("ListaCasos", () => {
     render(<ListaCasos casos={CASOS} />);
     expect(screen.getByRole("region", { name: "Mi trabajo" })).toBeTruthy();
     expect(screen.queryAllByRole("heading", { level: 4 })).toHaveLength(0);
+    // Lo vencido y lo que vence hoy primero; luego por estado.
     expect(nombres()).toEqual([
-      "Quintero Bedoya c. EPS Horizonte Salud",
       "Cárdenas Ospina c. Aseguradora Montaña Azul",
       "Arango Londoño c. EPS Ceiba Salud",
+      "Quintero Bedoya c. EPS Horizonte Salud",
+      "Zapata Henao c. EPS Sendero",
       "Restrepo Gil c. Fondo Pensional Altamira",
     ]);
 
@@ -315,12 +407,31 @@ describe("ListaCasos", () => {
       "Restrepo Gil c. Fondo Pensional Altamira",
       "Cárdenas Ospina c. Aseguradora Montaña Azul",
       "Quintero Bedoya c. EPS Horizonte Salud",
+      "Zapata Henao c. EPS Sendero",
     ]);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Agrupar" }), { target: { value: "estado" } });
-    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Por decidir 1", "Faltan documentos 1", "Por preparar 1", "En redacción 1"]);
-    expect(screen.getAllByRole("heading", { level: 4 })).toHaveLength(4);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Por decidir 1", "Faltan documentos 1", "Por preparar 2", "En redacción 1"]);
+    expect(screen.getAllByRole("heading", { level: 4 })).toHaveLength(5);
     expect(location.hash).toBe("#/?o=radicado&g=estado");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Ordenar" }), { target: { value: "vence" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Agrupar" }), { target: { value: "plazo" } });
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Vencidos 1",
+      "Vencen hoy o en 1 día 1",
+      "Vencen en 2 a 5 días 1",
+      "Vencen en 6 días o más 1",
+      "Sin término calculado 1",
+    ]);
+    expect(nombres()).toEqual([
+      "Cárdenas Ospina c. Aseguradora Montaña Azul",
+      "Arango Londoño c. EPS Ceiba Salud",
+      "Quintero Bedoya c. EPS Horizonte Salud",
+      "Restrepo Gil c. Fondo Pensional Altamira",
+      "Zapata Henao c. EPS Sendero",
+    ]);
+    expect(location.hash).toBe("#/?o=vence&g=plazo");
   });
 
   it("la vista compacta conserva los nombres de los enlaces y se recuerda", () => {
@@ -336,6 +447,7 @@ describe("ListaCasos", () => {
       decidir,
       "Completar: Cárdenas Ospina c. Aseguradora Montaña Azul",
       "Revisar documentos: Arango Londoño c. EPS Ceiba Salud",
+      "Procesar documentos: Zapata Henao c. EPS Sendero",
       "Ver avance: Restrepo Gil c. Fondo Pensional Altamira",
     ]);
     expect(localStorage.getItem("judicabot:densidad")).toBe("compacta");
@@ -390,5 +502,14 @@ describe("ListaCasos", () => {
     rerender(<ListaCasos casos={[]} proceso="segunda" vacio={<p>Aún no hay casos</p>} />);
     expect(screen.getByText("Aún no hay casos")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Casos" })).toBeTruthy();
+  });
+});
+
+describe("ficha.css: la vista compacta no oculta chips", () => {
+  it("las marcas pasan a otra línea en vez de recortarse, así el plazo y las alertas siempre se ven", () => {
+    const css = readFileSync(join(import.meta.dirname, "ficha.css"), "utf8");
+    const marcas = /\.c-marcas\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(marcas).toMatch(/flex-wrap:\s*wrap/);
+    expect(marcas).not.toMatch(/overflow/);
   });
 });

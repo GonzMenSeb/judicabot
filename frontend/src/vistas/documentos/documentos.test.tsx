@@ -696,7 +696,7 @@ describe("Documentos: término para fallar", () => {
     expect(within(grupo).queryByText("por defecto")).toBeNull();
     expect(campo("Recibido el").value).toBe("2026-10-26");
     expect(campo("Se cuentan en días").value).toBe("calendario");
-    expect(grupo.textContent).toContain("Vence el miércoles 25 de noviembre de 2026 · faltan 8 días corridos");
+    expect(grupo.textContent).toContain("Vence el miércoles 25 de noviembre de 2026 · faltan 8 días calendario");
   });
 
   it("sin fecha de reparto avisa que no se puede calcular el plazo", async () => {
@@ -728,7 +728,7 @@ describe("Documentos: término para fallar", () => {
     cleanup();
     conTermino({ ...TERMINO_PROPUESTO, vence: "2026-11-12", dias_restantes: -2 });
     render(<Documentos caso="c1" />);
-    expect((await grupoTermino()).textContent).toContain("Vence el jueves 12 de noviembre de 2026 · vencido hace 2 días hábiles");
+    expect((await grupoTermino()).textContent).toContain("Vence el jueves 12 de noviembre de 2026 · venció hace 2 días hábiles");
   });
 
   it("un caso terminado no muestra vencimiento pero sí el término", async () => {
@@ -768,7 +768,7 @@ describe("Documentos: término para fallar", () => {
     expect(screen.queryByText("por defecto")).toBeNull();
     expect(campo("Plazo (días)").value).toBe("15");
     expect(screen.queryByRole("button", { name: "Guardar cambios" })).toBeNull();
-    expect(screen.getByText(/vencido hace 8 días corridos/)).toBeTruthy();
+    expect(screen.getByText(/venció hace 8 días calendario/)).toBeTruthy();
   });
 
   it("volver al valor original deja de contar como cambio", async () => {
@@ -1056,9 +1056,10 @@ describe("término: funciones", () => {
     expect(textoRestantes(t(0))).toBe("vence hoy");
     expect(textoRestantes(t(1))).toBe("falta 1 día hábil");
     expect(textoRestantes(t(3))).toBe("faltan 3 días hábiles");
-    expect(textoRestantes(t(2, "calendario"))).toBe("faltan 2 días corridos");
-    expect(textoRestantes(t(-1))).toBe("vencido hace 1 día hábil");
-    expect(textoRestantes(t(-4, "calendario"))).toBe("vencido hace 4 días corridos");
+    expect(textoRestantes(t(2, "calendario"))).toBe("faltan 2 días calendario");
+    expect(textoRestantes(t(-1))).toBe("venció hace 1 día hábil");
+    expect(textoRestantes(t(-4, "calendario"))).toBe("venció hace 4 días calendario");
+    expect(textoRestantes(t(1, "calendario"))).toBe("falta 1 día calendario");
     expect(textoRestantes(t(null))).toBeNull();
     expect(textoRestantes({ ...t(2), termino: null })).toBeNull();
   });

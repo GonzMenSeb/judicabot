@@ -34,7 +34,7 @@ describe("lista de casos", () => {
     const grupos = within(lista)
       .getAllByRole("heading", { level: 3 })
       .map((h) => h.textContent);
-    expect(grupos).toEqual(["Por decidir 1", "Faltan documentos 1", "Por preparar 1", "En redacción 1"]);
+    expect(grupos).toEqual(["Por decidir 1", "Faltan documentos 1", "Por preparar 2", "En redacción 1"]);
     expect(screen.queryByRole("heading", { level: 3, name: /Terminados/ })).toBeNull();
 
     const decidir = screen.getByRole("link", { name: "Decidir: Quintero Bedoya c. EPS Horizonte Salud" });
