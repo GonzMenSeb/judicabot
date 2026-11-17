@@ -6,7 +6,7 @@ import type { CasoEliminado, CasoRestaurado, CasoResumen } from "../../api/contr
 import { mostrarToast, plural, pluralizar, versionCasos } from "../../estado";
 import { consulta, reemplazarConsulta, ruta } from "../../rutas";
 import { Boton, cx, Dialogo, Vacio } from "../../ui";
-import { esPropia, estadoDe, generales, PROCESOS, procesoDe, propiasVisibles, type TipoProceso } from "./facetas";
+import { estadoDe, generales, infoProceso, PROCESOS, procesoDe, propiasVisibles, type TipoProceso } from "./facetas";
 import { hrefCaso } from "./agrupar";
 import { Ficha, FichaCompacta } from "./Ficha";
 import {
@@ -19,6 +19,7 @@ import {
   deserializar,
   deshacer,
   elegirEstado,
+  elegirProceso,
   inicial,
   limpiar,
   ORDENES,
@@ -280,7 +281,6 @@ function Lista({ casos, proceso, id, alEliminar }: PropsLista) {
   const preds = predicados(filtros, hoy);
   const visibles = casos.filter((c) => pasa(c, preds));
   const aplicados = activos(filtros, defaults, todas);
-  const presentes = new Set(casos.map(procesoDe));
   const ordenados = ordenarPor(visibles, filtros.orden);
   const grupos = agruparPor(ordenados, filtros.agrupar, limite);
   const agrupado = filtros.agrupar !== "ninguno";
@@ -288,7 +288,15 @@ function Lista({ casos, proceso, id, alEliminar }: PropsLista) {
   const restantes = ordenados.length - Math.min(limite, ordenados.length);
 
   let sinResultados: ComponentChildren = null;
-  if (visibles.length === 0) {
+  if (alcance.length === 0) {
+    // Pestaña de un proceso que aún no tiene casos: no hay filtro que quitar.
+    const info = infoProceso(filtros.proceso);
+    sinResultados = (
+      <Vacio class="sin-resultados" titulo={`Todavía no hay casos de ${info.corto}.`}>
+        {info.proximamente && "Este proceso llegará próximamente."}
+      </Vacio>
+    );
+  } else if (visibles.length === 0) {
     const terminados = aplicados.length === 0 ? contar(casos, preds, "estado", (c) => estadoDe(c) === "terminado") : 0;
     const sug = terminados ? null : sugerencia(casos, filtros, defaults, todas, hoy);
     const soloBusqueda = aplicados.length === 1 && aplicados[0]!.clave === "q";
@@ -316,7 +324,8 @@ function Lista({ casos, proceso, id, alEliminar }: PropsLista) {
     );
   }
 
-  const pestanas = !proceso && presentes.size > 1 && conteoPestanas(casos, preds);
+  // En Inicio siempre: también los procesos sin casos, para que se vean y se puedan elegir.
+  const pestanas = !proceso && conteoPestanas(casos, preds);
 
   return (
     <>
@@ -339,13 +348,13 @@ function Lista({ casos, proceso, id, alEliminar }: PropsLista) {
       </div>
       {pestanas && (
         <div class="pestanas" role="group" aria-label="Proceso">
-          {PROCESOS.filter((p) => p.id === "todos" || presentes.has(p.id)).map((p) => (
+          {PROCESOS.map((p) => (
             <button
               key={p.id}
               type="button"
               class="pestana"
               aria-pressed={filtros.proceso === p.id}
-              onClick={() => cambiar({ ...filtros, proceso: p.id, sel: Object.fromEntries(Object.entries(filtros.sel).filter(([k]) => !esPropia(k))) })}
+              onClick={() => cambiar(elegirProceso(filtros, p.id, casos))}
             >
               {p.id !== "todos" && <IconoProceso tipo={p.id} />}
               {p.corto}

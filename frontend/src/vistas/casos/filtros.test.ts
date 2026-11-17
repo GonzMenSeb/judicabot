@@ -41,6 +41,7 @@ import {
   deshacer,
   elegirDia,
   elegirEstado,
+  elegirProceso,
   elegirPreset,
   fijar,
   fijarRango,
@@ -563,8 +564,17 @@ describe("URL", () => {
     expect(serializar(deserializar("d=2026-11-16", contexto), defaults)).toBe("d=2026-11-16");
   });
 
-  it("en Inicio descarta un proceso sin casos, que dejaría la lista vacía y sin pestañas", () => {
-    expect(deserializar("p=primera", contexto).proceso).toBe("todos");
+  it("elegirProceso conserva las claves propias solo si su carril se sigue viendo", () => {
+    const f: Filtros = { ...inicial(), sel: { alertas: ["con"], "segunda.aquo": ["niega"] } };
+    const mezclados = [...CASOS, { ...CASOS[0]!, id: "primera-1", proceso: "primera" as never, segunda: null }];
+    expect(elegirProceso(f, "segunda", CASOS).sel).toEqual(f.sel);
+    expect(elegirProceso({ ...f, proceso: "segunda" }, "todos", CASOS)).toEqual(f);
+    expect(elegirProceso(f, "desacato", CASOS)).toEqual({ ...f, proceso: "desacato", sel: { alertas: ["con"] } });
+    expect(elegirProceso({ ...f, proceso: "segunda" }, "todos", mezclados).sel).toEqual({ alertas: ["con"] });
+  });
+
+  it("en Inicio acepta un proceso sin casos: sus pestañas siempre se ven", () => {
+    expect(deserializar("p=primera", contexto).proceso).toBe("primera");
     expect(deserializar("p=segunda", contexto).proceso).toBe("segunda");
     expect(deserializar("p=primera", { defaults }).proceso).toBe("primera");
   });

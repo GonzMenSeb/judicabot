@@ -32,10 +32,10 @@ Inicio muestra «Para continuar», con solo los 2 casos que más urgen (`fronten
 
 `ListaCasos` recibe `{casos, proceso?, aviso?, vacio?}`.
 
-- **Inicio** lo monta bajo las tarjetas de proceso, solo si hay al menos un caso. Título h2 «Mi trabajo». Sin agrupar por defecto. Sin `proceso`, se comporta como si «2ª instancia» estuviera elegida.
+- **Inicio** lo monta bajo las tarjetas de proceso, solo si hay al menos un caso. Título h2 «Mi trabajo». Sin agrupar por defecto. Sin `proceso`, la pestaña «Todos» está elegida; mientras todos los casos sean de 2ª instancia, se ve el carril «Propios de 2ª instancia».
 - **Página del proceso** (`#/segunda`) lo monta con `proceso="segunda"`. Título h2 «Casos». Agrupa por estado por defecto. Conserva su aviso y su estado vacío.
 - Páginas de 10 con «Mostrar más».
-- Con un solo proceso con casos no se muestran las pestañas de proceso; aparecen cuando un segundo proceso tenga casos.
+- Inicio muestra siempre las pestañas de todos los procesos («Todos», «1ª instancia», «2ª instancia», «Desacato», «Penal»), con su conteo, aunque solo uno tenga casos. La pestaña de un proceso sin casos se puede elegir y muestra «Todavía no hay casos de <proceso>.» (y «Este proceso llegará próximamente.» si aún no está implementado). Al cambiar de pestaña, los filtros propios siguen solo si su carril se sigue viendo. Con «Todos» y un solo proceso con casos se ve el carril propio de ese proceso.
 - Nombres accesibles estables: el buscador sigue siendo «Buscar casos», los enlaces de caso siguen llamándose `${accion}: ${nombre}` y el texto de búsqueda sin resultados conserva el prefijo «Ningún caso coincide».
 
 ### Franja de estados

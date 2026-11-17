@@ -7,8 +7,9 @@
 .enlace { padding: 0 0.15rem; border: 0; background: none; color: var(--acento); font-size: 0.88rem; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
 .conteo { color: var(--suave); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 
-.pestanas { display: flex; gap: 0.2rem; padding: 0 0.6rem; overflow-x: auto; }
-.pestana { display: inline-flex; flex: none; align-items: center; gap: 0.45rem; margin-bottom: -1px; padding: 0.5rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: none; color: var(--suave); font-size: 0.9rem; font-weight: 500; }
+/* El solape de 1px con el tablero va en la tira, no en la pestaña: dentro de overflow-x: auto se haría desplazable. */
+.pestanas { position: relative; z-index: 1; display: flex; gap: 0.2rem; margin-bottom: -1px; padding: 0 0.6rem; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.pestana { display: inline-flex; flex: none; align-items: center; gap: 0.45rem; padding: 0.5rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: none; color: var(--suave); font-size: 0.9rem; font-weight: 500; }
 .pestana[aria-pressed=true] { position: relative; border-color: var(--linea); background: #fff; color: var(--tinta); font-weight: 600; }
 .pestana svg, .carril-cab svg { width: 16px; height: 16px; color: var(--acento); }
 
