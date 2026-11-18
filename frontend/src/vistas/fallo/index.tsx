@@ -162,6 +162,11 @@ function FalloCaso({ caso }: { caso: string }) {
       <Cabeza caso={caso} info={carga.info} actual="fallo" />
       <div class="dos res">
         <div>
+          {estado?.historial_perdido && (
+            <Aviso tipo="alerta" class="fallo-historial">
+              Este fallo es de una redacción anterior: el caso perdió su historial de redacción. Si vuelve a iniciar la redacción, se reemplazará.
+            </Aviso>
+          )}
           {vista ? (
             <Visor vista={vista} />
           ) : (

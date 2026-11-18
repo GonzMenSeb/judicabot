@@ -2670,6 +2670,12 @@
             ],
             "title": "Decision"
           },
+          "descartar": {
+            "default": false,
+            "description": "Confirma que nuevo/iniciar descarten el borrador, la decisión y el fallo ya generados (antes se guarda una copia en la papelera).",
+            "title": "Descartar",
+            "type": "boolean"
+          },
           "forzar": {
             "default": false,
             "title": "Forzar",
@@ -4259,6 +4265,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "Ya hay una ejecución en curso, o el caso ya tiene trabajo y falta `descartar`."
           },
           "422": {
             "content": {

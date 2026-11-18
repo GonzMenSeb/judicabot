@@ -113,6 +113,17 @@ def test_etapa_de_un_error_depende_de_la_ultima_decision(resumen, etapa, siguien
     assert (campos["estado"], campos["etapa"], campos["siguiente_paso"]) == ("error", etapa, siguiente)
 
 
+@pytest.mark.parametrize("estado", ["revision", "error"])
+def test_historial_perdido_cambia_el_siguiente_paso(estado):
+    sano = resumen_caso.campos_desde_estado({"estado": estado, "resumen": {"alertas": []}})
+    campos = resumen_caso.campos_desde_estado({"estado": estado, "resumen": {"alertas": []}, "historial_perdido": True})
+    assert campos["siguiente_paso"] == "Revisar el historial perdido" and campos["n_alertas"] == 1
+    assert campos["estado"] == estado and campos["etapa"] == sano["etapa"]
+    assert sano["siguiente_paso"] != campos["siguiente_paso"] and sano["n_alertas"] == 0
+    con_alertas = resumen_caso.campos_desde_estado({"estado": estado, "resumen": {"alertas": ["a"]}, "historial_perdido": True})
+    assert con_alertas["n_alertas"] == 2
+
+
 @pytest.mark.parametrize("respuesta", [None, "x", {}, {"estado": "inventado", "resumen": {}}])
 def test_respuesta_ilegible_es_error_en_etapa_cero(respuesta):
     campos = resumen_caso.campos_desde_estado(respuesta)

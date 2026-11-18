@@ -427,7 +427,7 @@ def _esperar(cliente: TestClient, job_id: str) -> dict:
 def comandos(monkeypatch) -> list:
     llamadas: list = []
 
-    def falso(cmd, caso_dir, decision, forzar=False):
+    def falso(cmd, caso_dir, decision, forzar=False, descartar=False):
         llamadas.append((cmd, decision))
         return {"ok": True, "estado": "terminado", "payload": None, "salidas": [], "resumen": {}, "error": None}
 

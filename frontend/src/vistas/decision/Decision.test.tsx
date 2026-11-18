@@ -190,6 +190,21 @@ describe("Decisión: render con datos", () => {
     verEnCurso();
   });
 
+  it("con el historial perdido dice que no hay decisión pendiente y lleva a Documentos", async () => {
+    servidor({ estado: { ok: true, estado: "revision", payload: null, salidas: [], resumen: {}, error: null, historial_perdido: true, trabajo_previo: ["la decisión del juez"] } });
+    render(<Decision caso={CASO} />);
+    expect(await screen.findByText(/Este caso perdió su historial de redacción: no hay una decisión pendiente/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ir a documentos" }).getAttribute("href")).toBe(`#/segunda/${CASO}/documentos`);
+    expect(screen.queryByText(/Genere primero el borrador previo/)).toBeNull();
+  });
+
+  it("una ejecución en curso manda sobre el historial perdido", async () => {
+    servidor({ estado: { ok: true, estado: "revision", payload: null, salidas: [], resumen: {}, error: null, job_activo: "j1", historial_perdido: true } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    expect(screen.queryByText(/perdió su historial/)).toBeNull();
+  });
+
   it("sin ejecución en curso el error del estado sigue explicándose", async () => {
     servidor({ estado: { ok: false, estado: "error", error: MEDIAS, payload: null, salidas: [], resumen: {}, job_activo: null } });
     render(<Decision caso={CASO} />);

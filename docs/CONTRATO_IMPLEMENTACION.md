@@ -231,7 +231,7 @@ El cliente LLM sale de `llm.cliente_para(cfg)`, con `cfg` leído de `config.json
 | `POST /api/casos` | Multipart: `nombre` + `files` (varios), donde cada filename trae la ruta relativa de `webkitRelativePath`. Guarda en `casos/<slug>/insumos/<ruta relativa saneada>` |
 | `GET /api/casos/{id}/config`, `PUT /api/casos/{id}/config` | Leen y escriben `config.json` (validado con `Config`) |
 | `GET /api/casos/{id}/estado` | `api.estado` |
-| `POST /api/casos/{id}/run {cmd, decision?}` | `{job_id}`; 422 `{mensaje, errores: [{campo, mensaje}]}` si la decisión no es aceptable (mismas reglas que la vista previa del RESUELVE y que el grafo): no se crea ningún trabajo |
+| `POST /api/casos/{id}/run {cmd, decision?, forzar?, descartar?}` | `{job_id}`; 422 `{mensaje, errores: [{campo, mensaje}]}` si la decisión no es aceptable (mismas reglas que la vista previa del RESUELVE y que el grafo): no se crea ningún trabajo; 409 si hay otra ejecución en curso (`detail` es texto) o, para `nuevo`/`iniciar` sin `descartar: true`, si descartarían trabajo ya generado: `detail: {codigo: "trabajo_previo", mensaje, trabajo: [texto]}` y no se crea ningún trabajo. Con `descartar: true` el trabajo copia antes el caso a la papelera (la respuesta del trabajo trae `papelera`) |
 | `GET /api/jobs/{id}` | El job |
 | `GET /api/casos/{id}/salidas/{archivo}` | `FileResponse`, solo si el archivo existe en `salidas/` y su nombre no lleva `..` |
 

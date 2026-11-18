@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 from test_graph import AUTO, DECISION, FALLO_DOCX, Verificador, ingesta_sintetica
 
-from tutela2 import api, fallos, graph, ingest, llm
+from tutela2 import api, descarte, fallos, graph, ingest, llm
 from tutela2 import citas as citas_real
 from tutela2 import config as cfgmod
 from tutela2.config import Config, JevConfig, LLMConfig
@@ -243,6 +244,145 @@ def test_nuevo_conserva_roles_y_auto(caso):
     assert json.loads((caso / "auto.json").read_text(encoding="utf-8"))["fecha"] == "2026-10-07"
 
 
+def _terminado(caso):
+    api.nuevo(caso)
+    api.iniciar(caso)
+    r = api.decidir(caso, DECISION)
+    assert r["ok"] and r["estado"] == "terminado", r["error"]
+
+
+def _sin_hilo(caso):
+    for sufijo in ("", "-wal", "-shm"):
+        (caso / f"hilo.sqlite{sufijo}").unlink(missing_ok=True)
+
+
+TRES = ["el borrador", "la decisión del juez", "el fallo con sus documentos"]
+
+
+def test_nuevo_sobre_un_caso_terminado_se_niega_sin_descartar(caso):
+    _terminado(caso)
+    r = api.nuevo(caso)
+    assert r["ok"] is False and r["estado"] == "terminado" and r["trabajo_previo"] == TRES
+    assert "el borrador, la decisión del juez y el fallo con sus documentos" in r["error"]
+    assert "--descartar" in r["error"] and "papelera" in r["error"]
+    assert (caso / "hilo.sqlite").exists() and (caso / "decision.json").exists() and (caso / "salidas" / FALLO_DOCX).exists()
+    assert not (caso.parent / ".papelera").exists()
+    r = api.nuevo(caso, descartar=True)
+    assert r["ok"] and r["estado"] == "revision"
+    assert not (caso / "decision.json").exists() and not (caso / "hilo.sqlite").exists()
+    assert r["salidas"] == [AUTO]
+
+
+def test_nuevo_esperando_decision_conserva_el_borrador(caso):
+    api.nuevo(caso)
+    api.iniciar(caso)
+    r = api.nuevo(caso)
+    assert r["ok"] is False and r["estado"] == "esperando_decision" and r["trabajo_previo"] == ["el borrador"]
+    assert (caso / "salidas" / "trabajo" / "previo.docx").exists() and (caso / "hilo.sqlite").exists()
+
+
+def test_nuevo_con_una_ingesta_fallida_no_descarta_el_trabajo(caso, monkeypatch):
+    _terminado(caso)
+
+    def falla(d, c):
+        raise RuntimeError("no se pudo leer")
+
+    monkeypatch.setattr(ingest, "ingerir", falla, raising=False)
+    assert api.nuevo(caso, descartar=True)["ok"] is False
+    assert (caso / "hilo.sqlite").exists() and (caso / "decision.json").exists()
+    assert not (caso.parent / ".papelera").exists()
+
+
+def test_sin_hilo_con_salidas_avisa_historial_perdido(caso):
+    _terminado(caso)
+    _sin_hilo(caso)
+    r = api.estado(caso)
+    assert r["estado"] == "revision" and r["historial_perdido"] is True and r["trabajo_previo"] == TRES
+
+
+def test_hilo_vaciado_avisa_historial_perdido(caso):
+    _terminado(caso)
+    (caso / "hilo.sqlite").write_bytes(b"")
+    r = api.estado(caso)
+    assert r["estado"] == "revision" and r["historial_perdido"] is True and r["trabajo_previo"] == TRES
+
+
+def test_un_caso_sano_no_avisa_historial_perdido(caso):
+    assert "historial_perdido" not in api.estado(caso)
+    api.nuevo(caso)
+    assert "historial_perdido" not in api.estado(caso)
+    api.iniciar(caso)
+    assert "historial_perdido" not in api.estado(caso)
+    api.decidir(caso, DECISION)
+    assert "historial_perdido" not in api.estado(caso)
+
+
+def test_iniciar_sin_historial_se_niega_y_con_descartar_rehace(caso):
+    _terminado(caso)
+    _sin_hilo(caso)
+    r = api.iniciar(caso)
+    assert r["ok"] is False and r["trabajo_previo"] == TRES and "cuyo historial se perdió" in r["error"]
+    assert not (caso / "hilo.sqlite").exists() and (caso / "decision.json").exists()
+    r = api.iniciar(caso, descartar=True)
+    assert r["ok"] and r["estado"] == "esperando_decision", r["error"]
+    assert not (caso / "decision.json").exists() and not (caso / "salidas" / "por_radicar").exists()
+    assert not (caso / "salidas" / FALLO_DOCX).exists()
+    assert "historial_perdido" not in api.estado(caso)
+
+
+def test_iniciar_con_hilo_vacio_no_pierde_la_decision_al_negarse(caso):
+    _terminado(caso)
+    (caso / "hilo.sqlite").write_bytes(b"")
+    r = api.iniciar(caso)
+    assert r["ok"] is False and "la decisión del juez" in r["error"]
+    assert (caso / "decision.json").exists()
+
+
+def test_revisar_sin_historial_se_niega(caso):
+    _terminado(caso)
+    _sin_hilo(caso)
+    fallo = caso / "salidas" / FALLO_DOCX
+    antes = fallo.read_bytes()
+    vistas = sorted((caso / "salidas").rglob("*.vista.json"))
+    assert any("Fallo" in v.name or "fallo" in v.name for v in vistas)
+    auto = (caso / "auto.json").read_bytes() if (caso / "auto.json").exists() else None
+    r = api.revisar(caso, None, {"accionada": "X"})
+    assert r["ok"] is False and "cuyo historial se perdió" in r["error"]
+    assert fallo.read_bytes() == antes and sorted((caso / "salidas").rglob("*.vista.json")) == vistas
+    assert ((caso / "auto.json").read_bytes() if (caso / "auto.json").exists() else None) == auto
+
+
+def test_iniciar_con_hilo_sano_no_se_confunde_con_historial_perdido(caso):
+    api.nuevo(caso)
+    api.iniciar(caso)
+    r = api.iniciar(caso)
+    assert r["ok"] is False and "ya se inició" in r["error"] and "trabajo_previo" not in r
+
+
+def test_hilo_danado_da_mensaje_en_espanol(caso):
+    _terminado(caso)
+    (caso / "hilo.sqlite").write_bytes(b"basura" * 100)
+    r = api.estado(caso)
+    assert r["estado"] == "error" and r["error"] == api.HILO_DANADO
+    assert "file is not a database" not in r["error"]
+    assert r["historial_perdido"] is True and r["trabajo_previo"] == TRES
+
+
+def test_un_hilo_bloqueado_no_se_presenta_como_danado(caso):
+    r = api._fallo(caso, sqlite3.OperationalError("database is locked"))
+    assert r["error"] == "database is locked" and "historial_perdido" not in r
+
+
+def test_nuevo_sobre_un_hilo_ilegible_se_niega_sin_descartar(caso):
+    api.nuevo(caso)
+    (caso / "hilo.sqlite").write_bytes(b"basura" * 100)
+    r = api.nuevo(caso)
+    assert r["ok"] is False and r["trabajo_previo"] == ["el avance de la redacción"]
+    assert (caso / "hilo.sqlite").read_bytes() == b"basura" * 100
+    assert api.nuevo(caso, descartar=True)["ok"]
+    assert descarte.trabajo_previo(caso) == []
+
+
 def test_error_sin_repr_de_excepcion(caso, monkeypatch):
     class Caido:
         def estructurado(self, *a, **k):
@@ -456,7 +596,7 @@ def test_nuevo_borra_los_fallos(caso, monkeypatch):
     api.nuevo(caso)
     api.iniciar(caso)
     assert (caso / "fallos_ia.jsonl").exists()
-    api.nuevo(caso)
+    api.nuevo(caso, descartar=True)
     assert not (caso / "fallos_ia.jsonl").exists()
 
 

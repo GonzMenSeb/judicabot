@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, cancelable, ErrorApi, esAbortado } from "../../api";
-import type { CasoResumen, JobInicio, ProveedorCaso, Termino, TerminoRespuesta } from "../../api/contrato";
-import { cargarEstadoServidor, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, proveedorDelCaso, proveedorSinClave, useTitulo } from "../../estado";
+import { esDetalleDescarte } from "../../api/contrato";
+import type { CasoResumen, JobInicio, ProveedorCaso, RunCuerpo, Termino, TerminoRespuesta } from "../../api/contrato";
+import { cargarEstadoServidor, enumerar, estadoServidor, jobActual, casoActual, mostrarToast, nombreModelo, plural, proveedorDelCaso, proveedorSinClave, useTitulo } from "../../estado";
 import { navegar } from "../../rutas";
 import { Aviso, Boton, Cargando, CasoNoEncontrado, Migas, Vacio } from "../../ui";
 import type { PropsVista } from "../tipos";
@@ -10,6 +11,7 @@ import "./estilos.css";
 import { Barra } from "./Barra";
 import { Cabeza } from "./Cabeza";
 import { DialogoClave } from "./DialogoClave";
+import { DialogoDescartar } from "./DialogoDescartar";
 import { DialogoRevisar } from "./DialogoRevisar";
 import { FilaDoc } from "./FilaDoc";
 import { FormAuto } from "./FormAuto";
@@ -33,6 +35,14 @@ interface Trabajo {
   id: string;
   cmd: JobEstado["cmd"];
 }
+
+/** Lo que el servidor se negó a descartar sin confirmación (409 «trabajo_previo»), a la espera de que el usuario confirme. */
+interface Descarte {
+  cmd: "nuevo" | "iniciar";
+  mensaje: string;
+}
+
+const COPIA_EN_PAPELERA = "antes se guarda una copia del caso en la papelera, donde se puede recuperar durante 30 días";
 
 const AUTO_VACIO: DatosAuto = { fecha: null, fecha_reparto: null, accionante: null, accionada: null, firmante: null, cargo_firmante: null };
 
@@ -62,8 +72,10 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const [procesando, setProcesando] = useState(false);
   const [pidiendoClave, setPidiendoClave] = useState(false);
   const [confirmandoRevisar, setConfirmandoRevisar] = useState(false);
+  const [descarte, setDescarte] = useState<Descarte | null>(null);
   const nuevaSenal = useRef(cancelable()).current;
   const iniciandoAhora = useRef(false);
+  const descarteConfirmado = useRef(false);
   const base = `/api/casos/${encodeURIComponent(caso)}`;
 
   useTitulo(`Documentos · ${info?.nombre ?? caso}`);
@@ -106,7 +118,8 @@ function VistaDocumentos({ caso }: { caso: string }) {
 
   const ingesta: ResumenIngesta | null = estado ? ingestaDe(estado) : null;
   const autoBase = ingesta?.auto ?? AUTO_VACIO;
-  const editable = Boolean(estado && (estado.estado === "revision" || estado.estado === "incompleto") && !trabajo);
+  // Con el historial perdido el servidor ya no acepta cambiar los roles ni el auto (borraría el fallo): solo lectura.
+  const editable = Boolean(estado && (estado.estado === "revision" || estado.estado === "incompleto") && !trabajo && !estado.historial_perdido);
   const cuerpo = cuerpoRevision(cambios, autoBase, edicion);
   const nRoles = Object.keys(cambios).length;
   const porConfirmar = ingesta ? sinConfirmar(ingesta.documentos, cambios) : [];
@@ -135,6 +148,14 @@ function VistaDocumentos({ caso }: { caso: string }) {
       return;
     }
     setAviso({ tipo: "error", texto: error instanceof ErrorApi ? error.message : porDefecto });
+  };
+
+  /** El 409 «trabajo_previo»: la pestaña estaba desactualizada. Recarga lo que hay y pide confirmar antes de descartarlo. */
+  const pedirDescarte = (error: unknown, cmd: Descarte["cmd"]): boolean => {
+    if (!(error instanceof ErrorApi && error.estado === 409 && esDetalleDescarte(error.detalle))) return false;
+    void cargar();
+    setDescarte({ cmd, mensaje: error.detalle.mensaje });
+    return true;
   };
 
   const recargarTermino = async (): Promise<TerminoRespuesta | null> => {
@@ -224,8 +245,19 @@ function VistaDocumentos({ caso }: { caso: string }) {
     if (iniciandoAhora.current) return;
     iniciandoAhora.current = true;
     setAviso(null);
+    // La confirmación del descarte solo sobrevive a la reentrada deliberada por el diálogo de la clave.
+    let reentrada = false;
     try {
+      if (estado?.historial_perdido && !descarteConfirmado.current) {
+        const perdido = estado.trabajo_previo?.length ? enumerar(estado.trabajo_previo) : "trabajo generado";
+        setDescarte({
+          cmd: "iniciar",
+          mensaje: `Este caso tiene ${perdido} de una redacción anterior cuyo historial se perdió. Iniciar la redacción los descarta; ${COPIA_EN_PAPELERA}.`,
+        });
+        return;
+      }
       if (await faltaClave()) {
+        reentrada = true;
         setPidiendoClave(true);
         return;
       }
@@ -237,13 +269,16 @@ function VistaDocumentos({ caso }: { caso: string }) {
         setAviso({ tipo: "alerta", texto: `Faltan piezas obligatorias${faltan ? `: ${faltan}` : ""}. Corrija los roles para iniciar la redacción.` });
         return;
       }
-      const { job_id } = await api.post<JobInicio>(`${base}/run`, { cmd: "iniciar" });
+      const cuerpoRun: RunCuerpo = { cmd: "iniciar", ...(descarteConfirmado.current ? { descartar: true } : {}) };
+      descarteConfirmado.current = false;
+      const { job_id } = await api.post<JobInicio>(`${base}/run`, cuerpoRun);
       casoActual.value = caso;
       jobActual.value = job_id;
       navegar(hrefEtapa(caso, "proceso"));
     } catch (error) {
-      avisarError(error, "No se pudo iniciar la redacción.");
+      if (!pedirDescarte(error, "iniciar")) avisarError(error, "No se pudo iniciar la redacción.");
     } finally {
+      if (!reentrada) descarteConfirmado.current = false;
       iniciandoAhora.current = false;
       setIniciando(false);
     }
@@ -255,24 +290,44 @@ function VistaDocumentos({ caso }: { caso: string }) {
     else void iniciar();
   };
 
-  const procesar = async () => {
+  const procesar = async (descartar = false) => {
     setProcesando(true);
     setAviso(null);
     try {
-      const { job_id } = await api.post<JobInicio>(`${base}/run`, { cmd: "nuevo" });
+      const cuerpoRun: RunCuerpo = { cmd: "nuevo", ...(descartar ? { descartar: true } : {}) };
+      const { job_id } = await api.post<JobInicio>(`${base}/run`, cuerpoRun);
       jobActual.value = job_id;
       setTrabajo({ id: job_id, cmd: "nuevo" });
     } catch (error) {
-      avisarError(error, "No se pudo iniciar la lectura del expediente.");
+      if (!pedirDescarte(error, "nuevo")) avisarError(error, "No se pudo iniciar la lectura del expediente.");
     } finally {
       setProcesando(false);
     }
   };
 
+  const confirmarDescarte = () => {
+    if (!descarte) return;
+    setDescarte(null);
+    if (descarte.cmd === "nuevo") {
+      void procesar(true);
+    } else {
+      descarteConfirmado.current = true;
+      void iniciar();
+    }
+  };
+
+  const cancelarDescarte = () => {
+    descarteConfirmado.current = false;
+    setDescarte(null);
+  };
+
   const alTerminarLectura = (job: JobEstado | null) => {
     setTrabajo(null);
+    const copia = job?.resultado?.papelera;
     if (job?.estado === "error") setAviso({ tipo: "error", texto: job.error || "La lectura del expediente falló." });
-    else mostrarToast("Expediente leído.", { tipo: "ok" });
+    else if (copia) {
+      mostrarToast(`Expediente leído. Lo anterior se descartó y una copia del caso quedó en la papelera durante 30 días (${copia}).`, { tipo: "ok", ms: 12000 });
+    } else mostrarToast("Expediente leído.", { tipo: "ok" });
     void cargar();
   };
 
@@ -307,10 +362,18 @@ function VistaDocumentos({ caso }: { caso: string }) {
   const cambiarTermino = (campo: CampoTermino, valor: string) => setEdTermino((previo) => ({ ...previo, [campo]: valor }));
 
   const cabeza = <Cabeza caso={caso} info={info} nDocs={ingesta?.documentos.length} />;
+  // El diálogo del descarte va aquí y no en una rama: tras el 409 la pantalla se recarga y puede cambiar de rama.
   const raiz = (hijos: ComponentChildren) => (
     <div data-vista="documentos" class="docs">
       {cabeza}
       {hijos}
+      <DialogoDescartar
+        abierto={descarte !== null}
+        cmd={descarte?.cmd ?? "nuevo"}
+        mensaje={descarte?.mensaje ?? ""}
+        onCancelar={cancelarDescarte}
+        onConfirmar={confirmarDescarte}
+      />
     </div>
   );
 
@@ -400,7 +463,21 @@ function VistaDocumentos({ caso }: { caso: string }) {
           Hay una ejecución en curso para este caso.
         </Aviso>
       )}
-      {!editable && !trabajo && <Aviso>La redacción ya inició; la clasificación de los documentos no se puede cambiar.</Aviso>}
+      {estado.historial_perdido && !trabajo && (
+        <Aviso
+          tipo="alerta"
+          titulo="Este caso perdió su historial de redacción"
+          acciones={
+            <Boton onClick={() => void procesar()} cargando={procesando}>
+              Volver a procesar los documentos
+            </Boton>
+          }
+        >
+          Tiene {enumerar(estado.trabajo_previo ?? [])} de una redacción anterior, pero el historial que los produjo ya no está disponible. Iniciar la redacción o volver
+          a procesar los documentos los descarta ({COPIA_EN_PAPELERA}); mientras tanto no se pueden cambiar los roles ni los datos del auto.
+        </Aviso>
+      )}
+      {!editable && !trabajo && !estado.historial_perdido && <Aviso>La redacción ya inició; la clasificación de los documentos no se puede cambiar.</Aviso>}
       <div class="docs-avisos">
         <Aviso
           tipo={faltantes.length ? "alerta" : "ok"}
@@ -474,7 +551,10 @@ function VistaDocumentos({ caso }: { caso: string }) {
       <DialogoClave
         abierto={pidiendoClave}
         proveedor={estadoServidor.value ? proveedorDelCaso(estadoServidor.value, proveedor) : "anthropic"}
-        onCerrar={() => setPidiendoClave(false)}
+        onCerrar={() => {
+          setPidiendoClave(false);
+          descarteConfirmado.current = false;
+        }}
         onGuardada={() => {
           setPidiendoClave(false);
           void iniciar();

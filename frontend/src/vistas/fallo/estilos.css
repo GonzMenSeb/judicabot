@@ -1,6 +1,7 @@
 .fallo-cabeza { margin-bottom: 1.5rem; }
 .fallo-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 1.75rem; margin-top: 0.35rem; color: var(--suave); font-size: 0.93rem; }
 
+.fallo-historial { margin-bottom: 1rem; }
 .fallo .dos { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 2.5rem; align-items: start; }
 
 .visor-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.4rem 1rem; max-width: 40rem; margin: 0 auto 0.6rem; }
