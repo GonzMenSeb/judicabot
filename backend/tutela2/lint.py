@@ -725,11 +725,18 @@ _DATIVO_DEL_DESPACHO = re.compile(
 )
 _QUE_FINAL = re.compile(r"\bque\s*,?\s*$")
 _QUE_DEL_DESPACHO = re.compile(
-    rf"\b{_DESPACHO}\s+(?:[a-zñáéíóú,]+\s+){{0,5}}que\s*,?\s*$"
+    rf"\b{_DESPACHO}\s+(?:(?!que\b)[a-zñáéíóú,]+\s+){{0,5}}que\s*,?\s*$"
     r"|\bse\s+[a-zñáéíóú]+(?:\s+[a-zñáéíóú]+)?\s+que\s*,?\s*$"
     r"|\b(?:es|resulta|queda|cabe)\s+(?:[a-zñáéíóú]+\s+){0,2}que\s*,?\s*$"
     r"|\b(?:dado|puesto|ya|visto|toda\s+vez|habida\s+cuenta|teniendo\s+en\s+cuenta|atendiendo|por\s+cuanto"
     r"|en\s+la\s+medida|de\s+modo|de\s+manera|as[ií]|por\s+lo|m[aá]xime)\s+(?:[a-zñáéíóú]+\s+){0,2}que\s*,?\s*$"
+)
+# «La EPS sostiene que, en este caso, procede…»: uno o varios incisos cortos cerrados con coma tras el «que» no cambian de quién es
+# el «que» («sostiene que» sigue siendo del tercero, «considera que» del Despacho): la oración se juzga como si no los llevara. Es el
+# último «que» de la oración (no se atraviesa otro) y se excluye cuando el «que» es parte de una locución («a pesar de que, en
+# consecuencia,», «mientras que, a juicio del Despacho,»), donde el inciso es de la cláusula y no del «que».
+_INCISO_TRAS_QUE = re.compile(
+    r"(?<!pesar de )(?<!mientras )(?<!dado )(?<!puesto )(?<!visto )(?<!ya )(?<!as[ií] )(\bque)\s*,(?:(?!\bque\s*,)[^.;:!?]){1,80},\s*$"
 )
 _FIN_ORACION_RE = re.compile(_FIN_DE_ORACION)
 # Lo que sigue inmediatamente al disparador sin ser parte del anuncio: un conectivo o el dativo del propio Despacho.
@@ -812,7 +819,8 @@ def _inciso_ajeno_antes_del_disparador(prefijo: str) -> bool:
 
 def _con_otro_actor(prefijo: str) -> bool:
     prefijo = _DE_ALCANCE.sub(" ", _DATIVO_DEL_DESPACHO.sub(" ", prefijo))
-    if _QUE_FINAL.search(prefijo) and not _QUE_DEL_DESPACHO.search(prefijo):
+    con_que = _INCISO_TRAS_QUE.sub(r"\1", prefijo) if "que" in prefijo else prefijo
+    if _QUE_FINAL.search(con_que) and not _QUE_DEL_DESPACHO.search(con_que):
         return True
     if _CLITICO_DATIVO.search(prefijo):
         return True

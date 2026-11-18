@@ -1655,6 +1655,132 @@ def test_coherencia_decision_ningun_inciso_de_tercero_con_objeto_judicial_anunci
     assert falsos == [], f"{len(falsos)} falsos BLOQUEA; por ejemplo: {falsos[:3]}"
 
 
+# --- «tercero + verbo de decir + que + inciso» ----------------------------------------------------------------------------
+# «La EPS sostiene que, en este caso, procede confirmar el fallo»: el «que» es del tercero aunque lo siga un inciso cerrado con
+# coma, y el Despacho que dice «considera que, en este caso, procede…» sigue siendo quien anuncia. Vocabulario propio, distinto
+# del de lint.py y del de las tablas anteriores: el defecto de esta familia se escapó dos veces porque las tablas se construían
+# con las mismas palabras que la guarda.
+_TERCEROS_QUE_DICEN = (
+    "El Ministerio Público", "La Procuraduría", "La IPS", "El apoderado de la accionada", "La impugnante", "El vinculado",
+    "La aseguradora", "La Superintendencia de Salud",
+)
+_VERBOS_DE_DECIR_CON_QUE = ("sostiene que", "conceptúa que", "alega que", "afirma que", "insiste en que", "argumenta que")
+_INCISOS_TRAS_QUE = (
+    "en este caso", "en su sentir", "a su juicio", "en principio", "de entrada", "por lo visto",
+    "en este caso, a su juicio", "como ya se dijo, y por lo visto", "en el presente asunto concreto y bajo las circunstancias descritas",
+    "por lo que consta en el expediente", "en lo que a este caso respecta",  # un «que» relativo dentro del inciso no lo corta
+)
+_DISPARADORES_DE_LA_CLAUSULA_DEL_QUE = ("procede", "corresponde", "hay que", "se impone", "debe")
+_OBJETOS_JUDICIALES = (
+    ("REVOCAR", "revocar", "confirmar", ("el fallo", "la providencia impugnada")),
+    ("CONFIRMAR", "confirmar", "revocar", ("la sentencia de primera instancia", "la decisión del a quo")),
+)
+_CIERRE_DEL_DESPACHO = "Por ello, el Despacho {futuro} el fallo y amparará el derecho a la salud."
+_FUTURO_DE = {"revocar": "revocará", "confirmar": "confirmará"}
+
+
+def _conclusiones_con_que_e_inciso(sujetos, verbos, incisos, disparadores) -> list[tuple[str, str]]:
+    casos = []
+    for resultado, infinitivo, contrario, objetos in _OBJETOS_JUDICIALES:
+        cierre = _CIERRE_DEL_DESPACHO.format(futuro=_FUTURO_DE[infinitivo])
+        for sujeto in sujetos:
+            for verbo in verbos:
+                for inciso in incisos:
+                    for d in disparadores:
+                        for objeto in objetos:
+                            casos.append((resultado, f"{sujeto} {verbo}, {inciso}, {d} {contrario} {objeto}. {cierre}"))
+    return casos
+
+
+_CONCLUSIONES_DE_TERCERO_CON_QUE_E_INCISO = _conclusiones_con_que_e_inciso(
+    _TERCEROS_QUE_DICEN, _VERBOS_DE_DECIR_CON_QUE, _INCISOS_TRAS_QUE, _DISPARADORES_DE_LA_CLAUSULA_DEL_QUE
+)
+_CONCLUSIONES_DEL_DESPACHO_CON_QUE_E_INCISO = _conclusiones_con_que_e_inciso(
+    ("El Despacho", "Este Juzgado", "La Sala"),
+    ("considera que", "estima que", "advierte que", "observa que", "concluye que", "entiende que"),
+    _INCISOS_TRAS_QUE,
+    _DISPARADORES_DE_LA_CLAUSULA_DEL_QUE[:4],  # «debe» con inciso tras el «que» del Despacho es un falso negativo aceptado
+)
+
+
+def test_coherencia_decision_ningun_tercero_con_que_e_inciso_anuncia_el_resultado():
+    assert len(_CONCLUSIONES_DE_TERCERO_CON_QUE_E_INCISO) == 10560
+    falsos = [c for r, c in _CONCLUSIONES_DE_TERCERO_CON_QUE_E_INCISO if lint.coherencia_decision(_caso(conclusion=c), _decision(r, "AMPARAR")) != []]
+    assert falsos == [], f"{len(falsos)} falsos BLOQUEA; por ejemplo: {falsos[:3]}"
+
+
+def test_coherencia_decision_todo_anuncio_del_despacho_con_que_e_inciso_se_detecta():
+    assert len(_CONCLUSIONES_DEL_DESPACHO_CON_QUE_E_INCISO) == 3168
+    sin_detectar = [
+        c for r, c in _CONCLUSIONES_DEL_DESPACHO_CON_QUE_E_INCISO
+        if not any("anuncia" in m for m in lint.coherencia_decision(_caso(conclusion=c), _decision(r, "AMPARAR")))
+    ]
+    assert sin_detectar == [], f"{len(sin_detectar)} sin detectar; por ejemplo: {sin_detectar[:3]}"
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        # las tres frases con las que se encontró el defecto (el cierre es la decisión del Despacho: revocar y amparar)
+        "La EPS sostiene que, en este caso, procede confirmar el fallo. Por ello, el Despacho revocará el fallo y amparará el derecho a la salud.",
+        "El Ministerio Público conceptúa que, en su sentir, procede confirmar la sentencia. Por ello, el Despacho revocará el fallo y amparará el derecho a la salud.",
+        "El Despacho observa que la EPS cree que corresponde confirmar el fallo; no obstante, revocará y amparará.",
+        # el «que» ajeno más cercano manda, aunque antes haya otro del Despacho
+        "El Despacho observa que la EPS cree que, en este caso, corresponde confirmar el fallo; no obstante, revocará y amparará.",
+        "El Despacho considera que la EPS alega que, a su juicio, procede confirmar la sentencia, pero revocará el fallo y amparará el derecho.",
+        # varios incisos tras el «que», o uno largo
+        "La EPS sostiene que, en este caso, a su juicio, procede confirmar el fallo. Por ello, el Despacho revocará el fallo y amparará el derecho a la salud.",
+        "La EPS sostiene que, en el presente asunto concreto, y a la luz de la prueba, procede confirmar el fallo; el Despacho revocará y amparará.",
+        # un «que» relativo dentro del inciso no es el «que» de la atribución
+        "La EPS sostiene que, por lo que consta en el expediente, procede confirmar el fallo. Por ello, el Despacho revocará y amparará el derecho.",
+        "El Ministerio Público conceptúa que, según lo que alegó la parte, corresponde confirmar la sentencia; el Despacho revocará y amparará.",
+        "El Despacho observa que la EPS cree que, en lo que a este caso respecta, corresponde confirmar el fallo; no obstante, revocará y amparará.",
+        # sin inciso (ya pasaba en main)
+        "La EPS sostiene que procede confirmar el fallo. Por ello, el Despacho revocará el fallo y amparará el derecho a la salud.",
+    ],
+)
+def test_coherencia_decision_el_que_de_un_tercero_con_inciso_no_es_el_anuncio_del_despacho(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        # el «que» es del Despacho, de una oración impersonal o de una locución con la que abre el Despacho: el inciso no lo oculta
+        "El Despacho considera que, en este caso, procede confirmar el fallo y amparar el derecho a la salud.",
+        "Este Despacho estima que, en consecuencia, corresponde confirmar la sentencia y amparar el derecho a la salud.",
+        "El Despacho advierte que, por lo expuesto, hay que confirmar el fallo y amparar el derecho a la salud.",
+        "El Despacho considera que, por lo que consta en el expediente, procede confirmar el fallo y amparar el derecho a la salud.",
+        "Es claro que, en este caso, procede confirmar el fallo y amparar el derecho a la salud.",
+        "Resulta evidente que, a esta altura, corresponde confirmar el fallo y amparar el derecho a la salud.",
+        "Se concluye que, a la luz del expediente, procede confirmar la sentencia y amparar el derecho a la salud.",
+        "Dado que, en este caso, la EPS incumplió, corresponde confirmar el fallo y amparar el derecho a la salud.",
+        "Teniendo en cuenta que, en este caso, la EPS incumplió, corresponde confirmar el fallo y amparar el derecho a la salud.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; a pesar de que, en consecuencia, procede confirmar la sentencia.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, mientras que, a juicio del Despacho, corresponde confirmar el fallo.",
+        # un tercero que habló antes no oculta lo que dice el Despacho después
+        "La EPS sostiene que no procede el amparo. El Despacho considera que, en este caso, procede confirmar el fallo y amparar el derecho.",
+    ],
+)
+def test_coherencia_decision_el_que_del_despacho_con_inciso_sigue_siendo_el_anuncio_del_despacho(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs), conclusion
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        # Residuo aceptado que sí bloquea: la guarda ve a través de incisos de hasta 80 caracteres sin signo de fin de oración;
+        # un inciso más largo, o que contiene un punto o un punto y coma, deja de verse y la cláusula se lee como del Despacho.
+        "La EPS sostiene que, en el presente asunto concreto y bajo las circunstancias descritas en el expediente allegado por las partes, procede confirmar el fallo.",
+        "La EPS sostiene que, en este caso; a su juicio, procede confirmar el fallo.",
+    ],
+)
+def test_coherencia_decision_residuo_aceptado_que_bloquea_un_inciso_tras_el_que_demasiado_largo(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion + " Por ello, el Despacho revocará y amparará."), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs), conclusion
+
+
 @pytest.mark.parametrize(
     "conclusion",
     [
@@ -1781,6 +1907,9 @@ def test_coherencia_decision_confirmar_que_comprueba_un_hecho_y_no_anuncia_el_re
         "Corresponde amparar el derecho a la salud, garantizando la atención, y confirmar el fallo.",
         "Corresponde amparar el derecho a la salud y, para garantizar la atención, confirmar el fallo.",
         "Corresponde amparar el derecho a la salud, que la EPS reclama, y confirmar el fallo.",
+        # el Despacho con una aposición entre comas no se reconoce como el sujeto del «que», con o sin inciso tras él
+        "La Sala, por mayoría, entiende que procede confirmar el fallo y amparar el derecho a la salud.",
+        "La Sala, por mayoría, entiende que, en este caso, procede confirmar el fallo y amparar el derecho a la salud.",
     ],
 )
 def test_coherencia_decision_falsos_negativos_aceptados_no_se_examinan(conclusion):
