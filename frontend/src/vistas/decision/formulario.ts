@@ -70,11 +70,16 @@ export const MSG = {
   sinOrdenes: "Si se ampara, hay que indicar al menos una orden.",
   ordenIncompleta: "Cada orden necesita destinatario y conducta.",
   plazo: "El plazo de cada orden debe ser mayor que cero.",
+  plazoEntero: "El plazo de cada orden debe ser un número entero.",
   libreVacio: "Hay un numeral libre vacío.",
   compulsa: "La compulsa de copias necesita indicar respecto de quién.",
   decididoPorVacio: "Decidido por está vacío: en la declaración de uso de IA constará «no consta».",
   decididoPorPlaceholder: "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide.",
 } as const;
+
+/** El servidor no escribe en letras un plazo de 1.000.000 o más (`PLAZO_MAXIMO` en `models.py`). */
+export const PLAZO_MAXIMO = 999_999;
+export const msgPlazoMaximo = (orden: number) => `El plazo de la orden ${orden} no puede superar 999.999.`;
 
 const DECIDIDO_POR_PLACEHOLDERS = new Set(["john doe", "prueba", "caso sintetico"]);
 const TILDES: Record<string, string> = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u" };
@@ -250,6 +255,13 @@ export function moverClave(f: Formulario, interna: string, destino: string | num
   return { ...f, orden: nuevas, reordenado: true };
 }
 
+/** El plazo que viaja. Si la orden no lo usa (PREVENIR, ADVERTIR o «mismo término») va entero: el servidor no lo valida
+ *  en ese caso, pero el modelo rechazaría un decimal («La decisión no tiene el formato esperado.»). */
+export function plazoEnviado(o: OrdenForm, mismo: boolean): number {
+  const n = Number(o.n) || 0;
+  return o.verbo === "ORDENAR" && !mismo ? n : Math.trunc(n);
+}
+
 export function aDecision(f: Formulario): DecisionCuerpo {
   const sustitutiva = sustitutivaEfectiva(f);
   const aplicanDerechos = sustitutiva === "AMPARAR" || sustitutiva === "NEGAR";
@@ -270,7 +282,7 @@ export function aDecision(f: Formulario): DecisionCuerpo {
           destinatario: o.destinatario.trim(),
           via_representante: o.via,
           conducta: limpiarTexto(o.conducta),
-          plazo: { n: Number(o.n) || 0, unidad: o.unidad },
+          plazo: { n: plazoEnviado(o, o.mismo), unidad: o.unidad },
           condicion: o.condicion.trim(),
         }))
       : [],
@@ -299,7 +311,12 @@ export function validar(d: DecisionCuerpo): Hallazgo[] {
   d.ordenes.forEach((o, i) => {
     if (!o.destinatario) e.push({ campo: `ordenes.${i}.destinatario`, mensaje: MSG.ordenIncompleta });
     if (!o.conducta) e.push({ campo: `ordenes.${i}.conducta`, mensaje: MSG.ordenIncompleta });
-    if (!(o.plazo.n > 0)) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazo });
+    if (o.verbo === "ORDENAR" && !o.mismo_termino) {
+      const n = o.plazo.n;
+      if (!Number.isInteger(n)) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazoEntero });
+      else if (n <= 0) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazo });
+      else if (n > PLAZO_MAXIMO) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: msgPlazoMaximo(i + 1) });
+    }
   });
   d.numerales_libres.forEach((t, i) => {
     if (!t) e.push({ campo: `numerales_libres.${i}`, mensaje: MSG.libreVacio });
@@ -321,6 +338,18 @@ export function advertenciasLocales(f: Formulario): Hallazgo[] {
   if (!nombre) return [{ campo: "decidido_por", mensaje: MSG.decididoPorVacio }];
   if (esPlaceholderDecididoPor(nombre)) return [{ campo: "decidido_por", mensaje: MSG.decididoPorPlaceholder }];
   return [];
+}
+
+/** Los `{campo, mensaje}` de un 422 de la compuerta (`detail.errores`); `null` si el detalle no los trae. */
+export function leerHallazgos(detalle: unknown): Hallazgo[] | null {
+  if (typeof detalle !== "object" || detalle === null || !("errores" in detalle) || !Array.isArray(detalle.errores)) return null;
+  const hallazgos: Hallazgo[] = [];
+  for (const e of detalle.errores as unknown[]) {
+    if (typeof e !== "object" || e === null) continue;
+    if (!("campo" in e) || typeof e.campo !== "string" || !("mensaje" in e) || typeof e.mensaje !== "string") continue;
+    hallazgos.push({ campo: e.campo, mensaje: e.mensaje });
+  }
+  return hallazgos.length ? hallazgos : null;
 }
 
 export function combinar(locales: Hallazgo[], servidor: Hallazgo[]): Hallazgo[] {

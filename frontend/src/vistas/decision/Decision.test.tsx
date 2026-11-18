@@ -813,3 +813,90 @@ describe("Decisión: vista previa fallida", () => {
     expect(dialogo.queryByText(/Encabezado:/)).toBeNull();
   });
 });
+
+describe("Decisión: la compuerta del servidor y la vista previa tardía", () => {
+  const RECHAZADA = "Su decisión no se aplicó: corrija los campos marcados y vuelva a enviarla.";
+
+  async function llenar() {
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+  }
+
+  it("un 422 de la compuerta muestra los motivos en el formulario, no navega y desaparece al corregir", async () => {
+    const mensaje = "Falta el eje: 2 a 5 líneas con el porqué de la decisión.";
+    servidor({
+      run: () => json({ detail: { mensaje: `Su decisión no se aplicó: ${mensaje}`, errores: [{ campo: "eje", mensaje }] } }, 422),
+    });
+    await montar();
+    await llenar();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    const aviso = (await screen.findByText("No se pudo enviar la decisión")).closest("[role=alert]") as HTMLElement;
+    expect(aviso.textContent).toContain(RECHAZADA);
+    expect(location.hash).toBe("");
+    expect(document.getElementById("dec-eje-error")?.textContent).toContain("Falta el eje");
+    expect(estadoBarra()).toBe("Para enviar falta: el porqué.");
+    expect(screen.queryByRole("link", { name: "Ver el proceso" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
+
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica y la urgencia.");
+    await waitFor(() => expect(document.getElementById("dec-eje-error")).toBeNull());
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+  });
+
+  it("un 422 sin errores por campo sigue mostrando el texto del servidor", async () => {
+    servidor({ run: () => json({ detail: "Falta la decisión." }, 422) });
+    await montar();
+    await llenar();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    expect(await screen.findByText("Falta la decisión.")).toBeTruthy();
+    expect(screen.queryByText(RECHAZADA)).toBeNull();
+  });
+
+  it("si la vista previa llega con faltantes con el diálogo abierto, el diálogo se cierra y no se envía", async () => {
+    let entregar: (r: DecisionVistaRespuesta) => void = () => {};
+    let ultimo: any = null;
+    const llamadas = servidor({
+      vista: (c) => {
+        ultimo = c;
+        return new Promise<Response>((ok) => {
+          entregar = (r) => ok(json(r));
+        });
+      },
+    });
+    await montar();
+    await llenar();
+    await waitFor(() => expect(ultimaVista(llamadas)?.ordenes?.[0]?.conducta).toBe("autorice el medicamento"));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+    expect(screen.getByText("Calculando el encabezado y la fecha…")).toBeTruthy();
+
+    const motivo = "fecha_fallo no es una fecha ISO válida: '20266-11-17'.";
+    entregar({ ...numeralesDe(ultimo), faltantes: [{ campo: "fecha_fallo", mensaje: motivo }], errores: [motivo] });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull());
+    expect((await screen.findAllByText(motivo)).length).toBeGreaterThan(0);
+    expect(screen.getByText("Revise la decisión antes de enviarla")).toBeTruthy();
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("con la vista previa caída y un plazo de 10000000 no abre el diálogo", async () => {
+    const llamadas = servidor({ vista: () => json({ detail: "Servidor caído" }, 500) });
+    await montar();
+    await llenar();
+    escribir("Plazo", "10000000");
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    const error = await waitFor(() => {
+      const el = document.querySelector('[id^="dec-orden-"][id$="-plazo-error"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(error.textContent).toBe("El plazo de la orden 1 no puede superar 999.999.");
+    expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
+    expect(estadoBarra()).toContain("Para enviar falta: el plazo de cada orden");
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+});

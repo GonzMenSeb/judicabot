@@ -20,13 +20,14 @@ import {
   formularioInicial,
   hallazgosLocales,
   idDeCampo,
+  leerHallazgos,
   moverClave,
   resumenCorto,
 } from "./formulario";
 import { Resuelve } from "./Resuelve";
 import type { Cambiar } from "./Secciones";
 import { Derechos, Ordenes, Otras, QueDecide, Reparos, Salida } from "./Secciones";
-import type { Causal, ConfigCaso, Formulario, PayloadDecision, RespuestaEstado } from "./tipos";
+import type { Causal, ConfigCaso, Formulario, Hallazgo, PayloadDecision, RespuestaEstado } from "./tipos";
 import { useVistaPrevia } from "./useVistaPrevia";
 import "./estilos.css";
 
@@ -53,9 +54,11 @@ function mensajeDe(e: unknown): string {
 }
 
 const EN_CURSO = "Ya hay una ejecución en curso para este caso.";
+const RECHAZADA = "Su decisión no se aplicó: corrija los campos marcados y vuelva a enviarla.";
 const esBloqueoApoderados = (mensaje: string) => mensaje.startsWith("Hay apoderados no verificados");
 
 function accionDelError(mensaje: string, base: string) {
+  if (mensaje === RECHAZADA) return undefined; // no hay proceso que ver: la decisión no llegó a aplicarse
   if (mensaje.startsWith("Falta la clave de la API")) return <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton>;
   if (mensaje.startsWith("Hay conflictos de edición")) return <Boton href={`${base}/borrador`}>Resolver en el borrador</Boton>;
   if (esBloqueoApoderados(mensaje)) return <Boton href={`${base}/borrador`}>Ir al borrador</Boton>;
@@ -189,6 +192,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
   const [confirmar, setConfirmar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  const [rechazo, setRechazo] = useState<{ cuerpo: string; hallazgos: Hallazgo[] } | null>(null);
   const [apoderados, setApoderados] = useState<ApoderadosRespuesta | null>(null);
   const [consultaApoderados, setConsultaApoderados] = useState(0);
   const cambiar: Cambiar = (fn) => setF(fn);
@@ -207,10 +211,16 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
   }, [caso, f]);
 
   const decision = useMemo(() => aDecision(f), [f]);
+  const cuerpoActual = useMemo(() => JSON.stringify(decision), [decision]);
   const vista = useVistaPrevia(caso, decision, f.resultado !== "");
+  // Lo que el servidor rechazó solo vale mientras el formulario siga igual: al editar, vuelve a mandar la vista previa.
+  const rechazados = useMemo(
+    () => (rechazo && rechazo.cuerpo === cuerpoActual ? rechazo.hallazgos : []),
+    [rechazo, cuerpoActual],
+  );
   const hallazgos = useMemo(
-    () => combinar(hallazgosLocales(f), vista.pendiente ? [] : (vista.datos?.faltantes ?? [])),
-    [f, vista.pendiente, vista.datos],
+    () => combinar(hallazgosLocales(f), [...(vista.pendiente ? [] : (vista.datos?.faltantes ?? [])), ...rechazados]),
+    [f, vista.pendiente, vista.datos, rechazados],
   );
   const err = (campo: string) => (mostrar ? hallazgos.find((h) => h.campo === campo)?.mensaje : undefined);
   const vistaLista = vista.datos && !vista.pendiente && !vista.error ? vista.datos : null;
@@ -245,11 +255,23 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
         : "Listo para enviar.";
   const faltanteServidor = hallazgos.map((h) => h.mensaje).filter((m, i, l) => l.indexOf(m) === i);
 
+  const mostrarErrores = (lista: Hallazgo[] = hallazgos) => {
+    setMostrar(true);
+    const primero = lista.find((h) => idDeCampo(f, h.campo));
+    requestAnimationFrame(() => enfocar(primero ? idDeCampo(f, primero.campo) : "dec-resumen-errores"));
+  };
+
+  // La vista previa puede llegar con faltantes cuando el diálogo ya está abierto: se cierra y se muestran los motivos.
+  useEffect(() => {
+    if (confirmar && !enviando && hallazgos.length > 0) {
+      setConfirmar(false);
+      mostrarErrores();
+    }
+  }, [confirmar, enviando, hallazgos]);
+
   const intentar = () => {
     if (hallazgos.length) {
-      setMostrar(true);
-      const primero = hallazgos.find((h) => idDeCampo(f, h.campo));
-      requestAnimationFrame(() => enfocar(primero ? idDeCampo(f, primero.campo) : "dec-resumen-errores"));
+      mostrarErrores();
       return;
     }
     const sinClave = proveedorSinClave(estadoServidor.value, proveedor);
@@ -262,6 +284,11 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
   };
 
   const enviar = async () => {
+    if (hallazgos.length) {
+      setConfirmar(false);
+      mostrarErrores();
+      return;
+    }
     setEnviando(true);
     try {
       const { job_id } = await api.post<JobInicio>(`/api/casos/${codificar(caso)}/run`, { cmd: "decidir", decision });
@@ -270,6 +297,13 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
     } catch (e) {
       setConfirmar(false);
       setEnviando(false);
+      const rechazadosPorElServidor = e instanceof ErrorApi && e.estado === 422 ? leerHallazgos(e.detalle) : null;
+      if (rechazadosPorElServidor) {
+        setRechazo({ cuerpo: cuerpoActual, hallazgos: rechazadosPorElServidor });
+        setErrorEnvio(RECHAZADA);
+        mostrarErrores(combinar(hallazgos, rechazadosPorElServidor));
+        return;
+      }
       if (e instanceof ErrorApi && e.estado === 409) {
         // El servidor explica el 409 (conflictos de edición, apoderados sin revisar o una ejecución en curso).
         setErrorEnvio(typeof e.detalle === "string" && e.message ? e.message : EN_CURSO);
@@ -369,7 +403,7 @@ function Editor({ caso, payload, proveedor, config, bloqueado, base }: PropsEdit
             <Boton disabled={enviando} onClick={() => setConfirmar(false)}>
               Revisar
             </Boton>
-            <Boton variante="sello" cargando={enviando} onClick={() => void enviar()} data-enfoque>
+            <Boton variante="sello" cargando={enviando} disabled={hallazgos.length > 0} onClick={() => void enviar()} data-enfoque>
               Enviar decisión
             </Boton>
           </>

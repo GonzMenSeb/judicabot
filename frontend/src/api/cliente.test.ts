@@ -36,6 +36,25 @@ describe("peticion: errores de red", () => {
   });
 });
 
+describe("peticion: detalle con objeto", () => {
+  it("un 422 con detail { mensaje, errores } deja message en el texto de mensaje y conserva el objeto", async () => {
+    const detail = { mensaje: "Su decisión no se aplicó: x.", errores: [] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ detail }, 422)));
+    const error = await api.post("/api/casos/x/run", {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ErrorApi);
+    expect(error).toMatchObject({ estado: 422, detalle: detail, message: "Su decisión no se aplicó: x." });
+  });
+
+  it.each([{ errores: [] }, { mensaje: "   ", errores: [] }, { mensaje: 4 }])(
+    "sin un mensaje de texto útil en %j sigue siendo «Error 422»",
+    async (detail) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ detail }, 422)));
+      const error = await api.post("/api/casos/x/run", {}).catch((e: unknown) => e);
+      expect(error).toMatchObject({ estado: 422, detalle: detail, message: "Error 422" });
+    },
+  );
+});
+
 describe("esCasoNoEncontrado", () => {
   it("reconoce el 404 del caso, con o sin punto final", () => {
     expect(esCasoNoEncontrado(new ErrorApi(404, "Caso no encontrado.", "Caso no encontrado."))).toBe(true);

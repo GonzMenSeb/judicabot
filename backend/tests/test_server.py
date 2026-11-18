@@ -338,6 +338,69 @@ def test_decidir_pasa_la_decision_intacta_a_api(cliente, caso, api):
     assert api.llamadas[0][2] == decision
 
 
+DECISION_COMPLETA = {
+    "accion": "decidir",
+    "resultado": "REVOCAR",
+    "sustitutiva": "AMPARAR",
+    "eje": "Procede el amparo.",
+    "ordenes": [{"destinatario": "la EPS X", "conducta": "cumpla", "plazo": {"n": 24, "unidad": "horas_habiles"}}],
+}
+
+
+def _con_plazo(n) -> dict:
+    return {**DECISION_COMPLETA, "ordenes": [{"destinatario": "la EPS X", "conducta": "cumpla", "plazo": {"n": n, "unidad": "dias"}}]}
+
+
+# (decisión, campos rechazados, mensaje exacto o None si solo se fija el campo)
+DECISIONES_RECHAZADAS = [
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": "20266-11-17"}, ["fecha_fallo"], None, id="fecha-de-seis-digitos"),
+    # La vista previa recorta la fecha y la acepta; el grafo no: la compuerta tiene que rechazarla igual.
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": " 2026-11-17"}, ["fecha_fallo"], None, id="fecha-con-espacio"),
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": ""}, ["fecha_fallo"], None, id="fecha-vacia"),
+    pytest.param(
+        _con_plazo(10_000_000), ["ordenes.0.plazo.n"], "El plazo de la orden 1 no puede superar 999.999.", id="plazo-enorme"
+    ),
+    pytest.param(_con_plazo(-5), ["ordenes.0.plazo.n"], "El plazo de cada orden debe ser mayor que cero.", id="plazo-negativo"),
+    pytest.param(_con_plazo(1.5), ["ordenes.0.plazo.n"], "El plazo de cada orden debe ser un número entero.", id="plazo-decimal"),
+    pytest.param({"accion": "rehacer_apertura"}, ["instruccion"], None, id="rehacer-sin-instruccion"),
+    pytest.param({**DECISION_COMPLETA, "eje": ""}, ["eje"], "Falta el eje: 2 a 5 líneas con el porqué de la decisión.", id="sin-eje"),
+]
+
+
+@pytest.mark.parametrize("decision, campos, mensaje", DECISIONES_RECHAZADAS)
+def test_run_decidir_rechaza_la_decision_invalida_sin_crear_el_job(cliente, caso, api, decision, campos, mensaje):
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": decision})
+    assert r.status_code == 422
+    detalle = r.json()["detail"]
+    assert [e["campo"] for e in detalle["errores"]] == campos
+    assert all(e["mensaje"] for e in detalle["errores"])
+    if mensaje:
+        assert detalle["errores"][0]["mensaje"] == mensaje
+    assert detalle["mensaje"].startswith("Su decisión no se aplicó: ")
+    assert detalle["errores"][0]["mensaje"] in detalle["mensaje"]
+    assert server.JOBS == {}
+    assert api.llamadas == []
+
+
+def test_run_decidir_rechaza_antes_de_mirar_si_hay_otra_ejecucion(cliente, caso, api):
+    api.soltar.clear()
+    try:
+        assert cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"}).status_code == 200
+        r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": {"accion": "rehacer_apertura"}})
+        assert r.status_code == 422 and r.json()["detail"]["errores"][0]["campo"] == "instruccion"
+    finally:
+        api.soltar.set()
+        for job in list(server.JOBS):
+            _esperar(cliente, job)
+
+
+def test_run_decidir_rehacer_valido_pasa_la_compuerta(cliente, caso, api):
+    decision = {"accion": "rehacer_apertura", "instruccion": "Más breve."}
+    job_id = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": decision}).json()["job_id"]
+    assert _esperar(cliente, job_id)["estado"] == "terminado"
+    assert api.llamadas[0][2] == decision
+
+
 def test_estado_incluye_job_activo_y_falla_con_mensaje(cliente, caso, api, tmp_path):
     api.modulo.estado = lambda caso_dir: (_ for _ in ()).throw(RuntimeError("sqlite roto"))
     r = cliente.get(f"/api/casos/{caso}/estado")
