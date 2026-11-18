@@ -581,9 +581,15 @@ def _anio_despues(der: str) -> tuple[int, int] | None:
         if _es_cifra(t):
             break
         palabras.append(t)
+    if palabras:  # «dos mil veintiséls (2026)»: con el año entre paréntesis tras las palabras manda cuando lo hay, como en main
+        cierre = re.match(r"\s*\(\s*([0-9]\.?[0-9]{3})\s*\)", der[palabras[-1].end() :])
+        if cierre:
+            return int(cierre.group(1).replace(".", "")), palabras[-1].end() + cierre.end()
     for k in range(len(palabras), 0, -1):
+        if k < len(palabras) and _plano(palabras[k].group()) == "y":  # «dos mil veinte y seis»: la «y» sigue el número
+            continue
         n = letras_a_entero(" ".join(p.group() for p in palabras[:k]))
-        if n and 1900 <= n <= 2100:
+        if n and 1900 <= n <= 2100 and n % 100:  # «dos mil» solo es lo que queda de un año ilegible («dos mil veintis3is»)
             fin = palabras[k - 1].end()
             entre_parentesis = re.match(r"\s*\(\s*\d\.?\d{3}\s*\)", der[fin:])
             return n, fin + (entre_parentesis.end() if entre_parentesis else 0)

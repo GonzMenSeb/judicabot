@@ -1136,6 +1136,35 @@ def test_fechas_en_lee_una_marca_ordinal_tras_el_dia_o_el_anio(texto, iso):
     assert [i for _, i in fechas_en(texto)] == [iso]
 
 
+@pytest.mark.parametrize(
+    "texto,iso",
+    [
+        ("28 de septiembre de dos mil (2026)", "2026-09-28"),  # main lee el año entre paréntesis
+        ("veintiocho (28) de septiembre de dos mil veintiséls (2026)", "2026-09-28"),  # OCR en la palabra del año
+        ("(28) de septiembre del año dos mil veintiséls (2.026)", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséls (2026) y más texto", "2026-09-28"),
+        # sin el año en cifras, «dos mil» solo es lo que queda de un año ilegible: nunca el 2000
+        ("28 de septiembre de dos mil veintis3is", None),
+        ("veintiocho (28) de septiembre de dos mil veintiséls", None),
+        ("28 de septiembre de dos mil", None),
+        ("28 de septiembre de mil novecientos", None),
+        ("28 de septiembre de dos mil veinte y seis", None),  # «veinte y seis» no se lee: no vale «dos mil veinte»
+        ("28 de septiembre de dos mil veinte y seis (2026)", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("28 de septiembre de dos mil diez", "2010-09-28"),
+    ],
+)
+def test_fechas_en_el_anio_entre_parentesis_manda_y_dos_mil_solo_no_es_un_anio(texto, iso):
+    halladas = fechas_en(texto)
+    assert (halladas[0][1] if halladas else None) == iso
+
+
+def test_fecha_del_encabezado_con_la_palabra_del_anio_ilegible_vale_por_su_parentesis():
+    cabecera = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n"
+    assert ingest._fecha_encabezado(cabecera + "Medellín, veintiocho (28) de septiembre de dos mil veintiséls (2026)" + CUERPO_CON_FECHAS) == "2026-09-28"
+    assert ingest._fecha_encabezado(cabecera + "Medellín, veintiocho de septiembre de dos mil veintis3is" + CUERPO_CON_FECHAS) is None
+
+
 def test_fechas_en_con_cifras_de_otros_alfabetos_lee_lo_mismo_que_main():
     # \d y int() de main aceptan las cifras decimales de cualquier alfabeto: «２８ de septiembre de ２０２６»
     for texto in ("２８ de septiembre de ２０２６", "٢٨ de septiembre de ٢٠٢٦", "२८ de septiembre de २०२६"):
