@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import threading
+import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
@@ -512,9 +513,14 @@ def _dia_antes(izq: str) -> tuple[int, int] | None:
         dia = ultimo.group().rstrip(_ORDINAL)
         if len(dia) > 2:
             return None
-        en_letras = re.search(r"((?:[^\W\d_]+\s+){0,2}[^\W\d_]+)\s*\(\s*$", izq[: ultimo.start()])  # «veintiocho (28)»
-        if en_letras and letras_a_entero(en_letras.group(1)) == int(dia):
-            return int(dia), en_letras.start(1)
+        # «veintiocho (28)», con a lo sumo una palabra más antes (día de la semana, «a»); sin cruzar renglones
+        en_letras = re.search(r"((?:[^\W\d_]+[ \t]+){0,2}[^\W\d_]+)[ \t]*\([ \t]*$", izq[: ultimo.start()])
+        if en_letras:
+            palabras = list(re.finditer(r"[^\W\d_]+", en_letras.group(1)))
+            for k in range(1, len(palabras) + 1):
+                ini = palabras[-k].start()
+                if letras_a_entero(en_letras.group(1)[ini:]) == int(dia):
+                    return int(dia), en_letras.start(1) + ini
         return int(dia), ultimo.start()
     for k in range(min(3, j), 0, -1):
         grupo = tokens[j - k : j]
@@ -552,10 +558,10 @@ def _anio_despues(der: str) -> tuple[int, int] | None:
     return None
 
 
-def _fechas_con_mes(texto: str) -> list[tuple[int, str | None]]:
+def _fechas_con_mes(texto: str) -> list[tuple[int, int, str | None]]:
     """Fechas con el mes escrito (completo o abreviado), con día y año en cifras o en letras, en el orden
     «día de mes de año» («28 de sep. de 2026», «veintiocho de septiembre de dos mil veintiséis»,
-    «28-sep-2026») o «mes día de año» («septiembre 28 de 2026»). Devuelve (posición del inicio, ISO)."""
+    «28-sep-2026») o «mes día de año» («septiembre 28 de 2026»). Devuelve (inicio, fin, ISO)."""
     halladas = []
     for m in _MES.finditer(texto):
         clave = _plano(m.group(1))
@@ -566,68 +572,143 @@ def _fechas_con_mes(texto: str) -> list[tuple[int, str | None]]:
         if dia is not None:
             anio = _anio_despues(der)
             if anio:
-                halladas.append((desde + dia[1], _iso(str(anio[0]), mes, str(dia[0]))))
+                halladas.append((desde + dia[1], m.end() + anio[1], _iso(str(anio[0]), mes, str(dia[0]))))
             continue
         d = re.match(r"\s*(\d{1,2})(?!\d)", der)
         anio = _anio_despues(der[d.end() :]) if d else None
         if d and anio:
-            halladas.append((m.start(), _iso(str(anio[0]), mes, d.group(1))))
+            halladas.append((m.start(), m.end() + d.end() + anio[1], _iso(str(anio[0]), mes, d.group(1))))
     return halladas
 
 
-def fechas_en(texto: str) -> list[tuple[int, str]]:
+def _fechas(texto: str) -> list[tuple[int, int, str]]:
+    """Todas las fechas del texto como (inicio, fin, ISO), por posición."""
     halladas = _fechas_con_mes(texto)
     halladas += [
-        (m.start(), _iso(m.group(3), m.group(2), m.group(1)))
+        (m.start(), m.end(), _iso(m.group(3), m.group(2), m.group(1)))
         for m in _F_NUM.finditer(texto)
     ]
     halladas += [
-        (m.start(), _iso(m.group(1), m.group(2), m.group(3)))
+        (m.start(), m.end(), _iso(m.group(1), m.group(2), m.group(3)))
         for m in _F_ISO.finditer(texto)
     ]
-    return sorted((pos, iso) for pos, iso in halladas if iso)
+    return sorted((pos, fin, iso) for pos, fin, iso in halladas if iso)
+
+
+def fechas_en(texto: str) -> list[tuple[int, str]]:
+    return [(pos, iso) for pos, _, iso in _fechas(texto)]
 
 
 _OFICIO = re.compile(r"oficio\s+(?:no|n[°º.]|\d)|adjunt\w+\s+(?:el\s+)?(?:fallo|sentencia)")
 VENTANA_OFICIO = 500
-
+ZONA_ENCABEZADO = 1500  # caracteres desde el inicio; el encabezado no está más lejos
 
 _PALABRA_MAYUS = r"[A-ZÁÉÍÓÚÑ][^\W\d_]*\.?(?:[A-Z]\.)*"
-_LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)?{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
-# «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «Medellín (Antioquia), », «Medellín, Antioquia, », «Medellín, martes »
-_CIUDAD_Y_COMA = re.compile(rf"^\s*{_LUGAR}(?:\s*,\s*{_LUGAR})?\s*,\s*(?:[^\W\d_]{{4,10}}\s+)?$")
-_ROTULO_FECHA = re.compile(r"^\s*(?:fecha(?:\s+de(?:\s+la)?\s+[^\W\d_]+)?\s*:?\s*)?$", re.I)
+_LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)*{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
+_LUGARES = rf"{_LUGAR}(?:(?:\s*,\s*|\s+[-–—]\s+){_LUGAR})?"  # «Medellín», «Medellín, Antioquia», «Medellín - Antioquia»
+_ANTES_DE_LA_FECHA = r"(?:(?:a|el)\s+)?(?:[^\W\d_]{3,10}\.?,?\s*)?"  # «a», día de la semana (con o sin coma)
+# «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «San Pedro de los Milagros, », «Medellín (Antioquia), »,
+# «Medellín, Antioquia, », «Medellín, Antioquia. », «Medellín, martes, », «Medellín, a »
+_CIUDAD_Y_COMA = re.compile(rf"^\s*{_LUGARES}(?:\s*,\s*|(?<=\.)\s+){_ANTES_DE_LA_FECHA}$")
+_CIUDAD_SOLA = re.compile(rf"^\s*{_LUGARES}\s*$")  # «Medellín » (sin coma)
+# «medellín, » (minúscula), «Medellín; », «Medellín – »: tiene forma de lugar y separador pero no se lee como encabezado
+_LUGAR_CON_SEPARADOR = re.compile(
+    r"^\s*[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){0,3}\s*[,;–—-]\s*(?:[^\W\d_]{3,10}\.?,?\s*)?$"
+)
+# renglón «Ciudad, <cifras>» cuya fecha no se pudo leer («Medellín, 28.IX.2026», «Medellín, Sept. 28/26»)
+_CIUDAD_Y_CIFRAS = re.compile(rf"^\s*{_LUGARES}\s*,\s*{_ANTES_DE_LA_FECHA}\d{{1,2}}(?!\d)")
+# fecha en cifras o números romanos que el lector no entiende: «28.IX.2026», «28/09/26»
+_FECHA_DUDOSA = re.compile(r"(?<![\d/.\-])\d{1,2}[/.\-](?:[IVX]{1,4}|\d{1,2})[/.\-]\d{2,4}(?![\d/])", re.I)
+_ROTULO_FECHA = re.compile(
+    r"^\s*(?:fecha(?:\s+(?:de\s+la|del|de)\s+(?:providencia|sentencia|auto|fallo|decisi[oó]n))?\s*:?\s*)?$", re.I
+)
+# primer renglón del cuerpo: el encabezado queda antes
+_SECCION = re.compile(
+    r"^[ \t]*(?:(?:[IVX]+|\d{1,2})[.)\-][ \t]*)?"
+    r"(?:(?:HECHOS|ANTECEDENTES|CONSIDERACIONES|FUNDAMENTOS|PRETENSIONES)\b|PRIMERO[.:)\-]|\d{1,2}[.)][ \t])",
+    re.M | re.I,
+)
 
 
 def _fecha_encabezado(texto: str) -> str | None:
-    """Fecha del encabezado de la providencia. Solo vale la que está en el encabezado: «Ciudad, <fecha>»
-    (lugar con mayúsculas, coma y, si acaso, el día de la semana antes de la fecha) o la fecha sola en su
-    renglón, con «Fecha:» opcional. Si el encabezado no se puede leer devuelve None: nunca se sustituye por
-    otra fecha del cuerpo (hechos, términos)."""
-    texto = texto[:6000]
+    """Fecha del encabezado de la providencia. Solo vale la que está en el encabezado (el comienzo del
+    documento, antes del cuerpo), en dos niveles: primero «Ciudad, <fecha>» (lugar con mayúsculas, coma y, si
+    acaso, el día de la semana antes de la fecha) y solo si no hay ninguna así, la fecha sola en su renglón
+    (con «Fecha:» opcional). Si el encabezado no se puede leer devuelve None: nunca se sustituye por otra
+    fecha del cuerpo (hechos, términos), ni cuando hay un «Ciudad, <cifras>» ilegible."""
+    texto = unicodedata.normalize("NFC", texto)[:6000]
+    seccion = _SECCION.search(texto)
+    zona = min(seccion.start() if seccion else len(texto), ZONA_ENCABEZADO)
+    fechas = [f for f in _fechas(texto[: zona + 200]) if f[0] < zona]
 
-    def renglon(pos: int) -> tuple[str, str]:
-        ini = texto.rfind("\n", 0, pos) + 1
+    def ini_renglon(pos: int) -> int:
+        return texto.rfind("\n", 0, pos) + 1
+
+    def fin_renglon(pos: int) -> int:
         fin = texto.find("\n", pos)
-        return texto[ini:pos], texto[pos : fin if fin >= 0 else len(texto)]
+        return fin if fin >= 0 else len(texto)
 
-    def es_encabezado(pos: int) -> bool:
-        antes, despues = renglon(pos)
-        columna = re.split(r"\s{3,}", antes)[-1]  # «JUZGADO …      Medellín, » en columnas (pdftotext -layout)
-        if "," in columna and _CIUDAD_Y_COMA.search(columna):
-            return True
-        resto = re.sub(r"^.*?\d{4}\)?", "", despues, count=1).strip(" .,;\r\t")  # \r: saltos de línea de pdfium
-        return _ROTULO_FECHA.match(antes) is not None and not resto
+    def antes_de(pos: int) -> str:
+        return texto[ini_renglon(pos) : pos]
 
-    candidatas = [(pos, iso) for pos, iso in fechas_en(texto) if es_encabezado(pos)]
-    propias = [
-        (pos, iso)
-        for pos, iso in candidatas
-        if not _OFICIO.search(_plano(texto[pos : pos + VENTANA_OFICIO]))
+    def columna(pos: int) -> str:  # «JUZGADO …      Medellín, » en columnas (pdftotext -layout)
+        antes = antes_de(pos)
+        sin_cola = antes.rstrip()
+        return re.split(r"\s{3,}|\t", sin_cola)[-1] + antes[len(sin_cola) :]
+
+    def cola(fin: int) -> str:  # \r: saltos de línea de pdfium
+        return texto[fin : fin_renglon(fin)].strip("\r")
+
+    def con_ciudad(pos: int, fin: int) -> bool:
+        if not _CIUDAD_Y_COMA.search(columna(pos)):
+            return False
+        resto = re.split(r"[ \t]{3,}", cola(fin))[0]  # otra columna a la derecha
+        return not re.match(r"[\s.,;:)\-–—]*[a-záéíóúüñ]", resto)  # «…2026: la accionante radicó», «…2026 ocurrió»
+
+    def a_medias(pos: int) -> bool:  # el renglón anterior sigue en este: «…mediante oficio del» ⏎ «20 de agosto…»
+        previo = texto[: ini_renglon(pos)].rstrip()
+        linea = previo[previo.rfind("\n") + 1 :].rstrip()
+        ultima = re.search(r"([^\W\d_]+)[\s)\"'»”]*$", linea)
+        return bool(linea) and (linea[-1] in ",;" or bool(ultima and ultima.group(1)[0].islower()))
+
+    def sola(pos: int, fin: int) -> bool:
+        antes = antes_de(pos)
+        if not _ROTULO_FECHA.match(antes) or cola(fin).strip(" .,;\t"):
+            return False
+        return antes.strip() != "" or not a_medias(pos)
+
+    def propias(candidatas: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+        return [c for c in candidatas if not _OFICIO.search(_plano(texto[c[0] : c[0] + VENTANA_OFICIO]))]
+
+    ciudad = [f for f in fechas if con_ciudad(f[0], f[1])]
+    leidos = {ini_renglon(f[0]) for f in ciudad}
+    # Renglón con aire de «Ciudad, fecha» que no se leyó: el encabezado existe pero es ilegible
+    # («Medellín, 28.IX.2026», «Medellín 28 de septiembre de 2026», «medellín, 28 de …») o fecha que no se entiende.
+    sin_leer = [
+        m.start()
+        for m in re.finditer(r"^.*$", texto[:zona], re.M)
+        if m.start() not in leidos and any(_CIUDAD_Y_CIFRAS.match(c) for c in re.split(r"\s{3,}|\t", m.group()))
     ]
-    for _, iso in propias or candidatas:
-        return iso
-    return None
+    sin_leer += [
+        ini_renglon(f[0])
+        for f in fechas
+        if f not in ciudad
+        and not _ROTULO_FECHA.match(antes_de(f[0]))
+        and (_CIUDAD_SOLA.match(columna(f[0])) or _LUGAR_CON_SEPARADOR.match(columna(f[0])))
+    ]
+    sin_leer += [
+        ini_renglon(m.start())
+        for m in _FECHA_DUDOSA.finditer(texto[:zona])
+        if not any(f[0] < m.end() and m.start() < f[1] for f in fechas)
+    ]
+    ciudad = [f for f in ciudad if f[0] < min(sin_leer, default=len(texto))]
+    if ciudad:
+        return (propias(ciudad) or ciudad)[0][2]
+    if sin_leer:  # hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen
+        return None
+    solas = [f for f in fechas if sola(f[0], f[1])]
+    elegidas = propias(solas) or solas
+    return elegidas[0][2] if elegidas else None
 
 
 def _fecha_correo(texto: str) -> str | None:
@@ -967,7 +1048,7 @@ def _nombra_al_caso(
 def _alertas_fechas(legibles: list[Doc], fechas: Fechas) -> list[str]:
     alertas = []
     for rol, valor, de_que, marca in (
-        ("fallo_a_quo", fechas.fallo_a_quo, "del fallo de primera instancia", "⟦FALTA: fecha⟧ en el fallo"),
+        ("fallo_a_quo", fechas.fallo_a_quo, "del fallo de primera instancia", "⟦FALTA: fecha⟧ en el fallo y ⟦FALTA: fecha de la providencia⟧ en el formato de calidad"),
         ("auto_admisorio", fechas.admision, "del auto admisorio", "⟦FALTA: fecha de admisión⟧ en el formato de calidad"),
     ):
         d = next((d for d in legibles if d.rol == rol), None)
