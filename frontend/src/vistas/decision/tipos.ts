@@ -82,6 +82,8 @@ export interface Formulario {
   decididoPor: string;
   reparos: ReparoForm[];
   derechos: DerechoForm[];
+  /** Derechos extraídos con los que se armó el formulario; opcional para no invalidar borradores anteriores. */
+  derechosBase?: string[];
   ordenes: OrdenForm[];
   desvincular: string;
   prevenir: string;
