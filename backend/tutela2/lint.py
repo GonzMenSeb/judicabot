@@ -655,6 +655,10 @@ _CONECTIVO_DECISION = (
     r"(?:por\s+lo\s+(?:expuesto|anterior|tanto)|por\s+(?:tanto|consiguiente)|en\s+consecuencia|as[ií]\s+las\s+cosas"
     r"|en\s+(?:el\s+presente|este)\s+caso|en\s+conclusi[oó]n)"
 )
+# Fin de oración tras el que el sujeto de «deber» queda implícito. El punto de una sigla o abreviatura («S.A.», «E.P.S.»,
+# «Dr.») no cierra la oración: lo que sigue («deberá confirmar la cita») sigue siendo de ese sujeto.
+_ABREVIATURAS = ("dr", "dra", "sr", "sra", "ltda", "cía", "inc")
+_FIN_DE_ORACION = r"(?:[;:!?]|(?<!\b[a-zñ])" + "".join(rf"(?<!\b{a})" for a in _ABREVIATURAS) + r"\.)"
 # Un infinitivo solo anuncia la decisión si lo rige una fórmula de decisión («corresponde revocar», «debe revocar»)
 # o una coordinación que arranca en ella («…y negar el amparo»). «Al negar», «decidió negar» o «sin amparar»
 # describen o niegan, no anuncian; y tras un «que» ya no se sabe quién actúa.
@@ -667,7 +671,7 @@ _ANUNCIO_INFINITIVO = re.compile(
     # «la accionada deberá confirmar la cita» o «la EPS, por tanto, deberá confirmarla» no anuncian nada.
     rf"|(?:\b(?:despacho|juzgado|sala)(?:\s*,\s*{_CONECTIVO_DECISION}\s*,)?\s+"
     r"|\b(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que\s+"
-    rf"|(?:^|[.;:!?])\s*(?:{_CONECTIVO_DECISION}\s*,\s*)*)\b(?:deber[aá]n?|deben?)\b"
+    rf"|(?:^|{_FIN_DE_ORACION})\s*(?:{_CONECTIVO_DECISION}\s*,\s*)*)\b(?:deber[aá]n?|deben?)\b"
 )
 _COORDINADO = re.compile(
     r"(?:\b(?:y|e|o)\s+(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n)\s*,?\s*)?"

@@ -1342,6 +1342,12 @@ def test_coherencia_decision_deber_con_sujeto_el_despacho_anuncia_un_resultado_c
         "Corresponde revocar el fallo y amparar el derecho a la salud; el hospital, por su parte, deberá confirmar la cita.",
         "Corresponde revocar el fallo y amparar el derecho a la salud; la Nueva EPS S.A., desde ahora, deberá confirmar la cita.",
         "Corresponde revocar el fallo y amparar el derecho a la salud, y la EPS, así las cosas, deberá confirmar la cita.",
+        # El punto de una sigla o abreviatura no cierra la oración: el sujeto sigue siendo la entidad.
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la Nueva EPS S.A. deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la Nueva EPS S.A.S. debe confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la E.P.S. deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la Clínica Los Andes Ltda. deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la Dra. deberá confirmar la cita.",
     ],
 )
 def test_coherencia_decision_deber_de_un_tercero_no_anuncia_el_resultado(conclusion):
