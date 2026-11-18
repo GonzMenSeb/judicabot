@@ -426,6 +426,33 @@ export function guardarRevisados(clave: string, revisados: ReadonlySet<string>, 
   }
 }
 
+/** La instrucción en una sola línea y de largo acotado (con «…» si se cortó), para citarla en un aviso. */
+export function resumirInstruccion(texto: string, max = 140): string {
+  const plano = texto.replace(/\s+/g, " ").trim();
+  return plano.length > max ? `${plano.slice(0, max - 1).trimEnd()}…` : plano;
+}
+
+export const claveCorreccionVista = (caso: string): string => `judicabot:correccion-vista:${caso}`;
+
+/** La fecha de la última corrección cuyo aviso ya se descartó en este navegador (una preferencia, no un estado fiable). */
+export function leerCorreccionVista(caso: string): string | null {
+  try {
+    const crudo = localStorage.getItem(claveCorreccionVista(caso));
+    const valor: unknown = crudo ? JSON.parse(crudo) : null;
+    return typeof valor === "string" ? valor : null;
+  } catch {
+    return null;
+  }
+}
+
+export function guardarCorreccionVista(caso: string, fecha: string): void {
+  try {
+    localStorage.setItem(claveCorreccionVista(caso), JSON.stringify(fecha));
+  } catch {
+    return;
+  }
+}
+
 export function limitePasos(estado: EstadoCaso | null): EtapaPaso {
   if (estado?.estado === "esperando_decision") return "decision";
   if (estado?.estado === "terminado") return "fallo";

@@ -48,6 +48,8 @@ export interface ResumenEstado {
   jev_metadatos?: JevMetadatos | null;
   alertas?: AlertasApi | null;
   bitacora?: LlamadaBitacora[] | null;
+  /** La última decisión del caso (`accion`, `instruccion` y `fecha`); tras una corrección, `rehacer_*`. */
+  decision?: { accion?: string; instruccion?: string; fecha?: string } | null;
 }
 
 export interface EstadoCaso {

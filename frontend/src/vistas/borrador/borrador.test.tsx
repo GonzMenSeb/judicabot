@@ -1520,4 +1520,142 @@ describe("Pedir correcciones", () => {
     expect(screen.queryByRole("link", { name: "Pasar a la decisión" })).toBeNull();
     expect(screen.getByText("Pasar a la decisión").closest("a")?.getAttribute("aria-disabled")).toBe("true");
   });
+  const INSTRUCCION_PLANTILLA =
+    'En la sección Competencia agregue que el Despacho es competente por el factor territorial y elimine la mención al Decreto 2591 de 1991. En la transición diga "A continuación se resuelve el caso".';
+  const avisosAlcance = () => document.getElementById("bor-avisos-alcance") as HTMLElement;
+
+  it("avisa sin bloquear cuando la instrucción toca texto de plantilla", async () => {
+    const llamadas = simularRed();
+    await abrirDialogo();
+    expect(avisosAlcance().getAttribute("role")).toBe("status");
+    expect(avisosAlcance().textContent).toBe("");
+    fireEvent.click(screen.getByRole("radio", { name: /Rehacer las consideraciones/ }));
+    fireEvent.input(screen.getByLabelText("Qué debe corregir"), { target: { value: INSTRUCCION_PLANTILLA } });
+    expect(within(avisosAlcance()).getByText(/son texto fijo de la plantilla: una corrección no los cambia/)).toBeTruthy();
+    expect(within(avisosAlcance()).queryByText(/RESUELVE/)).toBeNull();
+    expect(screen.getByLabelText("Qué debe corregir").getAttribute("aria-describedby")).toContain("bor-avisos-alcance");
+    const rehacer = screen.getByRole("button", { name: "Rehacer" }) as HTMLButtonElement;
+    expect(rehacer.disabled).toBe(false);
+    fireEvent.click(rehacer);
+    await waitFor(() => expect(location.hash).toBe(`#/segunda/${CASO}/proceso`));
+    const envio = llamadas.find((l) => l.metodo === "POST");
+    expect((envio?.cuerpo as { decision: { accion: string } }).decision.accion).toBe("rehacer_consideraciones");
+  });
+
+  it("avisa si la instrucción no corresponde a la opción", async () => {
+    simularRed();
+    await abrirDialogo();
+    fireEvent.click(screen.getByRole("radio", { name: /Rehacer las consideraciones/ }));
+    fireEvent.input(screen.getByLabelText("Qué debe corregir"), {
+      target: { value: "En los antecedentes falta la fecha en que se presentó la tutela; agréguela." },
+    });
+    expect(within(avisosAlcance()).getByText(/solo cambia la sección V/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /Rehacer la apertura/ }));
+    expect(within(avisosAlcance()).queryByText(/solo cambia la sección V/)).toBeNull();
+    expect(avisosAlcance().textContent).toBe("");
+    fireEvent.input(screen.getByLabelText("Qué debe corregir"), { target: { value: "En inmediatez cite la regla de plazo razonable de seis meses." } });
+    expect(within(avisosAlcance()).getByText(/«Rehacer la apertura» cambia las secciones I a IV/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Rehacer" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("explica siempre qué no cambia una corrección", async () => {
+    simularRed();
+    await abrirDialogo();
+    const nota = document.getElementById("bor-nota-plantilla") as HTMLElement;
+    expect(nota.textContent).toContain("Una corrección no cambia el texto fijo de la plantilla");
+    expect(nota.textContent).toContain("el RESUELVE sale de su decisión");
+    expect(nota.textContent).toContain("«Editar texto»");
+    expect(within(avisosAlcance()).queryByRole("alert")).toBeNull();
+    const apertura = screen.getByRole("radio", { name: /Rehacer la apertura/ }).closest("label") as HTMLElement;
+    expect(apertura.textContent).toContain("Secciones I a IV");
+    expect(document.getElementById("bor-op-det-rehacer_apertura")?.textContent?.endsWith("no se conservan.")).toBe(true);
+  });
+});
+
+describe("Última corrección", () => {
+  const conDecision = (decision: NonNullable<EstadoCaso["resumen"]>["decision"], extra: Partial<EstadoCaso> = {}): EstadoCaso => {
+    const estado = structuredClone(ESTADO_BORRADOR);
+    estado.resumen = { ...estado.resumen, decision };
+    return { ...estado, ...extra };
+  };
+  const FECHA = "2026-11-17T10:00:00+00:00";
+  const CONSIDERACIONES = { accion: "rehacer_consideraciones", instruccion: "Reemplace la cita c2.", fecha: FECHA };
+  const textoConsideraciones = /Se rehizo la sección V según su corrección/;
+  const textoApertura = /Se rehicieron las secciones I a IV según su corrección/;
+
+  it("dice qué se rehizo y qué instrucción se envió, y «Entendido» lo oculta para esa corrección", async () => {
+    simularRed({ estado: conDecision(CONSIDERACIONES) });
+    await abrir();
+    const aviso = await screen.findByText(textoConsideraciones);
+    expect(aviso.textContent).toBe(
+      "Se rehizo la sección V según su corrección: «Reemplace la cita c2.». El resto del borrador, incluido el texto fijo de la plantilla, quedó igual.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Entendido" }));
+    expect(screen.queryByText(textoConsideraciones)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(`judicabot:correccion-vista:${CASO}`) ?? "null")).toBe(FECHA);
+    cleanup();
+    simularRed({ estado: conDecision(CONSIDERACIONES) });
+    await abrir();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Pedir correcciones" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText(textoConsideraciones)).toBeNull();
+  });
+
+  it("reaparece cuando la última corrección es otra", async () => {
+    localStorage.setItem(`judicabot:correccion-vista:${CASO}`, JSON.stringify(FECHA));
+    simularRed({ estado: conDecision({ ...CONSIDERACIONES, fecha: "2026-11-17T11:30:00+00:00" }) });
+    await abrir();
+    expect(await screen.findByText(textoConsideraciones)).toBeTruthy();
+  });
+
+  it("con «Rehacer la apertura» dice que las consideraciones se rehicieron desde cero", async () => {
+    simularRed({ estado: conDecision({ accion: "rehacer_apertura", instruccion: "El a quo declaró improcedente, no negó.", fecha: FECHA }) });
+    await abrir();
+    const aviso = await screen.findByText(textoApertura);
+    expect(aviso.textContent).toBe(
+      "Se rehicieron las secciones I a IV según su corrección: «El a quo declaró improcedente, no negó.» y, después, las consideraciones desde cero (sin esta instrucción). El texto fijo de la plantilla no cambia con una corrección.",
+    );
+  });
+
+  it("resume una instrucción larga", async () => {
+    const larga = `${"palabra ".repeat(40)}final`;
+    simularRed({ estado: conDecision({ ...CONSIDERACIONES, instruccion: larga }) });
+    await abrir();
+    const aviso = await screen.findByText(textoConsideraciones);
+    expect(aviso.textContent).toContain("…»");
+    expect(aviso.textContent).not.toContain("final");
+  });
+
+  it.each([
+    ["una decisión de otro tipo", conDecision({ accion: "decidir", instruccion: "", fecha: FECHA })],
+    ["sin decisión", conDecision(null)],
+    ["sin fecha", conDecision({ accion: "rehacer_consideraciones", instruccion: "Reemplace la cita c2." })],
+  ])("no se muestra con %s", async (_nombre, estado) => {
+    simularRed({ estado });
+    await abrir();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Pedir correcciones" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText(textoConsideraciones)).toBeNull();
+    expect(screen.queryByText(textoApertura)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Entendido" })).toBeNull();
+  });
+
+  it("no se muestra con una redacción en curso: gana ese aviso", async () => {
+    simularRed({ estado: conDecision(CONSIDERACIONES, { estado: "corriendo", job_activo: "j-9" }) });
+    await abrir();
+    expect(await screen.findByText(/Hay una redacción en curso para este caso\. El borrador/)).toBeTruthy();
+    expect(screen.queryByText(textoConsideraciones)).toBeNull();
+  });
+
+  it("funciona con localStorage bloqueado: el aviso se descarta mientras la pantalla siga abierta", async () => {
+    simularRed({ estado: conDecision(CONSIDERACIONES) });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    await abrir();
+    expect(await screen.findByText(textoConsideraciones)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Entendido" }));
+    expect(screen.queryByText(textoConsideraciones)).toBeNull();
+  });
 });

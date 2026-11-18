@@ -3,6 +3,7 @@ import { api, ErrorApi } from "../../api";
 import type { JobInicio, ProveedorCaso } from "../../api/contrato";
 import { cargarEstadoServidor, DATOS_PROVEEDOR, estadoServidor, proveedorSinClave } from "../../estado";
 import { Aviso, Boton, Dialogo } from "../../ui";
+import { avisosDeAlcance } from "./alcance";
 import type { CorreccionCuerpo } from "./tipos";
 import "./dialogo.css";
 
@@ -11,9 +12,10 @@ type Accion = CorreccionCuerpo["decision"]["accion"];
 const OPCIONES: { valor: Accion; secciones: string; titulo: string; detalle: string }[] = [
   {
     valor: "rehacer_apertura",
-    secciones: "Secciones II a IV",
+    secciones: "Secciones I a IV",
     titulo: "Rehacer la apertura",
-    detalle: "Asunto, antecedentes, sentencia impugnada e impugnación. Después se rehacen también las consideraciones.",
+    detalle:
+      "Asunto (partes y resultado de primera instancia), antecedentes, sentencia impugnada e impugnación. Después las consideraciones se rehacen desde cero: las correcciones que ya pidió sobre ellas no se conservan.",
   },
   {
     valor: "rehacer_consideraciones",
@@ -49,6 +51,7 @@ export function DialogoCorrecciones({ abierto, caso, proveedor, onCerrar, onEnvi
     setError(null);
   }, [abierto]);
 
+  const avisos = avisosDeAlcance(instruccion, accion);
   const faltaInstruccion = instruccion.trim() === "";
   const faltaAccion = accion === null;
 
@@ -102,6 +105,10 @@ export function DialogoCorrecciones({ abierto, caso, proveedor, onCerrar, onEnvi
     >
       <p class="sub bor-dialogo-intro">El modelo vuelve a redactar la parte que elija, siguiendo su instrucción.</p>
       <p class="sub bor-dialogo-intro">Sus ediciones se conservan; si la corrección cambia los mismos párrafos, se le pedirá elegir.</p>
+      <p id="bor-nota-plantilla" class="sub bor-dialogo-intro">
+        Una corrección no cambia el texto fijo de la plantilla (encabezado, Competencia, Presupuestos generales de procedibilidad y párrafo de transición), y el
+        RESUELVE sale de su decisión. Lo que redactó el modelo también puede corregirse a mano con «Editar texto».
+      </p>
       <fieldset class="bor-dlg-opciones" aria-describedby={intentado && faltaAccion ? "bor-err-accion" : undefined}>
         <legend>¿Qué parte quiere rehacer?</legend>
         {OPCIONES.map((o) => (
@@ -135,9 +142,17 @@ export function DialogoCorrecciones({ abierto, caso, proveedor, onCerrar, onEnvi
           placeholder="Por ejemplo: el a quo declaró improcedente, no negó."
           aria-required="true"
           aria-invalid={intentado && faltaInstruccion ? "true" : undefined}
-          aria-describedby={intentado && faltaInstruccion ? "bor-err-instruccion" : undefined}
+          aria-describedby={intentado && faltaInstruccion ? "bor-err-instruccion bor-avisos-alcance" : "bor-avisos-alcance"}
           onInput={(e) => setInstruccion(e.currentTarget.value)}
         />
+        {/* Siempre presente, aunque vacía, para que el lector de pantalla anuncie los avisos que aparecen. No bloquean el envío. */}
+        <div id="bor-avisos-alcance" role="status">
+          {avisos.map((a) => (
+            <Aviso key={a.id} tipo="alerta" class="bor-dialogo-aviso">
+              {a.texto}
+            </Aviso>
+          ))}
+        </div>
         {intentado && faltaInstruccion && (
           <p id="bor-err-instruccion" class="bor-error" role="alert">
             Escriba la instrucción: sin ella el modelo no sabe qué corregir.
