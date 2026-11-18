@@ -495,8 +495,28 @@ _MES = re.compile(
     r"(?<![^\W\d_])(" + "|".join(sorted([*_MESES, *_ABREVIATURAS], key=len, reverse=True)) + r")(?![^\W\d_])\.?",
     re.I,
 )
-_TOKEN = re.compile(r"\d+(?:\.\d{3})?[º°ª]?|[^\W\d_]+")
+# Una cifra (con puntos de millar y marca ordinal opcionales) o una palabra. Qué es cada token lo dice la alternativa que
+# casó (`_es_cifra`), no `str.isdigit()`: ¹ ² ③ pasan `isdigit()` y casan como palabra, pero `int()` no los lee. Solo
+# las cifras 0-9 llegan a `int()` (`_fechas` pasa antes las cifras de otros alfabetos a 0-9).
+_TOKEN = re.compile(r"(?P<cifra>[0-9]+(?:\.[0-9]{3})?[º°ª]?)|[^\W\d_]+")
 _ORDINAL = "º°ª"
+
+
+def _es_cifra(token: re.Match[str]) -> bool:
+    return token.lastgroup == "cifra"
+
+
+_NO_ASCII = re.compile(r"[^\x00-\x7f]")
+
+
+def _cifras_ascii(texto: str) -> str:
+    """Las cifras decimales de otros alfabetos («２８», «٢٨») pasan a 0-9, carácter por carácter: las posiciones no
+    cambian. Main las leía (`\\d` e `int()` las aceptan) y no deben dejar de leerse."""
+    if texto.isascii():
+        return texto
+    return _NO_ASCII.sub(lambda m: str(unicodedata.decimal(m.group())) if m.group().isdecimal() else m.group(), texto)
+
+
 _ENTRE_DIA_Y_MES = re.compile(r"[\s\-/.º°ª()]*(?:de[\s\-/.]*)?")
 _DIAS_DEL_MES = re.compile(r"\s+d[ií]as?\s+del\s+mes\s+de\s*$", re.I)  # «a los veintiocho (28) días del mes de septiembre»
 
@@ -510,7 +530,7 @@ def _dia_antes(izq: str) -> tuple[int, int] | None:
     if j == 0 or not _ENTRE_DIA_Y_MES.fullmatch(_plano(izq[tokens[j - 1].end() :])):
         return None
     ultimo = tokens[j - 1]
-    if ultimo.group()[0].isdigit():
+    if _es_cifra(ultimo):
         dia = ultimo.group().rstrip(_ORDINAL)
         if len(dia) > 2:
             return None
@@ -525,7 +545,7 @@ def _dia_antes(izq: str) -> tuple[int, int] | None:
         return int(dia), ultimo.start()
     for k in range(min(3, j), 0, -1):
         grupo = tokens[j - k : j]
-        if any(g.group()[0].isdigit() for g in grupo):
+        if any(_es_cifra(g) for g in grupo):
             continue
         n = letras_a_entero(" ".join(g.group() for g in grupo))
         if n and 1 <= n <= 31:
@@ -535,10 +555,10 @@ def _dia_antes(izq: str) -> tuple[int, int] | None:
 
 def _dia_despues(der: str) -> tuple[int, int] | None:
     """Día que sigue al mes: «28» o «veintiocho (28)». Devuelve (día, fin)."""
-    d = re.match(r"\s*(\d{1,2})(?!\d)", der)
+    d = re.match(r"\s*([0-9]{1,2})(?![0-9])", der)
     if d:
         return int(d.group(1)), d.end()
-    d = re.match(r"\s*((?:[^\W\d_]+[ \t]+){0,2}[^\W\d_]+)[ \t]*\(\s*(\d{1,2})\s*\)", der)
+    d = re.match(r"\s*((?:[^\W\d_]+[ \t]+){0,2}[^\W\d_]+)[ \t]*\(\s*([0-9]{1,2})\s*\)", der)
     if d and letras_a_entero(d.group(1)) == int(d.group(2)):
         return int(d.group(2)), d.end()
     return None
@@ -553,12 +573,12 @@ def _anio_despues(der: str) -> tuple[int, int] | None:
     if i >= len(tokens):
         return None
     primero = tokens[i]
-    if primero.group()[0].isdigit():
-        anio = primero.group().replace(".", "")
+    if _es_cifra(primero):
+        anio = primero.group().rstrip(_ORDINAL).replace(".", "")  # «2026º» se lee como en main; «026ª», «261º», no
         return (int(anio), primero.end()) if len(anio) == 4 else None
     palabras = []
     for t in tokens[i : i + 6]:
-        if t.group()[0].isdigit():
+        if _es_cifra(t):
             break
         palabras.append(t)
     for k in range(len(palabras), 0, -1):
@@ -595,6 +615,7 @@ def _fechas_con_mes(texto: str) -> list[tuple[int, int, str | None]]:
 
 def _fechas(texto: str) -> list[tuple[int, int, str]]:
     """Todas las fechas del texto como (inicio, fin, ISO), por posición."""
+    texto = _cifras_ascii(texto)
     halladas = _fechas_con_mes(texto)
     halladas += [
         (m.start(), m.end(), _iso(m.group(3), m.group(2), m.group(1)))
@@ -620,16 +641,19 @@ _PALABRA_MAYUS = r"[A-ZÁÉÍÓÚÑ][^\W\d_]*\.?(?:[A-Z]\.)*"
 _LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)*{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
 _LUGARES = rf"{_LUGAR}(?:(?:\s*,\s*|\s+[-–—]\s+){_LUGAR})?"  # «Medellín», «Medellín, Antioquia», «Medellín - Antioquia»
 # hueco entre columnas (pdftotext -layout): 3 o más espacios, o un tabulador; no la sangría tras una coma
-# («Medellín,   a 28 de …»), que sigue siendo parte del renglón
-_COLUMNAS = re.compile(r"(?<![,\s])\s{3,}|\t")
+# («Medellín,   a 28 de …»), que sigue siendo parte del renglón; o « | », con que `_lineas_docx` une las celdas de una
+# fila de tabla de un DOCX («JUZGADO … | Medellín, 28 de …»)
+_COLUMNAS = re.compile(r"(?<![,\s])\s{3,}|\t|\s\|\s")
+# rótulo antes del lugar: «Lugar y fecha: Medellín, …», «Ciudad y fecha: …», «Fecha: Medellín, …»
+_ROTULO_DE_LUGAR = r"(?i:(?:(?:lugar|ciudad)\s+y\s+)?fecha\s*:\s*)?"
 _ANTES_DE_LA_FECHA = r"(?:(?:a|el)\s+)?(?:[^\W\d_]{3,10}\.?,?\s*)?"  # «a», día de la semana (con o sin coma)
 # «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «San Pedro de los Milagros, », «Medellín (Antioquia), »,
 # «Medellín, Antioquia, », «Medellín, Antioquia. », «Medellín, martes, », «Medellín, a »
-_CIUDAD_Y_COMA = re.compile(rf"^\s*{_LUGARES}(?:\s*,\s*|(?<=\.)\s+){_ANTES_DE_LA_FECHA}$")
-_CIUDAD_SOLA = re.compile(rf"^\s*{_LUGARES}\s*$")  # «Medellín » (sin coma)
+_CIUDAD_Y_COMA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}(?:\s*,\s*|(?<=\.)\s+){_ANTES_DE_LA_FECHA}$")
+_CIUDAD_SOLA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}\s*$")  # «Medellín » (sin coma)
 # «medellín, » (minúscula), «Medellín; », «Medellín – »: tiene forma de lugar y separador pero no se lee como encabezado
 _LUGAR_CON_SEPARADOR = re.compile(
-    r"^\s*[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){0,3}\s*[,;–—-]\s*(?:[^\W\d_]{3,10}\.?,?\s*)?$"
+    rf"^\s*{_ROTULO_DE_LUGAR}[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){{0,3}}\s*[,;–—-]\s*(?:[^\W\d_]{{3,10}}\.?,?\s*)?$"
 )
 # renglón «Ciudad, <fecha>» cuya fecha no se pudo leer («Medellín, 28.IX.2026», «Medellín, Sept. 28/26»). Las cifras
 # deben tener forma de fecha (día y mes en números romanos o separados por «/.-», día y mes escrito, mes escrito y
@@ -637,11 +661,11 @@ _LUGAR_CON_SEPARADOR = re.compile(
 # 1ª instancia») no son un encabezado ilegible.
 _MES_ESCRITO = rf"(?i:(?:{'|'.join(_ABREVIATURAS)})[^\W\d_]*)"
 _CIUDAD_Y_CIFRAS = re.compile(
-    rf"^\s*{_LUGARES}\s*,\s*(?:(?:a|el)\s+)?(?:"
+    rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}\s*,\s*(?:(?:a|el)\s+)?(?:"
     rf"(?:{_MES_ESCRITO}\.?,?\s*)\d{{1,2}}(?!\d)"  # «Sept. 28/26»
     rf"|(?:[^\W\d_]{{3,10}}\.?,?\s*)?\d{{1,2}}(?!\d)"
     rf"(?:[/.\-]\s*(?:\d{{1,2}}|[IVX]{{1,4}})\s*[/.\-]\s*\d"  # «28.IX.2026», «28/9/26»
-    rf"|\s*(?:de\s+)?{_MES_ESCRITO}"  # «28 de septiembrre de 2026», «31 de abril de 2026»
+    rf"|[^\s\d]{{0,2}}\s*(?:de\s+)?{_MES_ESCRITO}"  # «28 de septiembrre de 2026», «31 de abril de 2026», «15¹ de septiembre»
     rf"|\s+[IVX]{{1,4}}\b)"  # «28 IX 2026»
     rf")"
 )
