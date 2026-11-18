@@ -20,7 +20,7 @@ export interface MetadatosEstado {
 
 export interface EstadoCaso {
   ok?: boolean;
-  estado: Exclude<EstadoCasoApi, "corriendo">;
+  estado: EstadoCasoApi;
   salidas?: string[];
   resumen?: {
     citas?: CitaEstado[];
