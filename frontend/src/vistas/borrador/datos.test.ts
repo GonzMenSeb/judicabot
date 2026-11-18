@@ -4,17 +4,21 @@ import { porcentaje } from "../../estado";
 import {
   agruparBloques,
   casoOracion,
+  claveCorreccionVista,
   claveRevisados,
   construirIndice,
   construirRevision,
   dividirMotivos,
   filasJev,
   guardarRevisados,
+  guardarCorreccionVista,
   humanizarAlerta,
+  leerCorreccionVista,
   leerRevisados,
   limitePasos,
   marcasDelIndice,
   redaccionPorNodo,
+  resumirInstruccion,
   seccionesDeCitas,
   tituloDelCaso,
   unidadesDe,
@@ -681,5 +685,50 @@ describe("redaccionPorNodo", () => {
     expect(redaccionPorNodo(undefined)).toEqual([]);
     expect(redaccionPorNodo(null)).toEqual([]);
     expect(redaccionPorNodo([])).toEqual([]);
+  });
+});
+
+describe("resumirInstruccion", () => {
+  it("colapsa espacios y saltos de línea", () => {
+    expect(resumirInstruccion("  El a quo\n\n declaró   improcedente.  ")).toBe("El a quo declaró improcedente.");
+  });
+
+  it("deja intacto lo que cabe", () => {
+    expect(resumirInstruccion("a".repeat(140))).toBe("a".repeat(140));
+  });
+
+  it("corta lo que pasa del máximo y añade «…» sin superarlo", () => {
+    const resumen = resumirInstruccion("palabra ".repeat(40));
+    expect(resumen.endsWith("…")).toBe(true);
+    expect(resumen.length).toBeLessThanOrEqual(140);
+    expect(resumirInstruccion("abcdefghij", 5)).toBe("abcd…");
+  });
+});
+
+describe("corrección ya vista", () => {
+  it("arma la clave solo con el caso", () => {
+    expect(claveCorreccionVista("c1")).toBe("judicabot:correccion-vista:c1");
+  });
+
+  it("ida y vuelta, por caso", () => {
+    expect(leerCorreccionVista("c1")).toBeNull();
+    guardarCorreccionVista("c1", "2026-11-17T10:00:00+00:00");
+    expect(leerCorreccionVista("c1")).toBe("2026-11-17T10:00:00+00:00");
+    expect(leerCorreccionVista("c2")).toBeNull();
+  });
+
+  it("un valor que no es una cadena o un getItem que lanza dan null; un setItem que lanza no rompe", () => {
+    localStorage.setItem(claveCorreccionVista("c1"), "{no es json");
+    expect(leerCorreccionVista("c1")).toBeNull();
+    localStorage.setItem(claveCorreccionVista("c1"), "42");
+    expect(leerCorreccionVista("c1")).toBeNull();
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    expect(leerCorreccionVista("c1")).toBeNull();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    expect(() => guardarCorreccionVista("c1", "x")).not.toThrow();
   });
 });
