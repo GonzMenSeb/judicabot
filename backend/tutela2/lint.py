@@ -659,34 +659,115 @@ _CONECTIVO_DECISION = (
 # «Dr.») no cierra la oración: lo que sigue («deberá confirmar la cita») sigue siendo de ese sujeto.
 _ABREVIATURAS = ("dr", "dra", "sr", "sra", "ltda", "cía", "inc")
 _FIN_DE_ORACION = r"(?:[;:!?]|(?<!\b[a-zñ])" + "".join(rf"(?<!\b{a})" for a in _ABREVIATURAS) + r"\.)"
-# Un infinitivo solo anuncia la decisión si lo rige una fórmula de decisión («corresponde revocar», «debe revocar»)
-# o una coordinación que arranca en ella («…y negar el amparo»). «Al negar», «decidió negar» o «sin amparar»
-# describen o niegan, no anuncian; y tras un «que» ya no se sabe quién actúa.
-_ANUNCIO_INFINITIVO = re.compile(
-    r"\b(?:corresponde|procede|proceder[aá]\s+a|se\s+impone|hay\s+que|habr[aá]\s+de|ha\s+de|se\s+debe"
+# Un infinitivo solo es el resultado que anuncia el Despacho cuando el Despacho es, sin ambigüedad, quien lo anuncia. Lo
+# decide el disparador y lo que hay entre el disparador y el verbo; todo lo demás no se examina (falso negativo aceptado):
+#   - el disparador es impersonal («corresponde revocar», «hay que confirmar») y su oración no nombra a otro con un
+#     dativo («a la EPS le corresponde confirmar»), o tiene al Despacho por sujeto («el Despacho debe revocar»);
+#   - el verbo sigue al disparador, o va coordinado con otros infinitivos de decisión que lo siguen, sin otra cosa en
+#     medio (otro verbo, una oración subordinada, un signo de fin de oración);
+#   - «confirmar» y «revocar» recaen sobre una decisión judicial o no llevan objeto, y no son «confirmar que…».
+_DESPACHO = r"(?:despacho|juzgado|sala|tribunal)"
+_MODAL = r"(?:deber[aá]n?|deben?|(?:habr[aá]n?|han?)\s+de|proceder[aá]n?\s+a)"
+_OPINA = r"(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que"
+# Impersonales: no tienen sujeto, así que lo que anuncian lo anuncia el Despacho.
+_DISPARADOR_IMPERSONAL = re.compile(
+    r"\b(?:corresponde|procede|se\s+impone|hay\s+que|se\s+debe"
     r"|es\s+(?:necesario|preciso|procedente|menester)|resulta\s+(?:necesario|preciso|procedente)"
-    r"|lo\s+(?:procedente|que\s+procede|que\s+corresponde)\s+es"
-    r"|(?:(?:el|este)\s+(?:despacho|juzgado)|la\s+sala)\s+(?:decide|decidir[aá]|resuelve|resolver[aá]|dispone|dispondr[aá]))\b"
-    # «Deber» solo anuncia si el sujeto es el Despacho o está implícito al arrancar la oración (con o sin conectivo):
-    # «la accionada deberá confirmar la cita» o «la EPS, por tanto, deberá confirmarla» no anuncian nada.
-    rf"|(?:\b(?:despacho|juzgado|sala)(?:\s*,\s*{_CONECTIVO_DECISION}\s*,)?\s+"
-    r"|\b(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que\s+"
-    rf"|(?:^|{_FIN_DE_ORACION})\s*(?:{_CONECTIVO_DECISION}\s*,\s*)*)\b(?:deber[aá]n?|deben?)\b"
+    r"|lo\s+(?:procedente|que\s+procede|que\s+corresponde)\s+es)\b"
 )
-_COORDINADO = re.compile(
-    r"(?:\b(?:y|e|o)\s+(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n)\s*,?\s*)?"
-    r"|,\s*(?:(?:y|e|o)\s+)?(?:(?:en\s+su\s+lugar|adem[aá]s)\s*,?\s*)?)$"
+_DISPARADOR_DESPACHO = re.compile(
+    r"\b(?:(?:el|este)\s+(?:despacho|juzgado)|la\s+sala)\s+(?:decide|decidir[aá]|resuelve|resolver[aá]|dispone|dispondr[aá])\b"
 )
-# El anuncio del Despacho termina donde empieza otra cosa: una relativa («que decidió…») o las órdenes a un tercero
-# («ordenando a la EPS programar la cirugía y confirmar la fecha»), cuyos verbos no son el resultado de la conclusión.
-_CORTE_DE_ANUNCIO = re.compile(
-    r"\b(?:que|[oó]rden(?!amiento)\w*|prevenir|previniendo|advertir|advirtiendo|exhortar|exhortando"
-    r"|requerir|requiriendo|instar|instando)\b"
+# «Deber», «ha de», «habrá de» y «procederá a» tienen sujeto: solo anuncian si es el Despacho (con o sin «considera que») o si, al arrancar
+# la oración, lo marca un conectivo de conclusión. «La accionada deberá…», «la EPS, por tanto, ha de…» o «debe la entidad…»
+# no anuncian nada.
+_DISPARADOR_MODAL = re.compile(
+    rf"(?:\b{_DESPACHO}(?:\s*,\s*{_CONECTIVO_DECISION}\s*,)?\s+(?:{_OPINA}\s+)?"
+    rf"|(?:^|{_FIN_DE_ORACION}\s*{_CONECTIVO_DECISION}\s*,\s*)(?:\s*{_CONECTIVO_DECISION}\s*,)*\s*)\b{_MODAL}\b"
 )
+# Un impersonal con dativo o sujeto ajeno habla de un tercero: «a la EPS le corresponde confirmar», «a la entidad accionada
+# corresponde…», «para el accionado es necesario…», «según la EPS, procede…», «la EPS sostiene que procede…». El dativo del
+# Despacho («a este Despacho le corresponde»), las locuciones («a la luz de», «a su juicio») y un «que» que cuelga del
+# Despacho o de una oración impersonal («el Despacho considera que corresponde…», «es claro que procede…») no cuentan.
+# Es amplio a propósito: si se equivoca, la oración no se examina.
+_DETERMINANTE_AJENO = (
+    r"(?:la|las|el|los|ella|ellas|ellos|esta|este|estas|estos|esa|ese|esas|esos|su|sus|cada|aquel|aquella"
+    r"|quien|quienes|una?|otr[ao]s?|dich[ao]s?|tal|tales)"
+)
+_NO_ES_AJENO = (
+    r"(?:despacho|juzgado|sala|tribunal|judicatura|corporaci[oó]n|luz|fecha|vez|postre|letra|medida|hora|vista|brevedad"
+    r"|juicio|turno|criterio|parecer|entender|respecto|prop[oó]sito|efecto|efectos|punto|momento|fin|tenor|partir|pesar"
+    r"|trav[eé]s|continuaci[oó]n|falta|diferencia|causa|ra[ií]z|menos|t[ií]tulo|modo|cambio|quo|ad|largo|lo|ello|esto|eso|se|que"
+    r"|art[ií]culo|jurisprudencia|ley|norma|normas|constituci[oó]n|precedente|doctrina|regla|reglas|tesis|sentencia|caso"
+    r"|presente|particular|hechos|pruebas|razones|consideraciones|expuesto)"
+)
+_PREPOSICION_DE_AJENO = (
+    r"(?:a|para|en\s+cabeza\s+de|a\s+cargo\s+de|por\s+parte\s+de|de\s+parte\s+de|seg[uú]n|conforme\s+a|de\s+acuerdo\s+con"
+    r"|en\s+criterio\s+de|a\s+juicio\s+de|en\s+opini[oó]n\s+de|en\s+concepto\s+de)"
+)
+_NO_ES_DESPACHO = r"(?!(?:despacho|juzgado|tribunal|respecto|efecto|momento|tiempo|margen|contrario|menos|igual|cabo)\b)"
+_NO_ES_INFINITIVO_SIGUIENTE = r"(?![a-zñáéíóú]+(?:ar|er|ir)\b)"
+# «a la EPS», «a Sura», «para el accionado», «según Nueva EPS»: lo que nombra la preposición no es el Despacho ni una
+# locución («a partir de», «a la luz de», «según el artículo»).
+_COMPLEMENTO_AJENO = re.compile(
+    rf"\b{_PREPOSICION_DE_AJENO}\s+(?!(?:{_DETERMINANTE_AJENO}\s+)?{_NO_ES_AJENO}\b){_NO_ES_INFINITIVO_SIGUIENTE}[a-zñáéíóú]{{2,}}"
+    rf"|\b(?:al|(?:en\s+cabeza|a\s+cargo|por\s+parte|de\s+parte|a\s+juicio|en\s+criterio|en\s+opini[oó]n|en\s+concepto"
+    rf"|seg[uú]n)\s+del)\s+{_NO_ES_DESPACHO}{_NO_ES_INFINITIVO_SIGUIENTE}[a-zñáéíóú]"
+)
+_CLITICO_DATIVO = re.compile(r"\bles?\s+(?:(?:es|resulta)\s+)?$")
+# Los delimitadores de alcance («en cuanto a la EPS», «respecto del fallo») no nombran un sujeto ni un dativo.
+_DE_ALCANCE = re.compile(
+    r"\b(?:en\s+cuanto|frente|con\s+relaci[oó]n|en\s+relaci[oó]n|con\s+respecto|respecto|en\s+lo\s+(?:que\s+)?(?:atañe|respecta|concierne))"
+    r"\s+(?:a|al|de|del|con)\b"
+)
+_DATIVO_DEL_DESPACHO = re.compile(
+    rf"\b(?:a|al)\s+(?:(?:este|esta|el|la)\s+)?{_DESPACHO}\b(?:\s*,\s*[^,.;:!?]{{0,40}}?,)?(?:\s+les?\b)?"
+)
+_QUE_FINAL = re.compile(r"\bque\s*,?\s*$")
+_QUE_DEL_DESPACHO = re.compile(
+    rf"\b{_DESPACHO}\s+(?:[a-zñáéíóú,]+\s+){{0,5}}que\s*,?\s*$"
+    r"|\bse\s+[a-zñáéíóú]+(?:\s+[a-zñáéíóú]+)?\s+que\s*,?\s*$"
+    r"|\b(?:es|resulta|queda|cabe)\s+(?:[a-zñáéíóú]+\s+){0,2}que\s*,?\s*$"
+    r"|\b(?:dado|puesto|ya|visto|toda\s+vez|habida\s+cuenta|teniendo\s+en\s+cuenta|atendiendo|por\s+cuanto"
+    r"|en\s+la\s+medida|de\s+modo|de\s+manera|as[ií]|por\s+lo|m[aá]xime)\s+(?:[a-zñáéíóú]+\s+){0,2}que\s*,?\s*$"
+)
+_FIN_ORACION_RE = re.compile(_FIN_DE_ORACION)
+# Lo que sigue inmediatamente al disparador sin ser parte del anuncio: un conectivo o el dativo del propio Despacho.
+_CONECTOR_SUELTO = rf"(?:{_CONECTIVO_DECISION}|entonces|pues|as[ií]|ahora\s+bien)"
+_CONECTOR_AL_ABRIR = re.compile(rf"(?:{_CONECTOR_SUELTO}|por\s+(?:ello|eso|esto)|luego|ahora)\s*,?\s*")
 _RELLENO_TRAS_ANUNCIO = re.compile(
-    r"(?:(?:en\s+consecuencia|entonces|por\s+lo\s+tanto|as[ií])\s*,?\s*)?"
-    r"(?:(?:(?:al|a\s+este)\s+(?:despacho|juzgado)|a\s+la\s+sala)\s*,?\s*)?"
+    rf"\s*,?\s*(?:{_CONECTOR_SUELTO}\s*,?\s*)*"
+    rf"(?:(?:al|a\s+est[ae])\s+{_DESPACHO}\s*,?\s*)?(?:{_CONECTOR_SUELTO}\s*,?\s*)*"
 )
+# Enlace que une un infinitivo de decisión con el siguiente: «, », «y », «, y », «y, en su lugar, »…
+_ENLACE_FINAL = re.compile(
+    r"(?:,\s*(?:(?:y|e|o)\b\s*,?\s*)?|\b(?:y|e|o)\b\s*,?\s*)"
+    r"(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n|asimismo|igualmente|por\s+tanto|en\s+consecuencia)\s*,?\s*)*$"
+)
+_VERBO_DE_DECISION = re.compile(
+    r"(?:confirmar|revocar|modificar|amparar|tutelar|conceder|negar|denegar|declarar|desestimar|reponer|adicionar"
+    r"|aclarar|anular|rechazar|acceder)(?:se|l[aeo]s?)?"
+)
+# Sustantivos y adjetivos corrientes que acaban en -ar, -er o -ir y no son verbos: no cortan el anuncio.
+_NO_ES_INFINITIVO = frozenset(
+    "lugar lugares titular particular familiar similar regular popular militar singular vulgar hogar azar ejemplar estándar "
+    "mujer primer tercer cualquier carácter alquiler cirugía".split()
+)
+# Todo lo que, entre el disparador y el verbo, revela otra cláusula u otro actor: un relativo o una subordinada, otro
+# verbo (infinitivo, gerundio, futuro, condicional, pretérito o un modal conjugado) o la orden misma.
+_ROMPE_EL_ANUNCIO = re.compile(
+    r"(?:que|cual(?:es)?|quien(?:es)?|cuy[oa]s?|donde|cuando|mientras|porque|pues|aunque|si|dado|puesto|toda"
+    r"|[a-zñáéíóúü]{2,}(?:ando|iendo|yendo)"
+    r"|[a-zñáéíóúü]{3,}(?:ar|er|ir)(?:se|l[aeo]s?|les?)?|dar|ser|ver|ir"
+    r"|[a-zñáéíóúü]+(?:ar|er|ir)(?:á|án|ía|ían)"
+    r"|[a-zñáéíóúü]{2,}(?:ó|aron|ieron|ió)"
+    r"|deb(?:e|en|[ií]a|[ií]an)|pued(?:e|en)|tiene|tienen|ha|han|hay|corresponde|compete|incumbe|obliga|queda|quedan"
+    r"|es|son|est[aá]n?|fue|fueron|[oó]rdenes?|orden)"
+)
+_MAX_PALABRAS_ENTRE = 45
+_MAX_CARACTERES_ENTRE = 20 * _MAX_PALABRAS_ENTRE  # evita trocear tramos que ya no pueden ser un anuncio
+
+
 _FORMULA = {
     "CONFIRMAR": "confirmar",
     "REVOCAR": "revocar",
@@ -703,40 +784,107 @@ _PISTA_NEGACION_PARCIAL = (
 )
 
 
-def _tramos_de_anuncio(texto: str) -> list[tuple[int, int]]:
-    tramos = []
-    for t in _ANUNCIO_INFINITIVO.finditer(texto):
-        if _excusada(texto, t.start()):
-            continue
-        cortes = [k for k in (texto.find(c, t.end()) for c in ".;!?") if k != -1]
-        fin = min(cortes) if cortes else len(texto)
-        corte = _CORTE_DE_ANUNCIO.search(texto, t.end(), fin)
-        tramos.append((t.end(), corte.start() if corte else fin))
-    return tramos
+def _prefijo_de_la_oracion(texto: str, hasta: int) -> str:
+    inicio = 0
+    for g in _FIN_ORACION_RE.finditer(texto, 0, hasta):
+        inicio = g.end()
+    return texto[inicio:hasta]
 
 
-def _anunciado_en_infinitivo(texto: str, m: re.Match[str], tramos: list[tuple[int, int]]) -> bool:
-    for ini, fin in tramos:
-        if ini <= m.start() < fin:
-            previo = texto[ini : m.start()]
-            if _COORDINADO.search(previo) or _RELLENO_TRAS_ANUNCIO.fullmatch(previo.strip()):
-                return True
-    return False
+def _con_otro_actor(prefijo: str) -> bool:
+    prefijo = _DE_ALCANCE.sub(" ", _DATIVO_DEL_DESPACHO.sub(" ", prefijo))
+    if _QUE_FINAL.search(prefijo) and not _QUE_DEL_DESPACHO.search(prefijo):
+        return True
+    if _CLITICO_DATIVO.search(prefijo):
+        return True
+    # El complemento que nombra a otro rige al disparador si abre la oración («A la EPS, en consecuencia, corresponde…») o
+    # está en su misma cláusula; en una cláusula anterior («Como el a quo negó el amparo a la accionante, corresponde…») no.
+    cabeza = re.sub(rf"^\s*(?:{_CONECTOR_SUELTO}\s*,?\s*)*", "", prefijo)
+    return bool(_COMPLEMENTO_AJENO.match(cabeza) or _COMPLEMENTO_AJENO.search(prefijo.rsplit(",", 1)[-1]))
+
+
+def _disparadores_de_anuncio(texto: str) -> list[int]:
+    """Posición donde acaba cada disparador cuyo infinitivo anuncia el Despacho (ver el comentario de las constantes)."""
+    fines = []
+    for patron in (_DISPARADOR_IMPERSONAL, _DISPARADOR_DESPACHO, _DISPARADOR_MODAL):
+        for t in patron.finditer(texto):
+            if _excusada(texto, t.start()):
+                continue
+            if patron is _DISPARADOR_IMPERSONAL:
+                prefijo = _prefijo_de_la_oracion(texto, t.start())
+                # «La cita se debe confirmar»: con un sustantivo delante, «se debe» es una pasiva refleja con sujeto, no un impersonal.
+                if _con_otro_actor(prefijo) or (t.group() == "se debe" and _CONECTOR_AL_ABRIR.sub("", prefijo.rsplit(",", 1)[-1]).strip()):
+                    continue
+            fines.append(t.end())
+    return fines
+
+
+def _es_cadena_de_decision(entre: str) -> bool:
+    """Lo que hay entre el disparador y el verbo es el propio anuncio: nada, o infinitivos de decisión con su complemento."""
+    if len(entre.split()) > _MAX_PALABRAS_ENTRE or _FIN_ORACION_RE.search(entre):
+        return False
+    resto = entre[_RELLENO_TRAS_ANUNCIO.match(entre).end() :]
+    if not resto.strip():
+        return True
+    enlace = _ENLACE_FINAL.search(resto)
+    if enlace is None:
+        return False
+    cuerpo = resto[: enlace.start()]
+    palabras = list(re.finditer(r"[a-zñáéíóúü0-9]+", cuerpo))
+    if not palabras or not _VERBO_DE_DECISION.fullmatch(palabras[0].group()):
+        return False
+    for p in palabras[1:]:
+        palabra = p.group()
+        if _VERBO_DE_DECISION.fullmatch(palabra):
+            # Solo abre otro elemento de la coordinación si lo precede un enlace («…, amparar el derecho y negar…»); si no
+            # («la decisión de negar»), el infinitivo es complemento de otra cosa.
+            if not _ENLACE_FINAL.search(cuerpo[: p.start()]):
+                return False
+        elif _ROMPE_EL_ANUNCIO.fullmatch(palabra) and palabra not in _NO_ES_INFINITIVO and not palabra.endswith("ular"):
+            return False
+    return True
+
+
+# «Confirmar» y «revocar» solo son el resultado si recaen sobre una decisión judicial o no llevan objeto («corresponde
+# revocar y amparar…»). «Confirmar la cita» o «revocar la glosa» son actos de otro; si el objeto no se reconoce, o es un
+# clítico sin antecedente a la vista («corresponde confirmarla»), no se examina.
+_OBJETO_JUDICIAL = re.compile(
+    r"\s*(?:$|[,.;:!?)»\"]|(?:y|e|o|parcialmente|totalmente|[ií]ntegramente|integralmente|solo|s[oó]lo|[uú]nicamente)\b"
+    r"|en\s+(?:su\s+)?(?:integridad|totalidad)\b|en\s+lo\s+(?:dem[aá]s|restante)\b|por\s+(?:las?\s+)?(?:razones|motivos)\b"
+    r"|(?:(?:el|la|los|las|lo|su|sus|dich[ao]s?|est[ae]|es[ae]|tal)\s+)*"
+    r"(?:fallo|sentencia|decisi[oó]n|providencia|auto|resoluci[oó]n|determinaci[oó]n|proveído|pronunciamiento|numeral|numerales"
+    r"|ordinal|ordinales|par[aá]grafo|literal|decidido|resuelto|dispuesto|impugnad[ao]s?|apelad[ao]s?|recurrid[ao]s?"
+    r"|primera|segunda|instancia|a\s+quo|tutela|amparo|mism[ao]|restantes|dem[aá]s)\b"
+    # «la decisión de la EPS» o «la sentencia de Sura» no son del Despacho ni del a quo.
+    r"(?!\s+(?:del?|de\s+(?:la|las|el|los))\s+(?!(?:\d|primera|segunda|[uú]nica|instancia|a\s+quo|sala|juzgado|despacho|corte"
+    r"|tribunal|juez|tutela|amparo|fecha|este|esta|dicho|dicha)\b)))"
+)
+_CLITICO_FINAL = re.compile(r"ar(?:l[aeo]s?)$")
+_VERBO_DE_COMPROBACION = re.compile(r"\s*,?\s*(?:adem[aá]s\s*,?\s*)?que\b")
+
+
+def _anunciado_en_infinitivo(texto: str, m: re.Match[str], disparadores: list[int], otro: str) -> bool:
+    # «Confirmar que la EPS cumpla…» comprueba un hecho; no confirma ni revoca nada.
+    if _VERBO_DE_COMPROBACION.match(texto, m.end()):
+        return False
+    if otro in ("CONFIRMAR", "REVOCAR") and (_CLITICO_FINAL.search(m.group()) or not _OBJETO_JUDICIAL.match(texto, m.end())):
+        return False
+    return any(0 <= m.start() - fin <= _MAX_CARACTERES_ENTRE and _es_cadena_de_decision(texto[fin : m.start()]) for fin in disparadores)
 
 
 def _cuenta_como_contradiccion(
-    texto: str, m: re.Match[str], otro: str, decidido: str, decision: Decision, tramos: list[tuple[int, int]] | None
+    texto: str, m: re.Match[str], otro: str, decidido: str, decision: Decision, disparadores: list[int] | None
 ) -> bool:
     if _excusada(texto, m.start()):
         return False
-    if tramos is not None and not _anunciado_en_infinitivo(texto, m, tramos):
+    if disparadores is not None and not _anunciado_en_infinitivo(texto, m, disparadores, otro):
         return False
     return not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m, decision))
 
 
 def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
     texto = " ".join(conclusion.lower().split())
-    tramos = _tramos_de_anuncio(texto)
+    disparadores = _disparadores_de_anuncio(texto)
     # Un derecho marcado «Niega» ya declara un amparo parcial: negar algo no contradice AMPARAR.
     niega_un_derecho = decision.sustitutiva == "AMPARAR" and any(d.disposicion == "NIEGA" for d in decision.derechos)
     msgs: list[str] = []
@@ -755,7 +903,7 @@ def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
                 _cuenta_como_contradiccion(texto, m, otro, decidido, decision, None)
                 for m in re.finditer(_NO_PRECEDE + futuro, texto)
             ) or any(
-                _cuenta_como_contradiccion(texto, m, otro, decidido, decision, tramos)
+                _cuenta_como_contradiccion(texto, m, otro, decidido, decision, disparadores)
                 for m in re.finditer(_NO_PRECEDE + infinitivos[otro], texto)
             ):
                 pista = _PISTA_NEGACION_PARCIAL if (otro, decidido) == ("NEGAR", "AMPARAR") else ""
