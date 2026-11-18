@@ -171,6 +171,17 @@ describe("Fallo", () => {
     expect(screen.queryByRole("link", { name: "Descargar fallo" })).toBeNull();
   });
 
+  it("con el proceso corriendo y sin fallo dice que sigue en curso y enlaza al avance", async () => {
+    responder({
+      vista: new ErrorApi(404, "El fallo aún no existe.", "El fallo aún no existe."),
+      salidas: { archivos: [`${P}/001ActaRepartoSegunda.pdf`] },
+      estado: { estado: "corriendo", salidas: [], resumen: {}, job_activo: "j1" },
+    });
+    render(<Fallo caso="caso-1" />);
+    expect(await screen.findByText("El proceso sigue en curso; el fallo se genera al terminar.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ver el avance" }).getAttribute("href")).toBe("#/segunda/caso-1/proceso");
+  });
+
   it("si el fallo existe sin vista previa, ofrece la descarga y lo explica", async () => {
     responder({ vista: new ErrorApi(404, "sin vista", "sin vista") });
     render(<Fallo caso="caso-1" />);
