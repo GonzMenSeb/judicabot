@@ -619,6 +619,9 @@ MAX_REINICIOS = 200  # renglones, tras un oficio de notificación, desde los que
 _PALABRA_MAYUS = r"[A-ZÁÉÍÓÚÑ][^\W\d_]*\.?(?:[A-Z]\.)*"
 _LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)*{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
 _LUGARES = rf"{_LUGAR}(?:(?:\s*,\s*|\s+[-–—]\s+){_LUGAR})?"  # «Medellín», «Medellín, Antioquia», «Medellín - Antioquia»
+# hueco entre columnas (pdftotext -layout): 3 o más espacios, o un tabulador; no la sangría tras una coma
+# («Medellín,   a 28 de …»), que sigue siendo parte del renglón
+_COLUMNAS = re.compile(r"(?<![,\s])\s{3,}|\t")
 _ANTES_DE_LA_FECHA = r"(?:(?:a|el)\s+)?(?:[^\W\d_]{3,10}\.?,?\s*)?"  # «a», día de la semana (con o sin coma)
 # «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «San Pedro de los Milagros, », «Medellín (Antioquia), »,
 # «Medellín, Antioquia, », «Medellín, Antioquia. », «Medellín, martes, », «Medellín, a »
@@ -694,7 +697,7 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
     def columna(pos: int) -> str:  # «JUZGADO …      Medellín, » en columnas (pdftotext -layout)
         antes = antes_de(pos)
         sin_cola = antes.rstrip()
-        return re.split(r"\s{3,}|\t", sin_cola)[-1] + antes[len(sin_cola) :]
+        return _COLUMNAS.split(sin_cola)[-1] + antes[len(sin_cola) :]
 
     def cola(fin: int) -> str:  # \r: saltos de línea de pdfium
         return texto[fin : fin_renglon(fin)].strip("\r")
@@ -727,7 +730,7 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
     sin_leer = [
         m.start()
         for m in re.finditer(r"^.*\S.*$", texto[:zona], re.M)
-        if m.start() not in leidos and any(_CIUDAD_Y_CIFRAS.match(c) for c in re.split(r"\s{3,}|\t", m.group()))
+        if m.start() not in leidos and any(_CIUDAD_Y_CIFRAS.match(c) for c in _COLUMNAS.split(m.group()))
     ]
     sin_leer += [
         ini_renglon(f[0])

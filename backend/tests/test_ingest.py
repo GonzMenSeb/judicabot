@@ -808,6 +808,8 @@ def test_fechas_en_formatos_con_mes_en_letras(texto, iso):
         ("Medellín, a veintiocho (28) de septiembre de dos mil veintiséis", "2026-09-28"),
         ("Medellín, martes, 6 de octubre de 2026", "2026-10-06"),
         ("Medellín, a 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín,   a 28 de septiembre de 2026", "2026-09-28"),  # sangrado de pdftotext -layout y luego «a»
+        ("Medellín,    a veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
         ("Medellín, Antioquia. 28 de septiembre de 2026", "2026-09-28"),
         ("Medellín - Antioquia, 28 de septiembre de 2026", "2026-09-28"),
         ("Medellín, lun. 28 de septiembre de 2026", "2026-09-28"),
@@ -924,6 +926,7 @@ ENCABEZADOS_ILEGIBLES = [
     "Fecha: 28/09/26",
     "Medellín, 28 IX 2026",
     "Medellín, 28/9/26",
+    "Medellín,   Sept. 28/26",  # con sangrado tras la coma
 ]
 CUERPOS_CON_FECHAS = [
     "Primero. La entidad respondió mediante oficio del\n20 de agosto de 2026,\nSegundo. Otra cosa.\n",
