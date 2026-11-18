@@ -26,6 +26,7 @@ export const esCasoNoEncontrado = (error: unknown): boolean =>
 
 function mensajeDe(detalle: unknown, estado: number): string {
   if (typeof detalle === "string") return detalle;
+  if (typeof detalle === "object" && detalle !== null && "mensaje" in detalle && typeof detalle.mensaje === "string" && detalle.mensaje.trim() !== "") return detalle.mensaje;
   return `Error ${estado}`;
 }
 

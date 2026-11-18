@@ -487,8 +487,16 @@ def _bloqueo_apoderados(caso_dir: Path) -> str | None:
 @app.post("/api/casos/{caso_id}/run", response_model=JobInicio)
 def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
     caso_dir = _dir_caso(caso_id)
-    if body.cmd == "decidir" and not body.decision:
-        raise HTTPException(422, "Falta la decisión.")
+    if body.cmd == "decidir":
+        if not body.decision:
+            raise HTTPException(422, "Falta la decisión.")
+        from tutela2 import decision_vista
+
+        # Antes de crear el trabajo: una decisión que el grafo rechazaría no debe terminar como una ejecución «terminada».
+        rechazos = decision_vista.faltantes_de(body.decision)
+        if rechazos:
+            motivos = " ".join(dict.fromkeys(r["mensaje"] for r in rechazos))
+            raise HTTPException(422, {"mensaje": f"Su decisión no se aplicó: {motivos}", "errores": rechazos})
     from collections import deque
 
     from tutela2 import ediciones, eventos

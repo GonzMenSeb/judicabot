@@ -15,14 +15,16 @@ import {
   fechaLarga,
   formularioInicial,
   hallazgosLocales,
+  leerHallazgos,
   MSG,
   moverClave,
   ordinal,
+  plazoEnviado,
   sanear,
   validar,
 } from "./formulario";
 import { partirNegritas } from "./Resuelve";
-import type { Formulario, PayloadDecision } from "./tipos";
+import type { Formulario, OrdenForm, PayloadDecision } from "./tipos";
 
 const payload: PayloadDecision = {
   reparos: [{ id: "R1", sintesis: "uno" }, { id: "R2", sintesis: "dos" }],
@@ -139,6 +141,69 @@ describe("validar (reglas del formulario legado)", () => {
     const servidor = [{ campo: "eje", mensaje: "B" }, { campo: "fecha_fallo", mensaje: "C" }, { campo: "fecha_fallo", mensaje: "C" }];
     expect(combinar(locales, servidor)).toEqual([{ campo: "eje", mensaje: "A" }, { campo: "fecha_fallo", mensaje: "C" }]);
   });
+});
+
+/** El formulario completo con las órdenes dadas (la primera parte de la automática y las demás de `ordenNueva`). */
+function conOrdenes(...cambios: Partial<OrdenForm>[]): Formulario {
+  const f = completo();
+  const base = f.ordenes[0];
+  if (!base) throw new Error("falta la orden automática");
+  return {
+    ...f,
+    ordenes: cambios.map((c, i) => ({ ...base, id: base.id + i, destinatario: "la EPS X", conducta: "cumpla", ...c })),
+  };
+}
+
+const plazos = (f: Formulario) =>
+  validar(aDecision(f))
+    .filter((h) => /\.plazo\.n$/.test(h.campo))
+    .map((h) => [h.campo, h.mensaje]);
+
+describe("plazo de las órdenes", () => {
+  it("validar exige un plazo entero y en rango solo cuando la orden lo usa", () => {
+    expect(plazos(conOrdenes({ n: "1.5" }))).toEqual([["ordenes.0.plazo.n", MSG.plazoEntero]]);
+    expect(plazos(conOrdenes({ n: "0" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "-5" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "1000000" }))).toEqual([
+      ["ordenes.0.plazo.n", "El plazo de la orden 1 no puede superar 999.999."],
+    ]);
+    expect(plazos(conOrdenes({ n: "48" }, { n: "10000000" }))).toEqual([
+      ["ordenes.1.plazo.n", "El plazo de la orden 2 no puede superar 999.999."],
+    ]);
+    expect(plazos(conOrdenes({ n: "999999" }))).toEqual([]);
+    expect(plazos(conOrdenes({ verbo: "ADVERTIR", n: "0" }))).toEqual([]);
+    expect(plazos(conOrdenes({ verbo: "PREVENIR", n: "0" }))).toEqual([]);
+    expect(plazos(conOrdenes({ n: "48" }, { mismo: true, n: "0" }))).toEqual([]);
+  });
+
+  it("aDecision manda el plazo entero cuando la orden no lo usa", () => {
+    const plazo = (f: Formulario, i = 0) => aDecision(f).ordenes[i]?.plazo.n;
+    expect(plazo(conOrdenes({ verbo: "ADVERTIR", n: "1.5" }))).toBe(1);
+    expect(plazo(conOrdenes({ verbo: "PREVENIR", n: "1.5" }))).toBe(1);
+    // Una ORDENAR con decimales viaja tal cual para que `validar` y el servidor la marquen.
+    expect(plazo(conOrdenes({ n: "1.5" }))).toBe(1.5);
+    expect(plazoEnviado(conOrdenes({ n: "1.5" }).ordenes[0] as OrdenForm, false)).toBe(1.5);
+    const dos = conOrdenes({ n: "48" }, { mismo: true, n: "1.5" });
+    expect(plazo(dos, 0)).toBe(48);
+    expect(plazo(dos, 1)).toBe(1);
+    expect(plazo(conOrdenes({ n: "" }))).toBe(0);
+  });
+});
+
+describe("leerHallazgos", () => {
+  it("devuelve los {campo, mensaje} bien formados de detalle.errores", () => {
+    expect(leerHallazgos({ errores: [{ campo: "fecha_fallo", mensaje: "x" }, 3, { campo: "eje" }] })).toEqual([
+      { campo: "fecha_fallo", mensaje: "x" },
+    ]);
+  });
+
+  it.each([["texto"], [null], [{ errores: [] }], [{ errores: [3] }], [{ mensaje: "x" }], [undefined]])(
+    "devuelve null con %j",
+    (detalle) => {
+      expect(leerHallazgos(detalle)).toBeNull();
+    },
+  );
 });
 
 describe("aDecision (claves del legado)", () => {

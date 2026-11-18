@@ -270,7 +270,7 @@ function TarjetaOrden({ o, i, cambiar, err }: { o: OrdenForm; i: number; cambiar
           <input {...atributos(`${base}-destinatario`, eDest, true)} type="text" placeholder="la EPS HORIZONTE SALUD S.A.S." value={o.destinatario} onInput={(e) => editar({ destinatario: e.currentTarget.value })} />
         </Campo>
         <Campo id={`${base}-plazo`} etiqueta="Plazo" error={ePlazo}>
-          <input {...atributos(`${base}-plazo`, ePlazo)} type="number" min="1" value={o.n} disabled={o.mismo} onInput={(e) => editar({ n: e.currentTarget.value })} />
+          <input {...atributos(`${base}-plazo`, ePlazo)} type="number" min="1" max="999999" value={o.n} disabled={o.mismo} onInput={(e) => editar({ n: e.currentTarget.value })} />
         </Campo>
         <Campo id={`${base}-unidad`} etiqueta="Unidad">
           <select id={`${base}-unidad`} value={o.unidad} disabled={o.mismo} onChange={(e) => editar({ unidad: e.currentTarget.value as typeof o.unidad })}>

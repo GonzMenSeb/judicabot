@@ -231,7 +231,7 @@ El cliente LLM sale de `llm.cliente_para(cfg)`, con `cfg` leído de `config.json
 | `POST /api/casos` | Multipart: `nombre` + `files` (varios), donde cada filename trae la ruta relativa de `webkitRelativePath`. Guarda en `casos/<slug>/insumos/<ruta relativa saneada>` |
 | `GET /api/casos/{id}/config`, `PUT /api/casos/{id}/config` | Leen y escriben `config.json` (validado con `Config`) |
 | `GET /api/casos/{id}/estado` | `api.estado` |
-| `POST /api/casos/{id}/run {cmd, decision?}` | `{job_id}` |
+| `POST /api/casos/{id}/run {cmd, decision?}` | `{job_id}`; 422 `{mensaje, errores: [{campo, mensaje}]}` si la decisión no es aceptable (mismas reglas que la vista previa del RESUELVE y que el grafo): no se crea ningún trabajo |
 | `GET /api/jobs/{id}` | El job |
 | `GET /api/casos/{id}/salidas/{archivo}` | `FileResponse`, solo si el archivo existe en `salidas/` y su nombre no lleva `..` |
 
