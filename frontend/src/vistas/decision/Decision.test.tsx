@@ -542,6 +542,39 @@ describe("Decisión: interacción principal", () => {
     expect((screen.getByLabelText("Por qué, en pocas líneas") as HTMLTextAreaElement).value).toBe("Texto que no debe perderse");
     expect((screen.getByRole("radio", { name: "Modificar" }) as HTMLInputElement).checked).toBe(true);
   });
+
+  it("al rehacer la apertura el borrador guardado reconcilia los derechos con el payload nuevo", async () => {
+    const estadoCon = (derechos: string[]) => ({
+      ok: true,
+      estado: "esperando_decision",
+      payload: { ...payload, derechos_invocados: derechos },
+      salidas: [],
+      resumen: {},
+      error: null,
+      job_activo: null,
+      proveedor_llm: "fake",
+    });
+    servidor({ estado: estadoCon(["salud", "mínimo vital"]) });
+    const primera = await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    fireEvent.change(screen.getByLabelText("Disposición del derecho salud"), { target: { value: "NIEGA" } });
+    primera.unmount();
+
+    const llamadas = servidor({ estado: estadoCon(["salud", "vida", "dignidad humana"]) });
+    await montar();
+    expect(screen.getByLabelText("Disposición del derecho vida")).toBeTruthy();
+    expect(screen.getByLabelText("Disposición del derecho dignidad humana")).toBeTruthy();
+    expect(screen.queryByLabelText("Disposición del derecho mínimo vital")).toBeNull();
+    expect((screen.getByLabelText("Disposición del derecho salud") as HTMLSelectElement).value).toBe("NIEGA");
+    await waitFor(() =>
+      expect(ultimaVista(llamadas)?.derechos).toEqual([
+        { derecho: "salud", disposicion: "NIEGA" },
+        { derecho: "vida", disposicion: "AMPARA" },
+        { derecho: "dignidad humana", disposicion: "AMPARA" },
+      ]),
+    );
+  });
 });
 
 const ultimaVista = (llamadas: Llamada[]) => vistas(llamadas).at(-1)?.cuerpo;
