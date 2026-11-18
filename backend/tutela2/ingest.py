@@ -661,6 +661,18 @@ _CIUDAD_SOLA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}\s*$")  # «Medell�
 _LUGAR_CON_SEPARADOR = re.compile(
     rf"^\s*{_ROTULO_DE_LUGAR}[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){{0,3}}\s*[,;–—-]\s*(?:[^\W\d_]{{3,10}}\.?,?\s*)?$"
 )
+# «Medellín: », «Bogotá D.C. - », «Medellín; » (con coma, `_CIUDAD_Y_COMA`), con el «a»/«el» y el día de la semana tras el
+# separador. Con dos puntos no se lee como encabezado (solo cuenta como un encabezado que no se lee): «Reparto: » o
+# «Vence: » tienen la misma forma y dan otra fecha (`_ROTULO_DE_OTRA_FECHA`).
+_LUGAR_Y_SEPARADOR = re.compile(
+    rf"^\s*{_LUGARES}\s*[:;–—-]\s*(?:(?:a|el)\s+)?(?:(?i:lun|mar|mi[eé]|jue|vie|s[aá]b|dom)[^\W\d_]*\.?,?\s*)?$"
+)
+_ROTULO_DE_OTRA_FECHA = re.compile(
+    r"^\s*(?:fecha\b|(?:reparto|radicad[oa]|radicaci[oó]n|vence|vencimiento|notificaci[oó]n|t[eé]rmino|asunto|referencia|"
+    r"recibid[oa]|ingreso)\b)",
+    re.I,
+)
+_SEPARADOR_DE_TITULO = re.compile(r"[,;:/]|\s[-–—]\s|[–—]")  # «Sentencia No. 123 - Medellín, », «Sentencia de tutela No. 123, Medellín, »
 # renglón «Ciudad, <fecha>» cuya fecha no se pudo leer («Medellín, 28.IX.2026», «Medellín, Sept. 28/26»). Las cifras
 # deben tener forma de fecha (día y mes en números romanos o separados por «/.-», día y mes escrito, mes escrito y
 # día): un membrete o una dirección («Palacio de Justicia, Piso 3», «Sede Medellín, Carrera 52 No. 42-43», «Tutela,
@@ -700,7 +712,12 @@ def _fecha_encabezado(texto: str) -> str | None:
     mes escrito de una forma que el lector no reconoce) o una fecha en cifras que no se entiende. Lo que no se
     detecta es un encabezado ilegible sin cifras ni mes («Medellín, XXVIII de septiembre…», con el día en
     romanos): si antes del primer renglón de cuerpo hay una fecha con forma de «Ciudad, fecha» o sola en su
-    renglón, esa se lee."""
+    renglón, esa se lee.
+    Tampoco sustituye al encabezado la fecha sola ni «Fecha:» cuando hay otra fecha con forma de encabezado que no se
+    lee: va tras un lugar, o un título y un lugar, y un separador («Sentencia No. 123 - Medellín, 28 de …»,
+    «Medellín: …», «Medellín, diez y seis (16) de …»; `parece_encabezado`) o tras un «Fecha:» con más texto en el
+    renglón. Esa señal es más débil que una «Ciudad, fecha» legible, que manda: un renglón «Ciudad, fecha» citado
+    antes del primer renglón de cuerpo gana a un encabezado de este tipo."""
     return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000])[0]
 
 
@@ -753,6 +770,23 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
     def propias(candidatas: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
         return [c for c in candidatas if not _OFICIO.search(_plano(texto[c[0] : c[0] + VENTANA_OFICIO]))]
 
+    def parece_encabezado(pos: int) -> bool:
+        """La fecha va tras un lugar (o un título y un lugar) y un separador, o tras un «Fecha:» con más texto en su
+        renglón: tiene forma de encabezado. Se mira cada tramo tras un separador porque lo que va antes del lugar
+        puede ser cualquier título («Sentencia de tutela No. 123, Medellín, »)."""
+        col = columna(pos)
+        if re.match(r"\d{1,2}\s*\)", texto[pos:]):  # «Medellín, (28) de …», «diez y seis (16) de …»: el día en paréntesis no se resolvió
+            col = re.sub(r"(?:[^\W\d_]+[ \t]+){0,3}\(\s*$", "", col)
+        col = re.sub(r"\s*\([^)\d]*\)", "", col)  # «Medellín (Ant) - »
+        if _ROTULO_FECHA.match(col):  # «Radicado …      Fecha: <fecha>»
+            return bool(col.strip())
+        if _ROTULO_DE_OTRA_FECHA.match(col):  # «Fecha de radicación: », «Reparto: », «Asunto: »
+            return False
+        tramos = [col] + [col[m.end() :] for m in _SEPARADOR_DE_TITULO.finditer(col)]
+        return any(
+            r.match(t) for t in tramos for r in (_CIUDAD_Y_COMA, _CIUDAD_SOLA, _LUGAR_CON_SEPARADOR)
+        ) or any(_LUGAR_Y_SEPARADOR.match(t) and not _ROTULO_DE_OTRA_FECHA.match(t) for t in tramos)
+
     ciudad = [f for f in fechas if con_ciudad(f[0], f[1])]
     leidos = {ini_renglon(f[0]) for f in ciudad}
     # Renglón con aire de «Ciudad, fecha» que no se leyó: el encabezado existe pero es ilegible
@@ -794,7 +828,10 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
                     return fecha, ilegible
             return ciudad[0][2], False
         return None, False
-    if sin_leer:  # hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen
+    # Hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen. Una «Ciudad, fecha» legible manda sobre todo
+    # esto, y por eso las fechas con forma de encabezado (`parece_encabezado`), que son una señal más débil, solo cuentan
+    # aquí: un renglón «Reparto: <fecha>» antes de un «Medellín, <fecha>» no desplaza al encabezado legible.
+    if sin_leer or any(not sola(f[0], f[1]) and parece_encabezado(f[0]) for f in fechas):
         return None, True
     if relectura:
         return None, False
