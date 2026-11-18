@@ -691,27 +691,27 @@ _DISPARADOR_MODAL = re.compile(
 # Despacho o de una oración impersonal («el Despacho considera que corresponde…», «es claro que procede…») no cuentan.
 # Es amplio a propósito: si se equivoca, la oración no se examina.
 _DETERMINANTE_AJENO = (
-    r"(?:la|las|el|los|ella|ellas|ellos|esta|este|estas|estos|esa|ese|esas|esos|su|sus|cada|aquel|aquella"
+    r"(?:la|las|el|los|ella|ellas|ellos|esta|este|estas|estos|esa|ese|esas|esos|su|sus|mi|mis|nuestr[oa]s?|cada|aquel|aquella"
     r"|quien|quienes|una?|otr[ao]s?|dich[ao]s?|tal|tales)"
 )
 _NO_ES_AJENO = (
     r"(?:despacho|juzgado|sala|tribunal|judicatura|corporaci[oó]n|luz|fecha|vez|postre|letra|medida|hora|vista|brevedad"
     r"|juicio|turno|criterio|parecer|entender|respecto|prop[oó]sito|efecto|efectos|punto|momento|fin|tenor|partir|pesar"
-    r"|trav[eé]s|continuaci[oó]n|falta|diferencia|causa|ra[ií]z|menos|t[ií]tulo|modo|cambio|quo|ad|largo|lo|ello|esto|eso|se|que"
+    r"|trav[eé]s|continuaci[oó]n|falta|diferencia|causa|ra[ií]z|menos|t[ií]tulo|modo|cambio|quo|ad|largo|altura|material|expediente|an[aá]lisis|decreto|suscrito|lo|ello|esto|eso|se|que"
     r"|art[ií]culo|jurisprudencia|ley|norma|normas|constituci[oó]n|precedente|doctrina|regla|reglas|tesis|sentencia|caso"
     r"|presente|particular|hechos|pruebas|razones|consideraciones|expuesto)"
 )
 _PREPOSICION_DE_AJENO = (
     r"(?:a|para|en\s+cabeza\s+de|a\s+cargo\s+de|por\s+parte\s+de|de\s+parte\s+de|seg[uú]n|conforme\s+a|de\s+acuerdo\s+con"
-    r"|en\s+criterio\s+de|a\s+juicio\s+de|en\s+opini[oó]n\s+de|en\s+concepto\s+de)"
+    r"|en\s+criterio\s+de|a\s+criterio\s+de|a\s+juicio\s+de|en\s+opini[oó]n\s+de|en\s+concepto\s+de)"
 )
-_NO_ES_DESPACHO = r"(?!(?:despacho|juzgado|tribunal|respecto|efecto|momento|tiempo|margen|contrario|menos|igual|cabo)\b)"
+_NO_ES_DESPACHO = r"(?!(?:despacho|juzgado|tribunal|respecto|efecto|momento|tiempo|margen|contrario|menos|igual|cabo|caso|suscrito)\b)"
 _NO_ES_INFINITIVO_SIGUIENTE = r"(?![a-zñáéíóú]+(?:ar|er|ir)\b)"
 # «a la EPS», «a Sura», «para el accionado», «según Nueva EPS»: lo que nombra la preposición no es el Despacho ni una
 # locución («a partir de», «a la luz de», «según el artículo»).
 _COMPLEMENTO_AJENO = re.compile(
     rf"\b{_PREPOSICION_DE_AJENO}\s+(?!(?:{_DETERMINANTE_AJENO}\s+)?{_NO_ES_AJENO}\b){_NO_ES_INFINITIVO_SIGUIENTE}[a-zñáéíóú]{{2,}}"
-    rf"|\b(?:al|(?:en\s+cabeza|a\s+cargo|por\s+parte|de\s+parte|a\s+juicio|en\s+criterio|en\s+opini[oó]n|en\s+concepto"
+    rf"|\b(?:al|(?:en\s+cabeza|a\s+cargo|por\s+parte|de\s+parte|a\s+juicio|a\s+criterio|en\s+criterio|en\s+opini[oó]n|en\s+concepto"
     rf"|seg[uú]n)\s+del)\s+{_NO_ES_DESPACHO}{_NO_ES_INFINITIVO_SIGUIENTE}[a-zñáéíóú]"
 )
 _CLITICO_DATIVO = re.compile(r"\bles?\s+(?:(?:es|resulta)\s+)?$")
@@ -734,6 +734,10 @@ _QUE_DEL_DESPACHO = re.compile(
 _FIN_ORACION_RE = re.compile(_FIN_DE_ORACION)
 # Lo que sigue inmediatamente al disparador sin ser parte del anuncio: un conectivo o el dativo del propio Despacho.
 _CONECTOR_SUELTO = rf"(?:{_CONECTIVO_DECISION}|entonces|pues|as[ií]|ahora\s+bien)"
+# Lo que, dentro de una oración compuesta, puede preceder a una atribución sin ser parte de ella («…, aunque, según la EPS, …»).
+_CONECTOR_DE_INCISO = re.compile(
+    rf"^\s*(?:(?:{_CONECTOR_SUELTO}|y|e|o|pero|como|aunque|mientras(?:\s+que)?|a\s+pesar\s+de\s+que|si\s+bien|ya\s+que|dado\s+que)\b\s*,?\s*)*"
+)
 _CONECTOR_AL_ABRIR = re.compile(rf"(?:{_CONECTOR_SUELTO}|por\s+(?:ello|eso|esto)|luego|ahora)\s*,?\s*")
 _RELLENO_TRAS_ANUNCIO = re.compile(
     rf"\s*,?\s*(?:{_CONECTOR_SUELTO}\s*,?\s*)*"
@@ -791,16 +795,36 @@ def _prefijo_de_la_oracion(texto: str, hasta: int) -> str:
     return texto[inicio:hasta]
 
 
+def _inciso_ajeno_antes_del_disparador(prefijo: str) -> bool:
+    """El prefijo acaba en coma: ¿el inciso cerrado justo antes del disparador es una atribución o un dativo de otro?
+
+    «…, aunque, según la EPS, corresponde confirmar…»: el último segmento tras la coma está vacío, así que se recorren hacia
+    atrás los segmentos hasta el primero con contenido, saltando los que son solo un conectivo («aunque», «a pesar de que»), y se
+    exige que ese segmento empiece por el complemento (sin buscarlo en medio: «Como el a quo negó el amparo a la accionante,
+    corresponde…» sigue siendo una cláusula anterior del propio Despacho).
+    """
+    for segmento in reversed(prefijo.split(",")):
+        segmento = _CONECTOR_DE_INCISO.sub("", segmento)
+        if segmento.strip():
+            return bool(_COMPLEMENTO_AJENO.match(segmento))
+    return False
+
+
 def _con_otro_actor(prefijo: str) -> bool:
     prefijo = _DE_ALCANCE.sub(" ", _DATIVO_DEL_DESPACHO.sub(" ", prefijo))
     if _QUE_FINAL.search(prefijo) and not _QUE_DEL_DESPACHO.search(prefijo):
         return True
     if _CLITICO_DATIVO.search(prefijo):
         return True
-    # El complemento que nombra a otro rige al disparador si abre la oración («A la EPS, en consecuencia, corresponde…») o
-    # está en su misma cláusula; en una cláusula anterior («Como el a quo negó el amparo a la accionante, corresponde…») no.
+    # El complemento que nombra a otro rige al disparador si abre la oración («A la EPS, en consecuencia, corresponde…»), si
+    # está en su misma cláusula o si es el inciso cerrado con coma justo antes («…, aunque, según la EPS, corresponde…»); en
+    # una cláusula anterior («Como el a quo negó el amparo a la accionante, corresponde…») no.
     cabeza = re.sub(rf"^\s*(?:{_CONECTOR_SUELTO}\s*,?\s*)*", "", prefijo)
-    return bool(_COMPLEMENTO_AJENO.match(cabeza) or _COMPLEMENTO_AJENO.search(prefijo.rsplit(",", 1)[-1]))
+    return bool(
+        _COMPLEMENTO_AJENO.match(cabeza)
+        or _COMPLEMENTO_AJENO.search(prefijo.rsplit(",", 1)[-1])
+        or (prefijo.rstrip().endswith(",") and _inciso_ajeno_antes_del_disparador(prefijo))
+    )
 
 
 def _disparadores_de_anuncio(texto: str) -> list[int]:

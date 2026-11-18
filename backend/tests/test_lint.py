@@ -1417,10 +1417,12 @@ _IMPERSONALES_CON_DATIVO = ("corresponde", "es necesario", "es preciso", "result
 _MODALES = ("debe", "deberá", "deben", "deberán", "ha de", "habrá de", "han de", "habrán de", "procederá a", "procederán a")
 _MODALES_CON_SUJETO_POSPUESTO = ("debe", "deberá", "deben", "deberán")  # «debe la entidad confirmar la cita»
 _TERCEROS = ("la EPS", "el accionado", "las demás entidades", "la Nueva EPS S.A.", "Sura", "ella")
-# (resultado decidido, su infinitivo, el verbo contrario que un tercero puede traer, su complemento)
+# (resultado decidido, su infinitivo, el verbo contrario que un tercero puede traer, los complementos que puede llevar). Los
+# complementos incluyen el objeto judicial («confirmar el fallo»): es el caso natural de las partes, y es el que la regla de
+# objeto («confirmar la cita» no se examina) no descarta de antemano.
 _DECISIONES_Y_VERBO_DE_TERCERO = (
-    ("REVOCAR", "revocar", "confirmar", "la cita médica"),
-    ("CONFIRMAR", "confirmar", "revocar", "la glosa"),
+    ("REVOCAR", "revocar", "confirmar", ("la cita médica", "el fallo", "la sentencia")),
+    ("CONFIRMAR", "confirmar", "revocar", ("la glosa", "el fallo", "la sentencia")),
 )
 _ORDENES_PREVIAS = ("autorizar el procedimiento", "programar la cirugía", "entregar el medicamento")
 _ENLACES_DE_TERCERO = (" y", ", además,")
@@ -1459,13 +1461,14 @@ def _frases_de_tercero_con_modal(tercero: str, cadena: str) -> list[str]:
 
 def _conclusiones_de_tercero(frases_de) -> list[tuple[str, str]]:
     casos = []
-    for resultado, infinitivo, tercero_verbo, complemento in _DECISIONES_Y_VERBO_DE_TERCERO:
+    for resultado, infinitivo, tercero_verbo, complementos in _DECISIONES_Y_VERBO_DE_TERCERO:
         cabeza = f"Corresponde {infinitivo} el fallo y amparar el derecho a la salud"
-        for tercero in _TERCEROS:
-            for cadena in _cadenas_de_tercero(tercero_verbo, complemento):
-                for frase in frases_de(tercero, cadena):
-                    for union in _UNIONES_CON_EL_ANUNCIO_DEL_DESPACHO:
-                        casos.append((resultado, f"{cabeza}{union}{_en_mayuscula_inicial(frase)}."))
+        for complemento in complementos:
+            for tercero in _TERCEROS:
+                for cadena in _cadenas_de_tercero(tercero_verbo, complemento):
+                    for frase in frases_de(tercero, cadena):
+                        for union in _UNIONES_CON_EL_ANUNCIO_DEL_DESPACHO:
+                            casos.append((resultado, f"{cabeza}{union}{_en_mayuscula_inicial(frase)}."))
     return casos
 
 
@@ -1476,8 +1479,8 @@ _CONCLUSIONES_DE_TERCERO_CON_MODAL = _conclusiones_de_tercero(_frases_de_tercero
 @pytest.mark.parametrize(
     ("familia", "casos", "tamano"),
     [
-        ("impersonal con dativo, atribución o «que» ajeno", _CONCLUSIONES_DE_TERCERO_IMPERSONALES, 12348),
-        ("«deber», «ha de» o «habrá de» con sujeto ajeno", _CONCLUSIONES_DE_TERCERO_CON_MODAL, 11088),
+        ("impersonal con dativo, atribución o «que» ajeno", _CONCLUSIONES_DE_TERCERO_IMPERSONALES, 37044),
+        ("«deber», «ha de» o «habrá de» con sujeto ajeno", _CONCLUSIONES_DE_TERCERO_CON_MODAL, 33264),
     ],
 )
 def test_coherencia_decision_ningun_tercero_anuncia_el_resultado_tabla_exhaustiva(familia, casos, tamano):
@@ -1610,6 +1613,86 @@ def test_coherencia_decision_reproducciones_de_las_revisiones_no_bloquean():
 )
 def test_coherencia_decision_la_postura_de_un_tercero_no_es_el_anuncio_del_despacho(conclusion):
     assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+# Una atribución o un dativo que no abre la oración: un inciso cerrado con coma justo antes del disparador («…, aunque, según
+# la EPS, procede confirmar el fallo»). El objeto judicial es el caso natural de las partes: piden «confirmar el fallo».
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "El Despacho considera que debe revocar el fallo y amparar el derecho a la salud, a pesar de que, según la EPS, procede confirmar el fallo.",
+        "El Despacho considera que debe revocar el fallo y amparar el derecho a la salud, a pesar de que, para la EPS, procede confirmar la sentencia.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, aunque, según la EPS, corresponde confirmar la sentencia de primera instancia.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, mientras que a juicio de la EPS, corresponde negar la tutela.",
+        "El Despacho revocará el fallo y amparará el derecho. A criterio de la EPS, hay que confirmar el fallo; a criterio del Despacho, no.",
+        # la misma atribución abriendo la oración, tras «. » o «; »
+        "Corresponde revocar el fallo y amparar el derecho a la salud. A criterio de la EPS, hay que confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; a criterio del accionado, corresponde confirmar la sentencia.",
+    ],
+)
+def test_coherencia_decision_una_atribucion_entre_comas_antes_del_disparador_no_es_del_despacho(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+_ATRIBUCIONES_DE_INCISO = (
+    "a criterio de la EPS", "según la EPS", "para la EPS", "a juicio de la EPS", "en opinión de la EPS", "de acuerdo con la EPS",
+    "conforme a la EPS", "en criterio del accionado", "a criterio del accionado",
+)
+_UNIONES_DE_INCISO = (", aunque, ", ", mientras que ", ", a pesar de que, ", ", si bien, ", ", pero, ", ", ya que ", ", dado que, ", ", y, ", ", pues, ")
+_CONCLUSIONES_CON_INCISO_DE_TERCERO = [
+    (resultado, f"Corresponde {infinitivo} el fallo y amparar el derecho a la salud{union}{atribucion}, {d} {contrario} {objeto}.")
+    for resultado, infinitivo, contrario in (("REVOCAR", "revocar", "confirmar"), ("CONFIRMAR", "confirmar", "revocar"))
+    for union in _UNIONES_DE_INCISO
+    for atribucion in _ATRIBUCIONES_DE_INCISO
+    for d in ("corresponde", "procede", "hay que")
+    for objeto in ("el fallo", "la sentencia de primera instancia")
+]
+
+
+def test_coherencia_decision_ningun_inciso_de_tercero_con_objeto_judicial_anuncia_el_resultado():
+    assert len(_CONCLUSIONES_CON_INCISO_DE_TERCERO) == 972
+    falsos = [c for r, c in _CONCLUSIONES_CON_INCISO_DE_TERCERO if lint.coherencia_decision(_caso(conclusion=c), _decision(r, "AMPARAR")) != []]
+    assert falsos == [], f"{len(falsos)} falsos BLOQUEA; por ejemplo: {falsos[:3]}"
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        # Un inciso que es solo un conectivo no es una atribución: el sujeto sigue siendo el del propio Despacho.
+        "Corresponde revocar el fallo y amparar el derecho a la salud, y, por lo expuesto, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, aunque, en este caso, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, a pesar de que, en consecuencia, procede confirmar la sentencia.",
+        # La atribución es del propio Despacho o es una locución, no de un tercero.
+        "Corresponde revocar el fallo y amparar el derecho a la salud, mientras que, a juicio del Despacho, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, aunque, a la luz de la sentencia, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, a esta altura, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, y, de acuerdo con el material probatorio, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, y, según el expediente, procede confirmar la sentencia.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, pero, al caso concreto, corresponde confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, aunque, a mi juicio, hay que confirmar el fallo.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, aunque, a criterio del suscrito, procede confirmar el fallo.",
+        # Una cláusula anterior que nombra a otro no rige al disparador si no es el inciso que lo precede.
+        "Como el a quo negó el amparo a la accionante, corresponde confirmar el fallo y amparar el derecho a la salud.",
+        "Como el a quo negó el amparo a la accionante, y por lo expuesto, corresponde confirmar el fallo.",
+    ],
+)
+def test_coherencia_decision_un_inciso_que_no_es_de_un_tercero_no_excusa_el_anuncio_del_despacho(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs), conclusion
+
+
+@pytest.mark.parametrize(
+    ("resultado", "conclusion"),
+    [
+        # Residuo aceptado que sí bloquea (documentado en docs/CONTRATO_IMPLEMENTACION.md): el inciso que precede al disparador
+        # empieza por otra cosa («para lo cual…») y la atribución va después, o es un delimitador de alcance con objeto judicial.
+        ("CONFIRMAR", "Corresponde confirmar el fallo y amparar el derecho a la salud, para lo cual según la ARL, procede revocar la sentencia."),
+        ("CONFIRMAR", "Corresponde confirmar el fallo y amparar el derecho a la salud; en cuanto a la IPS, corresponde revocar la sentencia."),
+    ],
+)
+def test_coherencia_decision_residuo_aceptado_que_bloquea_atribucion_lejana_o_delimitador_de_alcance(resultado, conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, "AMPARAR"))
+    assert any("anuncia REVOCAR como el resultado" in m for m in msgs), conclusion
 
 
 @pytest.mark.parametrize(
