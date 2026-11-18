@@ -498,6 +498,7 @@ _MES = re.compile(
 _TOKEN = re.compile(r"\d+(?:\.\d{3})?[º°ª]?|[^\W\d_]+")
 _ORDINAL = "º°ª"
 _ENTRE_DIA_Y_MES = re.compile(r"[\s\-/.º°ª()]*(?:de[\s\-/.]*)?")
+_DIAS_DEL_MES = re.compile(r"\s+d[ií]as?\s+del\s+mes\s+de\s*$", re.I)  # «a los veintiocho (28) días del mes de septiembre»
 
 
 def _dia_antes(izq: str) -> tuple[int, int] | None:
@@ -529,6 +530,17 @@ def _dia_antes(izq: str) -> tuple[int, int] | None:
         n = letras_a_entero(" ".join(g.group() for g in grupo))
         if n and 1 <= n <= 31:
             return n, grupo[0].start()
+    return None
+
+
+def _dia_despues(der: str) -> tuple[int, int] | None:
+    """Día que sigue al mes: «28» o «veintiocho (28)». Devuelve (día, fin)."""
+    d = re.match(r"\s*(\d{1,2})(?!\d)", der)
+    if d:
+        return int(d.group(1)), d.end()
+    d = re.match(r"\s*((?:[^\W\d_]+[ \t]+){0,2}[^\W\d_]+)[ \t]*\(\s*(\d{1,2})\s*\)", der)
+    if d and letras_a_entero(d.group(1)) == int(d.group(2)):
+        return int(d.group(2)), d.end()
     return None
 
 
@@ -568,16 +580,16 @@ def _fechas_con_mes(texto: str) -> list[tuple[int, int, str | None]]:
         mes = _MESES.get(clave) or _ABREVIATURAS.get(clave[:3])
         desde = max(0, m.start() - 60)
         izq, der = texto[desde : m.start()], texto[m.end() : m.end() + 90]
-        dia = _dia_antes(izq)
+        dia = _dia_antes(_DIAS_DEL_MES.sub(" de ", izq))
         if dia is not None:
             anio = _anio_despues(der)
             if anio:
                 halladas.append((desde + dia[1], m.end() + anio[1], _iso(str(anio[0]), mes, str(dia[0]))))
             continue
-        d = re.match(r"\s*(\d{1,2})(?!\d)", der)
-        anio = _anio_despues(der[d.end() :]) if d else None
+        d = _dia_despues(der)
+        anio = _anio_despues(der[d[1] :]) if d else None
         if d and anio:
-            halladas.append((m.start(), m.end() + d.end() + anio[1], _iso(str(anio[0]), mes, d.group(1))))
+            halladas.append((m.start(), m.end() + d[1] + anio[1], _iso(str(anio[0]), mes, str(d[0]))))
     return halladas
 
 
@@ -616,32 +628,55 @@ _CIUDAD_SOLA = re.compile(rf"^\s*{_LUGARES}\s*$")  # «Medellín » (sin coma)
 _LUGAR_CON_SEPARADOR = re.compile(
     r"^\s*[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){0,3}\s*[,;–—-]\s*(?:[^\W\d_]{3,10}\.?,?\s*)?$"
 )
-# renglón «Ciudad, <cifras>» cuya fecha no se pudo leer («Medellín, 28.IX.2026», «Medellín, Sept. 28/26»)
-_CIUDAD_Y_CIFRAS = re.compile(rf"^\s*{_LUGARES}\s*,\s*{_ANTES_DE_LA_FECHA}\d{{1,2}}(?!\d)")
-# fecha en cifras o números romanos que el lector no entiende: «28.IX.2026», «28/09/26»
-_FECHA_DUDOSA = re.compile(r"(?<![\d/.\-])\d{1,2}[/.\-](?:[IVX]{1,4}|\d{1,2})[/.\-]\d{2,4}(?![\d/])", re.I)
+# renglón «Ciudad, <fecha>» cuya fecha no se pudo leer («Medellín, 28.IX.2026», «Medellín, Sept. 28/26»). Las cifras
+# deben tener forma de fecha (día y mes en números romanos o separados por «/.-», día y mes escrito, mes escrito y
+# día): un membrete o una dirección («Palacio de Justicia, Piso 3», «Sede Medellín, Carrera 52 No. 42-43», «Tutela,
+# 1ª instancia») no son un encabezado ilegible.
+_MES_ESCRITO = rf"(?i:(?:{'|'.join(_ABREVIATURAS)})[^\W\d_]*)"
+_CIUDAD_Y_CIFRAS = re.compile(
+    rf"^\s*{_LUGARES}\s*,\s*(?:(?:a|el)\s+)?(?:"
+    rf"(?:{_MES_ESCRITO}\.?,?\s*)\d{{1,2}}(?!\d)"  # «Sept. 28/26»
+    rf"|(?:[^\W\d_]{{3,10}}\.?,?\s*)?\d{{1,2}}(?!\d)"
+    rf"(?:[/.\-]\s*(?:\d{{1,2}}|[IVX]{{1,4}})\s*[/.\-]\s*\d"  # «28.IX.2026», «28/9/26»
+    rf"|\s*(?:de\s+)?{_MES_ESCRITO}"  # «28 de septiembrre de 2026», «31 de abril de 2026»
+    rf"|\s+[IVX]{{1,4}}\b)"  # «28 IX 2026»
+    rf")"
+)
+# fecha en cifras o números romanos que el lector no entiende: «28.IX.2026», «28/09/26». El mes es 1-12 o romano
+# («Tel. (4) 23-25-55» no es una fecha).
+_FECHA_DUDOSA = re.compile(
+    r"(?<![\d/.\-])\d{1,2}[/.\-](?:[IVX]{1,4}|0?[1-9]|1[0-2])[/.\-]\d{2,4}(?![\d/])", re.I
+)
 _ROTULO_FECHA = re.compile(
     r"^\s*(?:fecha(?:\s+(?:de\s+la|del|de)\s+(?:providencia|sentencia|auto|fallo|decisi[oó]n))?\s*:?\s*)?$", re.I
 )
 # primer renglón del cuerpo: el encabezado queda antes
-_SECCION = re.compile(
-    r"^[ \t]*(?:(?:[IVX]+|\d{1,2})[.)\-][ \t]*)?"
-    r"(?:(?:HECHOS|ANTECEDENTES|CONSIDERACIONES|FUNDAMENTOS|PRETENSIONES)\b|PRIMERO[.:)\-]|\d{1,2}[.)][ \t])",
-    re.M | re.I,
-)
+_INICIO_SECCION = r"^[ \t]*(?:(?:[IVX]+|\d{1,2})[.)\-][ \t]*)?"
+_TITULO_SECCION = r"(?:HECHOS|ANTECEDENTES|CONSIDERACIONES|FUNDAMENTOS|PRETENSIONES)\b|PRIMERO[.:)\-]"
+_SECCION = re.compile(_INICIO_SECCION + rf"(?:{_TITULO_SECCION}|\d{{1,2}}[.)][ \t])", re.M | re.I)
+# lo mismo sin los párrafos numerados, que también pueden ser los de un oficio de notificación
+_SECCION_TITULADA = re.compile(_INICIO_SECCION + rf"(?:{_TITULO_SECCION})", re.M | re.I)
 
 
 def _fecha_encabezado(texto: str) -> str | None:
     """Fecha del encabezado de la providencia. Solo vale la que está en el encabezado (el comienzo del
     documento, antes del cuerpo), en dos niveles: primero «Ciudad, <fecha>» (lugar con mayúsculas, coma y, si
     acaso, el día de la semana antes de la fecha) y solo si no hay ninguna así, la fecha sola en su renglón
-    (con «Fecha:» opcional). Si el encabezado no se puede leer devuelve None: nunca se sustituye por otra
-    fecha del cuerpo (hechos, términos), ni cuando hay un «Ciudad, <cifras>» ilegible."""
-    return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000], reiniciar=True)[0]
+    (con «Fecha:» opcional). Si el encabezado no se puede leer devuelve None en vez de sustituirlo por una fecha
+    del cuerpo (hechos, términos): un renglón «Ciudad, <fecha>» que no se entiende (cifras, números romanos o
+    mes escrito de una forma que el lector no reconoce) o una fecha en cifras que no se entiende. Lo que no se
+    detecta es un encabezado ilegible sin cifras ni mes («Medellín, XXVIII de septiembre…», con el día en
+    romanos): si antes del primer renglón de cuerpo hay una fecha con forma de «Ciudad, fecha» o sola en su
+    renglón, esa se lee."""
+    return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000])[0]
 
 
-def _leer_encabezado(texto: str, reiniciar: bool) -> tuple[str | None, bool]:
-    """(fecha, hay un encabezado que no se lee) del comienzo de `texto`. Ver `_fecha_encabezado`."""
+def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, bool]:
+    """(fecha, hay un encabezado que no se lee) del comienzo de `texto`. Ver `_fecha_encabezado`.
+    `relectura`: `texto` empieza en un renglón posterior a un oficio de notificación. Ahí solo vale una
+    «Ciudad, fecha» propia (o un encabezado ilegible): la fecha sola y «Fecha:» serían fechas del oficio o
+    del cuerpo, no de la providencia, y un encabezado legible que solo menciona un oficio no debe acabar
+    leyéndose desde una fecha del cuerpo."""
     seccion = _SECCION.search(texto)
     zona = min(seccion.start() if seccion else len(texto), ZONA_ENCABEZADO)
     fechas = [f for f in _fechas(texto[: zona + 200]) if f[0] < zona]
@@ -711,16 +746,25 @@ def _leer_encabezado(texto: str, reiniciar: bool) -> tuple[str | None, bool]:
         if propias(ciudad):
             return propias(ciudad)[0][2], False
         # Solo hay oficios de notificación: la providencia empieza después, aunque el oficio sea largo (o
-        # traiga numerales). Se vuelve a leer el comienzo desde cada renglón con texto que sigue al oficio.
-        if reiniciar:
+        # traiga numerales). Se vuelve a leer el comienzo desde cada renglón con texto que sigue al oficio y
+        # que está antes del cuerpo de la providencia (el primer HECHOS, ANTECEDENTES…): una «Ciudad, fecha»
+        # citada en el cuerpo no es su encabezado. Si ninguna relectura da una «Ciudad, fecha» propia ni un
+        # encabezado ilegible, vale la primera «Ciudad, fecha»: un encabezado legible que solo menciona un
+        # oficio (dentro de VENTANA_OFICIO) conserva su fecha.
+        if not relectura:
             ini = ciudad[-1][1]
-            for m in list(re.finditer(r"\n(?=[^\S\n]*\S)", texto[ini:]))[:MAX_REINICIOS]:
-                fecha, ilegible = _leer_encabezado(texto[ini + m.end() :], reiniciar=False)
+            cuerpo = _SECCION_TITULADA.search(texto, ini)
+            limite = cuerpo.start() if cuerpo else len(texto)
+            for m in list(re.finditer(r"\n(?=[^\S\n]*\S)", texto[ini:limite]))[:MAX_REINICIOS]:
+                fecha, ilegible = _leer_encabezado(texto[ini + m.end() :], relectura=True)
                 if fecha or ilegible:
                     return fecha, ilegible
-        return ciudad[0][2], False
+            return ciudad[0][2], False
+        return None, False
     if sin_leer:  # hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen
         return None, True
+    if relectura:
+        return None, False
     solas = [f for f in fechas if sola(f[0], f[1])]
     elegidas = propias(solas) or solas
     return (elegidas[0][2] if elegidas else None), False

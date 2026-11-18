@@ -759,6 +759,9 @@ CUERPO_CON_FECHAS = (
         ("dos (2) de octubre de dos mil veintiséis", "2026-10-02"),
         ("treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
         ("1º de octubre de 2026", "2026-10-01"),
+        ("a los veintiocho (28) días del mes de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("a los 28 días del mes de septiembre de 2026", "2026-09-28"),
+        ("septiembre veintiocho (28) de dos mil veintiséis (2026)", "2026-09-28"),
         ("31 de febrero de dos mil veintisiete", None),
         ("Decreto 2591 de 1991 y ley 100 de 1993", None),
         ("la sentencia T-760 de 2008", None),
@@ -785,6 +788,8 @@ def test_fechas_en_formatos_con_mes_en_letras(texto, iso):
         ("Medellín, veintiocho de septiembre de dos mil veintiséis", "2026-09-28"),
         ("Medellín, 1º de octubre de 2026", "2026-10-01"),
         ("Medellín, treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
+        ("Medellín, a los veintiocho (28) días del mes de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, septiembre veintiocho (28) de dos mil veintiséis (2026)", "2026-09-28"),
         ("Medellín D.C., 28 de septiembre de 2026", "2026-09-28"),
         ("Bogotá D.C., 28 de septiembre de 2026", "2026-09-28"),
         ("Santiago de Cali, 28 de septiembre de 2026", "2026-09-28"),
@@ -917,6 +922,8 @@ ENCABEZADOS_ILEGIBLES = [
     "Medellín – 28 de septiembre de 2026",
     "28.IX.2026",
     "Fecha: 28/09/26",
+    "Medellín, 28 IX 2026",
+    "Medellín, 28/9/26",
 ]
 CUERPOS_CON_FECHAS = [
     "Primero. La entidad respondió mediante oficio del\n20 de agosto de 2026,\nSegundo. Otra cosa.\n",
@@ -953,6 +960,85 @@ def test_fecha_en_el_cuerpo_tras_hechos_no_es_encabezado_aunque_no_haya_otra():
 def test_fecha_del_encabezado_lejos_del_inicio_no_se_lee():
     texto = "JUZGADO NOVENO PENAL MUNICIPAL\n" + "Texto de relleno sin cifras. " * 120 + "\nMedellín, 15 de junio de 2026\n"
     assert ingest._fecha_encabezado(texto) is None
+
+
+# Un membrete, una dirección o un teléfono antes del encabezado (en un DOCX, los encabezados y pies de sección van
+# primero en el texto) no son un encabezado ilegible: el que sigue se lee.
+LINEAS_ANTES_DEL_ENCABEZADO = [
+    "Palacio de Justicia, Piso 3",
+    "Edificio José Félix de Restrepo, Carrera 52 No. 42-43",
+    "Edificio José Félix de Restrepo, Piso 5 Oficina 502",
+    "Sede Medellín, Carrera 52 No. 42-43",
+    "Centro Administrativo, Oficina 12",
+    "Centro Administrativo La Alpujarra, Piso 3",
+    "Complejo Judicial, Torre 2",
+    "Sala Penal, Despacho 4",
+    "Tutela, 1ª instancia",
+    "Auto Interlocutorio, 12 de 2026",
+    "Tel. (4) 23-25-55",
+    "Carrera 52 No. 42-43, Piso 12",
+    "Teléfono 4 385-55-55",
+    "Calle 44 No. 52-165, Medellín",
+]
+
+
+@pytest.mark.parametrize("linea", LINEAS_ANTES_DEL_ENCABEZADO)
+@pytest.mark.parametrize(
+    "fecha", ["Medellín, veintiocho (28) de septiembre de dos mil veintiséis (2026)", "Medellín, 28 de septiembre de 2026"]
+)
+def test_membrete_o_direccion_antes_del_encabezado_no_lo_vuelve_ilegible(linea, fecha):
+    texto = f"JUZGADO NOVENO PENAL MUNICIPAL\n{linea}\nSENTENCIA\n{fecha}" + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+# Un encabezado legible que solo menciona un oficio (a menos de VENTANA_OFICIO caracteres) no se confunde con el
+# de un oficio de notificación: la fecha es la suya, nunca una fecha del cuerpo que viene después.
+ENCABEZADO_QUE_MENCIONA_UN_OFICIO = (
+    "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28 de septiembre de 2026\n"
+    "Radicado: 05001408800920260012300\nAccionante: Juan Pérez\n"
+)
+
+
+@pytest.mark.parametrize(
+    "oficio",
+    [
+        "Mediante oficio No. 1234 la entidad respondió.\n",
+        "Se adjunta el fallo de primera instancia.\n",
+        "Con oficio 55 se notificó.\n",
+    ],
+)
+@pytest.mark.parametrize(
+    "cuerpo",
+    [
+        "La accionante radicó la solicitud ante la entidad el\n15 de junio de 2026.\n",  # fecha de un renglón partido
+        "Se radicó la solicitud el\n15/06/2026\n",
+        "El término vence así:\n15 de junio de 2026\n",  # fecha sola
+        "Fecha: 15 de junio de 2026\n",
+    ],
+)
+@pytest.mark.parametrize("seccion", ["HECHOS\nPrimero. x\n", "ANTECEDENTES\nPrimero. x\n"])
+def test_encabezado_que_menciona_un_oficio_conserva_su_fecha(oficio, cuerpo, seccion):
+    texto = ENCABEZADO_QUE_MENCIONA_UN_OFICIO + oficio + cuerpo + seccion
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_renglon_de_cuerpo_con_forma_de_encabezado_junto_a_un_oficio_nunca_da_la_fecha_del_cuerpo():
+    # «Posteriormente, <fecha> ocurrió…» tiene forma de «Ciudad, fecha» ilegible: puede dejar la fecha vacía (con
+    # aviso), pero nunca devolver la del cuerpo.
+    for orden in (0, 1):
+        pie = ["Mediante oficio No. 1234 la entidad respondió.\n", "Posteriormente, 15 de junio de 2026 ocurrió el hecho.\n"]
+        texto = ENCABEZADO_QUE_MENCIONA_UN_OFICIO + "".join(pie[::-1] if orden else pie) + "HECHOS\nPrimero. x\n"
+        assert ingest._fecha_encabezado(texto) in ("2026-09-28", None)
+
+
+@pytest.mark.parametrize("oficio", ["Mediante oficio No. 1234 la entidad respondió.\n", "Se adjunta el fallo de primera instancia.\n"])
+def test_ciudad_y_fecha_citadas_en_el_cuerpo_no_reemplazan_un_encabezado_que_menciona_un_oficio(oficio):
+    texto = (
+        ENCABEZADO_QUE_MENCIONA_UN_OFICIO
+        + oficio
+        + "HECHOS\nPrimero. La accionante presentó la petición así:\nMedellín, 15 de junio de 2026\nSeñores EPS SURA\n"
+    )
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
 
 
 def test_partes_tabla_sin_documento_y_nombre_en_dos_lineas():
