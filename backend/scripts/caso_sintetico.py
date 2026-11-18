@@ -618,7 +618,8 @@ def preparar(carpeta: Path, proveedor: str) -> None:
 def ejecutar(carpeta: Path, decision: dict) -> dict[str, dict]:
     from tutela2 import api
 
-    resultados = {"nuevo": api.nuevo(carpeta)}
+    # Una corrida completa desde cero: la carpeta puede traer la corrida anterior, que se descarta.
+    resultados = {"nuevo": api.nuevo(carpeta, descartar=True)}
     if resultados["nuevo"]["estado"] == "revision":
         resultados["iniciar"] = api.iniciar(carpeta)
         if resultados["iniciar"]["estado"] == "esperando_decision":

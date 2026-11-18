@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from tutela2 import config as cfgmod
 from tutela2 import ediciones as ed
 from tutela2 import (
+    descarte,
     estado_apoderados,
     expediente,
     fallos,
@@ -211,8 +212,24 @@ def _leer_estado(g: Any, hilo: dict, cfg: Config, caso_dir: Path, regenerar_prev
     return respuesta
 
 
+HILO_DANADO = (
+    "El historial de redacción de este caso (hilo.sqlite) está dañado y no se puede leer. Para recuperar el caso hay "
+    "que volver a procesar los documentos, lo que descarta el borrador, la decisión y el fallo generados."
+)
+
+
+def _hilo_ilegible(e: Exception) -> bool:
+    """Archivo que no es una base o está corrupta; «database is locked» y «no such table» son transitorios o de esquema."""
+    return isinstance(e, sqlite3.DatabaseError) and not isinstance(e, sqlite3.OperationalError)
+
+
 def _fallo(caso_dir: Path, e: Exception) -> dict:
     log.exception("Falló la operación sobre %s", caso_dir.name)
+    if _hilo_ilegible(e):
+        respuesta = _respuesta("error", caso_dir, ok=False, error=HILO_DANADO)
+        respuesta["historial_perdido"] = True
+        respuesta["trabajo_previo"] = descarte.trabajo_previo(caso_dir)
+        return respuesta
     return _respuesta("error", caso_dir, ok=False, error=str(e) or type(e).__name__)
 
 
@@ -238,10 +255,49 @@ def _generar_previos(caso_dir: Path, ing: Ingesta, cfg: Config, auto: DatosAuto 
         render.render_requerimiento(ing, cfg, requerimiento)
 
 
+def _rechazo_descarte(caso_dir: Path, trabajo: list[str], cmd: descarte.Comando) -> dict:
+    """Respuesta de «nuevo», «iniciar» o «revisar» que se negó a descartar trabajo sin confirmación; no toca nada."""
+    texto = descarte.mensaje(trabajo, cmd)
+    if cmd != "revisar":
+        texto += " Para hacerlo de todos modos, confirme el descarte (en la línea de comandos: --descartar)."
+    try:
+        actual = estado(caso_dir)["estado"]
+    except Exception:
+        actual = "error"
+    respuesta = _respuesta(actual, caso_dir, ok=False, error=texto)
+    respuesta["trabajo_previo"] = trabajo
+    return respuesta
+
+
+def _descartar_trabajo(caso_dir: Path) -> str | None:
+    """Borra el hilo, la decisión y las salidas. Si había trabajo, antes lo copia a la papelera y devuelve la entrada.
+
+    Si la copia falla (``descarte.ErrorRespaldo``) no se borra nada.
+    """
+    trabajo = descarte.trabajo_previo(caso_dir)
+    entrada = descarte.respaldar(caso_dir) if trabajo else None
+    if trabajo:
+        log.warning(
+            "%s: se descarta el trabajo anterior (%s) y se reinicia el caso; copia en la papelera: %s.",
+            caso_dir.name,
+            descarte.enumerar(trabajo),
+            entrada,
+        )
+    _borrar_hilo(caso_dir)
+    registro_apoderados.borrar(caso_dir)
+    # Las consultas de vigencia que esperaba el caso anterior ya no le sirven a nadie.
+    vigencia.COLA.retirar(caso_dir)
+    shutil.rmtree(salidas.raiz(caso_dir), ignore_errors=True)
+    return entrada
+
+
 @resumen_caso.tras_transicion
-def nuevo(caso_dir: str | Path) -> dict:
+def nuevo(caso_dir: str | Path, descartar: bool = False) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
+        trabajo = descarte.trabajo_previo(caso_dir)
+        if trabajo and not descartar:
+            return _rechazo_descarte(caso_dir, trabajo, "nuevo")
         cfg = cfgmod.cargar(caso_dir)
         roles_usuario: dict[str, str] = {}
         previa = _cargar_ingesta(caso_dir)
@@ -252,16 +308,14 @@ def nuevo(caso_dir: str | Path) -> dict:
             roles = {d.doc_id: roles_usuario[d.sha256] for d in ing.documentos if d.sha256 in roles_usuario}
             if roles:
                 ing = ingest.reaplicar(ing, roles)
-        if (caso_dir / "hilo.sqlite").exists():
-            log.warning("%s: se descarta el hilo anterior y se reinicia el caso.", caso_dir.name)
-        _borrar_hilo(caso_dir)
-        registro_apoderados.borrar(caso_dir)
-        # Las consultas de vigencia que esperaba el caso anterior ya no le sirven a nadie.
-        vigencia.COLA.retirar(caso_dir)
-        shutil.rmtree(salidas.raiz(caso_dir), ignore_errors=True)
+        # La ingesta ya salió bien: solo ahora se descarta, así que una ingesta fallida no destruye el trabajo.
+        respaldo = _descartar_trabajo(caso_dir)
         (caso_dir / "caso.json").write_text(ing.model_dump_json(indent=2), encoding="utf-8")
         _generar_previos(caso_dir, ing, cfg)
-        return _respuesta_revision(caso_dir, ing)
+        respuesta = _respuesta_revision(caso_dir, ing)
+        if respaldo:
+            respuesta["papelera"] = respaldo
+        return respuesta
     except Exception as e:
         return _fallo(caso_dir, e)
 
@@ -270,6 +324,11 @@ def nuevo(caso_dir: str | Path) -> dict:
 def revisar(caso_dir: str | Path, roles: dict[str, str] | None = None, auto: dict | None = None) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
+        # Antes de _hilo_vigente, que con un hilo vacío borra la decisión; y antes de escribir nada: generar_previos
+        # rehace C01Principal y se llevaría el fallo de una redacción cuyo historial se perdió.
+        perdido = descarte.trabajo_huerfano(caso_dir)
+        if perdido:
+            return _rechazo_descarte(caso_dir, perdido, "revisar")
         if _hilo_vigente(caso_dir):
             actual = estado(caso_dir)
             return _respuesta(
@@ -308,10 +367,14 @@ def revisar(caso_dir: str | Path, roles: dict[str, str] | None = None, auto: dic
 
 
 @resumen_caso.tras_transicion
-def iniciar(caso_dir: str | Path) -> dict:
+def iniciar(caso_dir: str | Path, descartar: bool = False) -> dict:
     caso_dir = Path(caso_dir).resolve()
     try:
-        if _hilo_vigente(caso_dir):
+        # Se calcula antes y, si hay trabajo huérfano, no se llama a _hilo_vigente: con un hilo vacío lo borra y se lleva
+        # decision.json (y la copia de la papelera ya no la tendría), aunque el usuario se niegue. Sin datos en el hilo
+        # _hilo_vigente respondería False de todos modos.
+        perdido = descarte.trabajo_huerfano(caso_dir)
+        if not perdido and _hilo_vigente(caso_dir):
             actual = estado(caso_dir)
             return _respuesta(actual["estado"], caso_dir, ok=False, error="El caso ya se inició; use continuar.")
         ing = _cargar_ingesta(caso_dir)
@@ -325,10 +388,21 @@ def iniciar(caso_dir: str | Path) -> dict:
                 resumen=_resumen_ingesta(caso_dir, ing),
                 error=f"Faltan documentos obligatorios: {', '.join(ing.faltantes)}.",
             )
+        if perdido and not descartar:
+            return _rechazo_descarte(caso_dir, perdido, "iniciar")
         cfg = cfgmod.cargar(caso_dir)
-        with _grafo(caso_dir, cfg, llm.cliente_para(cfg)) as (g, hilo):
+        cliente = llm.cliente_para(cfg)
+        respaldo = None
+        if perdido:
+            # Ya pasaron las comprobaciones previas a la IA: un fallo de ellas no destruye el trabajo.
+            respaldo = _descartar_trabajo(caso_dir)
+            _generar_previos(caso_dir, ing, cfg)
+        with _grafo(caso_dir, cfg, cliente) as (g, hilo):
             g.invoke(graph.estado_inicial(caso_dir, cfg, ing), hilo, durability="sync")
-            return _leer_estado(g, hilo, cfg, caso_dir, regenerar_previo=True)
+            respuesta = _leer_estado(g, hilo, cfg, caso_dir, regenerar_previo=True)
+        if respaldo:
+            respuesta["papelera"] = respaldo
+        return respuesta
     except Exception as e:
         return _fallo(caso_dir, e)
 
@@ -354,9 +428,13 @@ def estado(caso_dir: str | Path) -> dict:
             if respuesta["estado"] != "sin_iniciar":
                 return respuesta
         ing = _cargar_ingesta(caso_dir)
-        if ing is None:
-            return _respuesta("sin_iniciar", caso_dir)
-        return _respuesta_revision(caso_dir, ing)
+        respuesta = _respuesta("sin_iniciar", caso_dir) if ing is None else _respuesta_revision(caso_dir, ing)
+        # Salidas o decisión sin un hilo que las respalde: el historial se perdió y «Iniciar redacción» las descartaría.
+        perdido = descarte.trabajo_huerfano(caso_dir)
+        if perdido:
+            respuesta["historial_perdido"] = True
+            respuesta["trabajo_previo"] = perdido
+        return respuesta
     except Exception as e:
         return _fallo(caso_dir, e)
 

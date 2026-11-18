@@ -177,15 +177,19 @@ La tabla de citas del borrador previo y del informe muestra sentencia, estado, c
 cd backend
 uv run tutela2 config-default
 uv run tutela2 prompts-default
-uv run tutela2 nuevo     --caso ../casos/<id>
+uv run tutela2 nuevo     --caso ../casos/<id> [--descartar]
 uv run tutela2 revisar   --caso ../casos/<id> [--roles roles.json] [--auto auto.json]
-uv run tutela2 iniciar   --caso ../casos/<id>
+uv run tutela2 iniciar   --caso ../casos/<id> [--descartar]
 uv run tutela2 estado    --caso ../casos/<id>
 uv run tutela2 decidir   --caso ../casos/<id> --decision decision.json
 uv run tutela2 continuar --caso ../casos/<id>
 ```
 
-Cada comando imprime en stdout el JSON del resultado (`ok`, `estado`, `payload`, `salidas`, `resumen`, `error`) y los logs van a stderr. `nuevo` hace la ingesta, descarta el hilo anterior y borra las salidas viejas. `revisar` (solo antes de `iniciar`) aplica cambios de rol (`{doc_id: rol}`; reenviar el rol de un documento «para revisar» lo confirma) y de datos del auto (`fecha`, `fecha_reparto`, `accionante`, `accionada`, `firmante`, `cargo_firmante`); `iniciar` corre el grafo hasta la decisión. `continuar` reanuda un caso que quedó a medias por un error. Si la IA falló `max_intentos` veces seguidas en el mismo paso (sin contar la clave ausente o rechazada, el proveedor saturado o sin conexión), `continuar` ya no la repite; `--forzar` (o «Reintentar de todos modos» en Proceso) la reintenta igual. Cambiar de proveedor, modelo o `max_tokens` reinicia la cuenta.
+Cada comando imprime en stdout el JSON del resultado (`ok`, `estado`, `payload`, `salidas`, `resumen`, `error`) y los logs van a stderr. `nuevo` hace la ingesta; si el caso ya tiene borrador, decisión o fallo, se niega (`ok: false`, salida 1, no borra nada) salvo con `--descartar`, que descarta el hilo, la decisión y las salidas viejas. `iniciar --descartar` hace lo mismo cuando el caso conserva documentos generados pero perdió su historial (`hilo.sqlite`); `revisar` se niega en ese mismo estado. `revisar` (solo antes de `iniciar`) aplica cambios de rol (`{doc_id: rol}`; reenviar el rol de un documento «para revisar» lo confirma) y de datos del auto (`fecha`, `fecha_reparto`, `accionante`, `accionada`, `firmante`, `cargo_firmante`); `iniciar` corre el grafo hasta la decisión. `continuar` reanuda un caso que quedó a medias por un error. Si la IA falló `max_intentos` veces seguidas en el mismo paso (sin contar la clave ausente o rechazada, el proveedor saturado o sin conexión), `continuar` ya no la repite; `--forzar` (o «Reintentar de todos modos» en Proceso) la reintenta igual. Cambiar de proveedor, modelo o `max_tokens` reinicia la cuenta.
+
+Lo que se descarta no se pierde: antes de borrar, `nuevo --descartar` e `iniciar --descartar` copian el caso completo (insumos, hilo, decisión y salidas) a la papelera, en `<CASOS_DIR>/.papelera/<id>@<sello>` (o `.papelera/` junto a la carpeta del caso si no está en `CASOS_DIR`), donde queda 30 días como un caso eliminado; la respuesta trae la entrada en `papelera`. Si la copia falla (disco lleno), no se descarta nada. La copia conserva el id del caso, así que para recuperarla hay que apartar antes el caso actual: eliminarlo desde la lista (también va a la papelera) y restaurar la copia con `POST /api/papelera/<entrada>/restaurar` o moviéndola a `<CASOS_DIR>/<id>`.
+
+`POST /api/casos/<id>/run` aplica la misma regla: `nuevo` e `iniciar` responden 409 con `detail: {codigo: "trabajo_previo", mensaje, trabajo}` cuando descartarían trabajo (en `iniciar`, solo si hay documentos generados sin un hilo que los respalde); reenvíelos con `descartar: true` para confirmarlo. `GET /api/casos/<id>/estado` agrega `historial_perdido: true` y `trabajo_previo` cuando hay salidas o decisión sin hilo (o con el hilo dañado), y `PUT /api/casos/<id>/revision` responde 422 en ese estado para no borrar el fallo.
 
 Ejemplo de `decision.json`:
 
@@ -228,7 +232,7 @@ salidas/borradores_correo/                 NotificacionFalloPartes, y según la 
 salidas/trabajo/                           previo, informe_verificacion, declaracion_ia, requerimiento (si faltan piezas)
 ```
 
-Los nombres terminan con los dígitos 13 a 21 del radicado (`YYYYNNNNN`). `nuevo` borra `salidas/` completo.
+Los nombres terminan con los dígitos 13 a 21 del radicado (`YYYYNNNNN`). `nuevo` borra `salidas/` completo (con `--descartar` si ya hay borrador, decisión o fallo; antes copia el caso a la papelera).
 
 ## Frontend (`frontend/`)
 

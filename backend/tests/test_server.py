@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -528,6 +529,115 @@ def test_run_iniciar(cliente, caso, api):
     assert job["estado"] == "terminado"
     assert job["resultado"]["estado"] == "esperando_decision"
     assert api.llamadas[0][0] == "iniciar"
+
+
+def _dir(caso: str) -> Path:
+    return server.casos_dir() / caso
+
+
+def _hilo_con_fila(ruta: Path) -> None:
+    con = sqlite3.connect(ruta)
+    with con:
+        con.execute("CREATE TABLE checkpoints (thread_id TEXT)")
+        con.execute("INSERT INTO checkpoints VALUES ('x')")
+    con.close()
+
+
+def _previo(caso: str) -> None:
+    previo = _dir(caso) / "salidas" / "trabajo" / "previo.docx"
+    previo.parent.mkdir(parents=True, exist_ok=True)
+    previo.write_bytes(b"PK-previo")
+
+
+def test_run_nuevo_con_trabajo_previo_responde_409(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert detalle["codigo"] == "trabajo_previo" and detalle["trabajo"] == ["la decisión del juez"]
+    assert "Este caso ya tiene la decisión del juez." in detalle["mensaje"] and "papelera" in detalle["mensaje"]
+    assert api.llamadas == [] and not server.JOBS
+
+
+def test_run_nuevo_con_descartar_llama_a_api_con_descartar(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    vistos: list[bool] = []
+
+    def nuevo(caso_dir, descartar=False):
+        vistos.append(descartar)
+        return _envelope("revision")
+
+    api.modulo.nuevo = nuevo
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo", "descartar": True})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert vistos == [True]
+
+
+def test_run_nuevo_sin_trabajo_previo_no_pasa_descartar(cliente, caso, api):
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    assert r.status_code == 200
+    # El módulo falso define ``nuevo(caso_dir)``: pasarle ``descartar`` lo haría fallar con TypeError.
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert api.llamadas[0][0] == "nuevo"
+
+
+def test_run_iniciar_con_hilo_sano_no_responde_409_por_descarte(cliente, caso, api):
+    _hilo_con_fila(_dir(caso) / "hilo.sqlite")
+    _previo(caso)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert api.llamadas[0][0] == "iniciar"
+
+
+def test_run_iniciar_sin_hilo_con_salidas_responde_409(cliente, caso, api):
+    _previo(caso)
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert detalle["codigo"] == "trabajo_previo" and detalle["trabajo"] == ["el borrador", "la decisión del juez"]
+    assert "cuyo historial se perdió" in detalle["mensaje"]
+    assert api.llamadas == []
+    vistos: list[bool] = []
+
+    def iniciar(caso_dir, descartar=False):
+        vistos.append(descartar)
+        return _envelope("esperando_decision")
+
+    api.modulo.iniciar = iniciar
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar", "descartar": True})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert vistos == [True]
+
+
+def test_run_iniciar_con_hilo_basura_y_sin_salidas_crea_job(cliente, caso, api):
+    (_dir(caso) / "hilo.sqlite").write_bytes(b"basura" * 100)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 200
+    _esperar(cliente, r.json()["job_id"])
+    assert api.llamadas[0][0] == "iniciar"
+
+
+def test_run_continuar_no_mira_el_trabajo_previo(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    _previo(caso)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "continuar"})
+    assert r.status_code == 200
+    _esperar(cliente, r.json()["job_id"])
+    assert api.llamadas[0][0] == "continuar"
+
+
+def test_estado_con_job_activo_no_avisa_historial_perdido(cliente, caso, api):
+    api.modulo.estado = lambda caso_dir: _envelope("revision", historial_perdido=True, trabajo_previo=["el borrador"])
+    assert cliente.get(f"/api/casos/{caso}/estado").json()["historial_perdido"] is True
+    api.soltar.clear()
+    cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    durante = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert "historial_perdido" not in durante and "trabajo_previo" not in durante
+    api.soltar.set()
 
 
 def test_revision_llama_a_api_revisar(cliente, caso, api):

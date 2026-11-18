@@ -151,10 +151,13 @@ function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: st
   }
   // Una ejecución en curso manda sobre el estado: el hilo a medias se lee como «error» o «terminado».
   const enCurso = Boolean(estado.job_activo) || estado.estado === "corriendo";
-  const terminado = !enCurso && estado.estado === "terminado";
+  const perdido = !enCurso && Boolean(estado.historial_perdido);
+  const terminado = !enCurso && !perdido && estado.estado === "terminado";
   const mensaje = enCurso
     ? "Hay una ejecución en curso para este caso."
-    : terminado
+    : perdido
+      ? "Este caso perdió su historial de redacción: no hay una decisión pendiente. Vuelva a Documentos para iniciar la redacción de nuevo."
+      : terminado
       ? "La decisión ya fue enviada y el fallo está generado."
       : estado.estado === "error"
         ? "El proceso quedó a medias. La decisión ya está guardada: continúe desde la vista del proceso, no hace falta enviarla otra vez."
@@ -163,13 +166,13 @@ function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: st
     <Vacio
       titulo="Decisión"
       accion={
-        <Boton variante={terminado ? "sello" : "secundario"} href={`${base}/${terminado ? "fallo" : "proceso"}`}>
-          {terminado ? "Ver el fallo" : "Ir al proceso"}
+        <Boton variante={terminado ? "sello" : "secundario"} href={`${base}/${terminado ? "fallo" : perdido ? "documentos" : "proceso"}`}>
+          {terminado ? "Ver el fallo" : perdido ? "Ir a documentos" : "Ir al proceso"}
         </Boton>
       }
     >
       {mensaje}
-      {estado.error && !terminado && !enCurso && <span> {estado.error}</span>}
+      {estado.error && !terminado && !enCurso && !perdido && <span> {estado.error}</span>}
     </Vacio>
   );
 }

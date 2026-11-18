@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -85,6 +85,10 @@ class RunBody(BaseModel):
     cmd: Literal["nuevo", "iniciar", "decidir", "continuar"]
     decision: dict[str, Any] | None = None
     forzar: bool = False
+    descartar: bool = Field(
+        default=False,
+        description="Confirma que nuevo/iniciar descarten el borrador, la decisión y el fallo ya generados (antes se guarda una copia en la papelera).",
+    )
 
 
 class RevisionBody(BaseModel):
@@ -257,15 +261,18 @@ def _ejecutar(job: dict[str, Any], fn: Callable[[], dict[str, Any]]) -> None:
     eventos.finalizar(buffer, job["cmd"], estado, error)
 
 
-def _comando(cmd: str, caso_dir: Path, decision: dict[str, Any] | None, forzar: bool = False) -> dict[str, Any]:
+def _comando(
+    cmd: str, caso_dir: Path, decision: dict[str, Any] | None, forzar: bool = False, descartar: bool = False
+) -> dict[str, Any]:
     from tutela2 import preferencias
 
     api = _api()
     preferencias.aplicar_entorno(preferencias.leer(_preferencias()))
+    # ``descartar`` solo se pasa cuando es verdadero: los módulos falsos de las pruebas definen ``nuevo(caso_dir)``.
     if cmd == "nuevo":
-        return api.nuevo(caso_dir)
+        return api.nuevo(caso_dir, descartar=True) if descartar else api.nuevo(caso_dir)
     if cmd == "iniciar":
-        return api.iniciar(caso_dir)
+        return api.iniciar(caso_dir, descartar=True) if descartar else api.iniciar(caso_dir)
     if cmd == "continuar":
         return api.continuar(caso_dir, forzar)
     return api.decidir(caso_dir, decision)
@@ -462,6 +469,10 @@ def estado_caso(caso_id: str) -> dict[str, Any]:
         except Exception:
             log.exception("No se pudo leer la ingesta de %s", caso_id)
     resultado["job_activo"] = job["id"] if job else None
+    if job:
+        # Mientras corre un trabajo las salidas y el hilo pueden estar a medias: no es un historial perdido.
+        resultado.pop("historial_perdido", None)
+        resultado.pop("trabajo_previo", None)
     if job and job["cmd"] in CMDS_GRAFO:
         # Un grafo a medias no es un error ni un fallo terminado; lo demás (resumen, salidas, ingesta) se conserva.
         resultado.update(estado="corriendo", ok=True, error=None, payload=None)
@@ -484,7 +495,11 @@ def _bloqueo_apoderados(caso_dir: Path) -> str | None:
     return estado_apoderados.mensaje_bloqueo(pendientes) if pendientes else None
 
 
-@app.post("/api/casos/{caso_id}/run", response_model=JobInicio)
+@app.post(
+    "/api/casos/{caso_id}/run",
+    response_model=JobInicio,
+    responses={409: {"description": "Ya hay una ejecución en curso, o el caso ya tiene trabajo y falta `descartar`."}},
+)
 def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
     caso_dir = _dir_caso(caso_id)
     if body.cmd == "decidir":
@@ -499,7 +514,7 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
             raise HTTPException(422, {"mensaje": f"Su decisión no se aplicó: {motivos}", "errores": rechazos})
     from collections import deque
 
-    from tutela2 import ediciones, eventos
+    from tutela2 import descarte, ediciones, eventos
 
     job = {"id": uuid.uuid4().hex, "caso": caso_id, "cmd": body.cmd, "estado": "corriendo", "log": deque(maxlen=200), "resultado": None, "error": None}
     with _LOCK:
@@ -507,6 +522,11 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
             raise HTTPException(404, "Caso no encontrado.")
         if any(j["caso"] == caso_id and j["estado"] == "corriendo" for j in JOBS.values()):
             raise HTTPException(409, "Ya hay una ejecución en curso para este caso.")
+        if not body.descartar and body.cmd in ("nuevo", "iniciar"):
+            # En «iniciar» solo cuenta el trabajo sin un hilo que lo respalde: con un hilo sano api.iniciar responde «ya se inició».
+            trabajo = descarte.trabajo_previo(caso_dir) if body.cmd == "nuevo" else descarte.trabajo_huerfano(caso_dir)
+            if trabajo:
+                raise HTTPException(409, descarte.detalle(trabajo, body.cmd))
         if body.cmd == "decidir" and ediciones.hay_conflictos(caso_dir):
             raise HTTPException(409, "Hay conflictos de edición sin resolver en el borrador: resuélvalos antes de decidir.")
         # Mismo orden que ``api.decidir`` y el Dock: primero los conflictos de edición, luego los apoderados.
@@ -520,7 +540,7 @@ def ejecutar(caso_id: str, body: RunBody) -> dict[str, str]:
             del JOBS[viejo]
             eventos.olvidar(viejo)
     threading.Thread(
-        target=_ejecutar, args=(job, lambda: _comando(body.cmd, caso_dir, body.decision, body.forzar)), daemon=True
+        target=_ejecutar, args=(job, lambda: _comando(body.cmd, caso_dir, body.decision, body.forzar, body.descartar)), daemon=True
     ).start()
     return {"job_id": job["id"]}
 

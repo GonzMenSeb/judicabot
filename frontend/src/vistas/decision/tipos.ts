@@ -38,6 +38,9 @@ export interface RespuestaEstado {
   payload: PayloadDecision | null;
   error: string | null;
   proveedor_llm?: ProveedorCaso | null;
+  /** Salidas o decisión de una redacción anterior sin un hilo que las respalde (o con el hilo dañado). */
+  historial_perdido?: boolean;
+  trabajo_previo?: string[];
 }
 
 export interface ConfigCaso {

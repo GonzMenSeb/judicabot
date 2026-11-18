@@ -189,6 +189,20 @@ describe("Fallo", () => {
     expect(screen.getByRole("link", { name: "Descargar fallo" })).toBeTruthy();
   });
 
+  it("avisa que el fallo es de una redacción anterior si el caso perdió su historial", async () => {
+    responder({ estado: { ...ESTADO, estado: "revision", historial_perdido: true } });
+    render(<Fallo caso="caso-1" />);
+    expect(await screen.findByText(/Este fallo es de una redacción anterior: el caso perdió su historial de redacción/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Descargar fallo" })).toBeTruthy();
+  });
+
+  it("sin historial perdido no muestra ese aviso", async () => {
+    responder();
+    render(<Fallo caso="caso-1" />);
+    await screen.findByRole("heading", { name: "Vista previa del fallo" });
+    expect(screen.queryByText(/redacción anterior/)).toBeNull();
+  });
+
   it("muestra el estado real cuando el caso no está terminado", async () => {
     responder({ estado: { ...ESTADO, estado: "error", error: "x" } });
     render(<Fallo caso="caso-1" />);
