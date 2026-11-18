@@ -187,8 +187,16 @@ export function Seguimiento(props: PropsSeguimiento) {
       {completo && errorFin && (
         <BloqueError
           caso={completo.caso}
-          mensaje={fin?.estado === "error" ? mensajeError(fin, eventos) : (final?.error ?? mensajeError(fin, eventos))}
+          mensaje={
+            final?.tope_intentos && final.error
+              ? final.error
+              : fin?.estado === "error"
+                ? mensajeError(fin, eventos)
+                : (final?.error ?? mensajeError(fin, eventos))
+          }
           cmd={completo.cmd}
+          tope={Boolean(final?.tope_intentos)}
+          proveedor={final?.proveedor_llm ?? null}
           alNuevoJob={completo.alNuevoJob}
           alReintentar={completo.alReintentar}
         />

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApoderadosRespuesta, ApoderadoVista, ConflictoEdicion, EdicionesRespuesta } from "../../api/contrato";
-import { jobActual, toasts } from "../../estado";
+import { estadoServidor, jobActual, toasts } from "../../estado";
 import { conRevision } from "./apoderados";
 import { claveRevisados } from "./datos";
 import Borrador from "./index";
@@ -24,6 +24,7 @@ interface Respuestas {
   identificar?: () => unknown;
   ediciones?: unknown | number | (() => unknown);
   editar?: (cuerpo: unknown, url: string) => unknown;
+  servidor?: { api_key: boolean; gemini_key?: boolean };
 }
 
 const SIN_IDENTIFICACION: ApoderadosRespuesta = {
@@ -68,12 +69,16 @@ function simularRed({
   identificar,
   ediciones = 404,
   editar,
+  servidor,
 }: Respuestas = {}) {
   const llamadas: { url: string; metodo: string; cuerpo: unknown }[] = [];
   const falso = vi.fn(async (url: string, init?: RequestInit) => {
     const metodo = init?.method ?? "GET";
     const cuerpo: unknown = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
     llamadas.push({ url, metodo, cuerpo });
+    if (url === "/api/estado-servidor" && servidor) {
+      return responder({ proveedor: "anthropic", gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [], festivos: [], ...servidor });
+    }
     if (url.endsWith("/vista/borrador")) return responder(typeof vista === "function" ? vista() : vista);
     if (metodo === "GET" && url.endsWith("/ediciones")) return responder(typeof ediciones === "function" ? ediciones() : ediciones);
     if (metodo === "PUT" && /\/ediciones\/[^/]+$/.test(url) && editar) return responder(editar(cuerpo, url));
@@ -143,6 +148,7 @@ async function abrirDetalleEnTexto(titulo: RegExp, popover: string) {
 
 beforeEach(() => {
   location.hash = "";
+  estadoServidor.value = null;
   jobActual.value = null;
   localStorage.clear();
 });
@@ -1429,6 +1435,61 @@ describe("Pedir correcciones", () => {
       decision: { accion: "rehacer_consideraciones", instruccion: "El a quo declaró improcedente." },
     });
     expect(jobActual.value).toBe("j-1");
+  });
+
+  describe("clave de la API", () => {
+    async function pedirRehacer() {
+      await abrirDialogo();
+      fireEvent.click(screen.getByRole("radio", { name: /Rehacer las consideraciones/ }));
+      fireEvent.input(screen.getByLabelText("Qué debe corregir"), { target: { value: "Cite una sentencia más reciente." } });
+      fireEvent.click(screen.getByRole("button", { name: "Rehacer" }));
+    }
+    const envios = (llamadas: { url: string; metodo: string }[]) => llamadas.filter((l) => l.metodo === "POST" && l.url.endsWith("/run"));
+
+    it("sin la clave del proveedor no envía y enlaza a Inteligencia artificial", async () => {
+      const llamadas = simularRed({ estado: conEstado("esperando_decision", { proveedor_llm: "anthropic" }), servidor: { api_key: false } });
+      await pedirRehacer();
+
+      expect(
+        await screen.findByText("Falta la clave de la API de Anthropic: configúrela en Inteligencia artificial antes de pedir la corrección."),
+      ).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/configuracion/ia");
+      expect(envios(llamadas)).toEqual([]);
+      expect(location.hash).not.toBe(`#/segunda/${CASO}/proceso`);
+      expect((screen.getByRole("button", { name: "Rehacer" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("con la clave del proveedor envía la corrección", async () => {
+      const llamadas = simularRed({ estado: conEstado("esperando_decision", { proveedor_llm: "anthropic" }), servidor: { api_key: true } });
+      await pedirRehacer();
+      await waitFor(() => expect(location.hash).toBe(`#/segunda/${CASO}/proceso`));
+      expect(envios(llamadas)).toHaveLength(1);
+      expect(screen.queryByRole("link", { name: "Ir a Inteligencia artificial" })).toBeNull();
+    });
+
+    it("pide la clave del proveedor del caso", async () => {
+      const llamadas = simularRed({
+        estado: conEstado("esperando_decision", { proveedor_llm: "gemini" }),
+        servidor: { api_key: true, gemini_key: false },
+      });
+      await pedirRehacer();
+      expect(await screen.findByText(/Falta la clave de la API de Gemini:/)).toBeTruthy();
+      expect(envios(llamadas)).toEqual([]);
+    });
+
+    it("con el proveedor del caso en fake no pide clave", async () => {
+      const llamadas = simularRed({ estado: conEstado("esperando_decision", { proveedor_llm: "fake" }), servidor: { api_key: false } });
+      await pedirRehacer();
+      await waitFor(() => expect(location.hash).toBe(`#/segunda/${CASO}/proceso`));
+      expect(envios(llamadas)).toHaveLength(1);
+    });
+
+    it("el enlace solo aparece con el aviso de la clave", async () => {
+      simularRed({ run: 409 });
+      await pedirRehacer();
+      expect(await screen.findByText("Ya hay una ejecución en curso para este caso.")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Ir a Inteligencia artificial" })).toBeNull();
+    });
   });
 
   it("muestra el 409 del servidor dentro del diálogo", async () => {

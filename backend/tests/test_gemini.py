@@ -308,8 +308,9 @@ def test_sin_clave_de_gemini_el_error_lo_dice_y_no_se_crea_el_sdk(monkeypatch, f
     creados, peticiones = fabrica
     monkeypatch.setenv("GEMINI_API_KEY", "   ")
     monkeypatch.setenv("GOOGLE_API_KEY", "clave-de-google")
-    with pytest.raises(ErrorLLM, match="GEMINI_API_KEY"):
+    with pytest.raises(ErrorLLM, match=r"Falta la clave de la API de Gemini \(GEMINI_API_KEY\)") as e:
         GeminiClient().estructurado("caso_concreto", "s", "u", CasoConcretoLLM, gemini())
+    assert "Inteligencia artificial" in str(e.value) and e.value.sin_coste is True
     assert creados == [] and peticiones == []
 
 
@@ -319,7 +320,7 @@ def test_una_clave_con_caracteres_no_validos_no_llega_al_sdk_ni_a_los_mensajes(m
     monkeypatch.setenv("GEMINI_API_KEY", clave)
     with pytest.raises(ErrorLLM, match="GEMINI_API_KEY") as e:
         GeminiClient().estructurado("caso_concreto", "s", "u", CasoConcretoLLM, gemini())
-    assert "SECRETO" not in str(e.value)
+    assert "SECRETO" not in str(e.value) and e.value.sin_coste is True
     assert creados == [] and peticiones == []
 
 
@@ -336,8 +337,37 @@ def test_la_clave_sale_de_gemini_api_key_aunque_exista_google_api_key(monkeypatc
 def test_cliente_para_elige_gemini_sin_crear_el_sdk(monkeypatch, fabrica):
     creados, _ = fabrica
     monkeypatch.delenv(cfgmod.VARIABLE_MODELOS_PERMITIDOS, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-prueba")
     assert isinstance(cliente_para(gemini()), GeminiClient)
     assert creados == []
+
+
+def test_cliente_para_gemini_exige_su_clave(monkeypatch, fabrica):
+    creados, _ = fabrica
+    monkeypatch.delenv(cfgmod.VARIABLE_MODELOS_PERMITIDOS, raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(ErrorLLM, match=r"Falta la clave de la API de Gemini \(GEMINI_API_KEY\)"):
+        cliente_para(gemini())
+    monkeypatch.setenv("GEMINI_API_KEY", " clave ")
+    assert isinstance(cliente_para(gemini()), GeminiClient)
+    assert creados == []
+
+
+def _error_gemini(estado: int, mensaje: str, status: str) -> ErrorLLM:
+    def manejador(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(estado, json={"error": {"code": estado, "message": mensaje, "status": status}})
+
+    with pytest.raises(ErrorLLM) as e:
+        llamar(manejador, gemini(max_retries=0))
+    return e.value
+
+
+def test_errores_de_gemini_sin_costo_se_marcan():
+    assert _error_gemini(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT").sin_coste is True
+    assert _error_gemini(503, "sobrecargado", "UNAVAILABLE").sin_coste is True
+    assert _error_gemini(429, "cuota", "RESOURCE_EXHAUSTED").sin_coste is True
+    assert _error_gemini(400, "schema inválido", "INVALID_ARGUMENT").sin_coste is False
+    assert _error_gemini(404, "modelo", "NOT_FOUND").sin_coste is False
 
 
 CLAVES_ADMITIDAS = llm._CLAVES_GEMINI

@@ -612,6 +612,20 @@ def test_cli(caso, capsys):
         cli.main(["nuevo"])
 
 
+def test_cli_continuar_forzar(caso, monkeypatch, capsys):
+    recibidos = []
+
+    def espia(carpeta, forzar=False):
+        recibidos.append(forzar)
+        return {"ok": True, "estado": "esperando_decision"}
+
+    monkeypatch.setattr(api, "continuar", espia)
+    assert cli.main(["continuar", "--caso", str(caso), "--forzar"]) == 0
+    assert cli.main(["continuar", "--caso", str(caso)]) == 0
+    capsys.readouterr()
+    assert recibidos == [True, False]
+
+
 class SDKFalso:
     def __init__(self, *respuestas):
         self.respuestas = list(respuestas)

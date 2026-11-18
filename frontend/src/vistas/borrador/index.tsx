@@ -880,6 +880,7 @@ export default function Borrador({ caso }: PropsVista) {
         <DialogoCorrecciones
           abierto={corrigiendo}
           caso={caso}
+          proveedor={estado?.proveedor_llm ?? null}
           onCerrar={() => setCorrigiendo(false)}
           onEnviado={(jobId) => {
             casoActual.value = caso;

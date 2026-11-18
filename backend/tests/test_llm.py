@@ -140,12 +140,34 @@ def test_el_cliente_se_crea_sin_argumentos_para_tomar_la_clave_del_entorno(sdk):
     assert sdk.instancias[0].args == () and sdk.instancias[0].kwargs == {}
 
 
-def test_cliente_para_elige_proveedor(sdk):
+def test_cliente_para_elige_proveedor(sdk, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-prueba")
     assert isinstance(cliente_para(Config()), AnthropicClient)
     assert len(sdk.instancias) == 1
     falso = Config(llm=LLMConfig(proveedor="fake"))
     assert isinstance(cliente_para(falso), FakeClient)
     assert len(sdk.instancias) == 1
+
+
+def test_cliente_para_anthropic_exige_la_clave(sdk, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ErrorLLM) as e:
+        cliente_para(Config())
+    assert "Falta la clave de la API de Anthropic (ANTHROPIC_API_KEY)" in str(e.value)
+    assert "Inteligencia artificial" in str(e.value) and "Could not resolve" not in str(e.value)
+    assert e.value.sin_coste is True
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+    with pytest.raises(ErrorLLM, match="Falta la clave de la API de Anthropic"):
+        cliente_para(Config())
+    assert sdk.instancias == []
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    assert isinstance(cliente_para(Config()), AnthropicClient)
+
+
+def test_cliente_para_no_exige_clave_al_proveedor_falso(sdk, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert isinstance(cliente_para(Config(llm=LLMConfig(proveedor="fake"))), FakeClient)
 
 
 def test_parametros_enviados_a_messages_stream(sdk):
@@ -476,8 +498,58 @@ def test_tokens_de_la_bitacora_suman_las_iteraciones_del_fallback(sdk):
 def test_sdk_real_sin_clave_da_error_claro(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    with pytest.raises(ErrorLLM, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(ErrorLLM, match="ANTHROPIC_API_KEY") as exc:
         AnthropicClient().estructurado("apertura", "s", "u", CasoConcretoLLM, Config())
+    assert "Could not resolve" not in str(exc.value)
+    assert "Inteligencia artificial" in str(exc.value)
+    assert exc.value.sin_coste is True
+
+
+def _error_http(estado: int, mensaje: str = "fallo") -> ErrorLLM:
+    def manejador(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(estado, json={"type": "error", "error": {"type": "api_error", "message": mensaje}})
+
+    cfg = Config(llm=LLMConfig(fallbacks_default=False, max_retries=0))
+    with pytest.raises(ErrorLLM) as e:
+        AnthropicClient(sdk_real(manejador)).estructurado("apertura", "s", "u", CasoConcretoLLM, cfg)
+    return e.value
+
+
+@pytest.mark.parametrize("estado", [401, 403, 429, 500, 503, 529])
+def test_errores_http_sin_costo_se_marcan(estado):
+    assert _error_http(estado).sin_coste is True
+
+
+def test_el_400_de_saldo_agotado_es_sin_costo_y_otro_400_cuenta():
+    assert _error_http(400, "Your credit balance is too low to access the Anthropic API.").sin_coste is True
+    assert _error_http(400, "messages: texto inválido").sin_coste is False
+    assert _error_http(404, "model: not found").sin_coste is False
+
+
+def test_errores_de_conexion_se_marcan_segun_si_hubo_envio(sdk):
+    peticion = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    for guion, sin_coste in (
+        (anthropic.APIConnectionError(request=peticion), True),
+        (anthropic.APITimeoutError(request=peticion), False),
+        (httpx.ConnectError("sin red"), True),
+        (httpx.RemoteProtocolError("cortado a mitad del flujo"), False),
+    ):
+        sdk.guion = [guion]
+        with pytest.raises(ErrorLLM) as e:
+            llamar()
+        assert e.value.sin_coste is sin_coste, type(guion).__name__
+
+
+def test_salidas_invalidas_y_cortes_cuentan_como_con_costo(sdk):
+    sdk.guion = [respuesta(None, texto='{"problema_juridico": "p", "parrafos": 3, "conclusion": "c"}')]
+    with pytest.raises(ErrorLLM) as e:
+        llamar()
+    assert e.value.sin_coste is False
+    sdk.guion = [respuesta(stop="max_tokens")]
+    with pytest.raises(ErrorLLM) as e:
+        llamar()
+    assert e.value.sin_coste is False
+    assert ErrorLLM("x").sin_coste is False and ErrorLLM("x", sin_coste=True).sin_coste is True
 
 
 def test_esquemas_aceptados_por_salida_estructurada():

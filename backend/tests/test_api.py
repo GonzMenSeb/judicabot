@@ -293,15 +293,162 @@ def test_continuar_respeta_el_tope_y_forzar_reintenta(caso, monkeypatch):
     api.nuevo(caso)
     api.iniciar(caso)
     api.continuar(caso)
+    assert api.estado(caso)["tope_intentos"] is False
     api.continuar(caso)
     assert cliente.llamadas == 3
+    e = api.estado(caso)
+    assert e["estado"] == "error" and e["tope_intentos"] is True
+    assert "Reintentar de todos modos" in e["error"] and "la apertura" in e["error"]
     r = api.continuar(caso)
     assert cliente.llamadas == 3
     assert r["ok"] is False and r["tope_intentos"] is True
-    assert "rechazó la solicitud" in r["error"] and "configuración" in r["error"]
+    assert "rechazó la solicitud" in r["error"] and "Reintentar de todos modos" in r["error"]
+    assert "falló 3 veces seguidas en la apertura" in r["error"] and "Inteligencia artificial" in r["error"]
     r = api.continuar(caso, forzar=True)
     assert cliente.llamadas == 4
     assert len(fallos.leer(caso)) == 4
+
+
+class _SinCoste:
+    def __init__(self):
+        self.llamadas = 0
+
+    def estructurado(self, *a, **k):
+        self.llamadas += 1
+        raise ErrorLLM("Error del proveedor (OverloadedError): saturado", sin_coste=True)
+
+
+def test_fallos_sin_coste_no_cuentan_para_el_tope(caso, monkeypatch):
+    cliente = _SinCoste()
+    monkeypatch.setattr(llm, "cliente_para", lambda cfg: cliente)
+    api.nuevo(caso)
+    respuestas = [api.iniciar(caso)] + [api.continuar(caso) for _ in range(4)]
+    assert cliente.llamadas == 5
+    assert not any(r.get("tope_intentos") for r in respuestas)
+    assert api.estado(caso)["tope_intentos"] is False
+    registros = fallos.leer(caso)
+    assert len(registros) == 5 and all(r["sin_coste"] is True for r in registros)
+    assert all(r["max_tokens"] == cfgmod.cargar(caso).llm.max_tokens for r in registros)
+
+
+def test_registros_viejos_sin_coste_se_reconocen_por_el_texto(tmp_path):
+    textos = [
+        "No hay credenciales para el proveedor (ANTHROPIC_API_KEY): Could not resolve authentication method.",
+        "Error del proveedor (OverloadedError): Error code: 529 - {'type': 'error'}",
+        "Error del proveedor (RateLimitError): Error code: 429",
+        "Error del proveedor (InternalServerError): Error code: 503",
+        "Error del proveedor (BadRequestError): Error code: 400 - Your credit balance is too low to access the Anthropic API.",
+        "Error del proveedor (ClientError): 400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.",
+        "Error del proveedor (ServerError): 503 UNAVAILABLE.",
+        "Error del proveedor (APIConnectionError): Connection error.",
+        "Falta la clave de la API de Anthropic (ANTHROPIC_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo.",
+    ]
+    for texto in textos:
+        fallos.registrar(tmp_path, {"nodo": "apertura", "exitos": 0, "error": texto})
+    assert api._fallos_consecutivos("apertura", [], tmp_path) == []
+    fallos.registrar(tmp_path, {"nodo": "apertura", "exitos": 0, "error": "La respuesta del modelo no cumple el esquema: x"})
+    assert [f["error"] for f in api._fallos_consecutivos("apertura", [], tmp_path)] == [
+        "La respuesta del modelo no cumple el esquema: x"
+    ]
+
+
+def test_los_tiempos_agotados_y_los_cortes_cuentan_aunque_el_registro_sea_viejo(tmp_path):
+    for texto in (
+        "Error del proveedor (APITimeoutError): Request timed out.",
+        "Error del proveedor (RemoteProtocolError): peer closed connection without sending complete message body",
+        "El modelo rechazó la solicitud (stop_reason=refusal).",
+        "La respuesta se cortó por el límite de tokens (8000); aumente llm.max_tokens.",
+    ):
+        fallos.registrar(tmp_path, {"nodo": "apertura", "exitos": 0, "error": texto})
+    assert len(api._fallos_consecutivos("apertura", [], tmp_path)) == 4
+
+
+def test_la_marca_sin_coste_del_registro_manda_sobre_el_texto(tmp_path):
+    fallos.registrar(tmp_path, {"nodo": "apertura", "exitos": 0, "error": "algo raro", "sin_coste": True})
+    fallos.registrar(
+        tmp_path, {"nodo": "apertura", "exitos": 0, "error": "Error del proveedor (OverloadedError): x", "sin_coste": False}
+    )
+    assert [f["error"] for f in api._fallos_consecutivos("apertura", [], tmp_path)] == [
+        "Error del proveedor (OverloadedError): x"
+    ]
+
+
+def test_cambiar_el_modelo_reinicia_el_tope(caso, monkeypatch):
+    cliente = _Contador()
+    monkeypatch.setattr(llm, "cliente_para", lambda cfg: cliente)
+    api.nuevo(caso)
+    api.iniciar(caso)
+    api.continuar(caso)
+    api.continuar(caso)
+    assert api.continuar(caso)["tope_intentos"] is True and cliente.llamadas == 3
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="fake", max_tokens=32000), verificar_relatoria=False))
+    assert api.estado(caso)["tope_intentos"] is False
+    api.continuar(caso)
+    assert cliente.llamadas == 4
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="fake", modelo="otro-modelo", max_tokens=32000), verificar_relatoria=False))
+    api.continuar(caso)
+    assert cliente.llamadas == 5
+
+
+def _anthropic_sin_clave(caso, monkeypatch):
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="anthropic"), verificar_relatoria=False))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+def test_iniciar_sin_clave_falla_antes_de_abrir_el_hilo(caso, monkeypatch):
+    api.nuevo(caso)
+    _anthropic_sin_clave(caso, monkeypatch)
+    r = api.iniciar(caso)
+    assert r["ok"] is False
+    assert "Falta la clave de la API de Anthropic" in r["error"] and "Could not resolve" not in r["error"]
+    assert not (caso / "hilo.sqlite").exists()
+    assert fallos.leer(caso) == []
+
+
+def test_decidir_sin_clave_no_consume_la_decision(caso, monkeypatch):
+    api.nuevo(caso)
+    assert api.iniciar(caso)["estado"] == "esperando_decision"
+    antes = api.estado(caso)
+    _anthropic_sin_clave(caso, monkeypatch)
+    r = api.decidir(caso, {"accion": "rehacer_consideraciones", "instruccion": "x"})
+    assert r["ok"] is False and "Falta la clave de la API de Anthropic" in r["error"]
+    assert api.estado(caso)["estado"] == "esperando_decision" == antes["estado"]
+    assert not (caso / "decision.json").exists()
+    assert fallos.leer(caso) == []
+
+
+def test_continuar_sin_clave_no_registra_fallos_ni_cuenta_para_el_tope(caso, monkeypatch):
+    real = llm.cliente_para
+    monkeypatch.setattr(llm, "cliente_para", lambda cfg: _Contador())
+    api.nuevo(caso)
+    api.iniciar(caso)
+    assert len(fallos.leer(caso)) == 1
+    monkeypatch.setattr(llm, "cliente_para", real)
+    _anthropic_sin_clave(caso, monkeypatch)
+    for _ in range(4):
+        r = api.continuar(caso)
+        assert r["ok"] is False and "Falta la clave de la API de Anthropic" in r["error"]
+        assert not r.get("tope_intentos")
+    assert len(fallos.leer(caso)) == 1
+    assert api.estado(caso)["tope_intentos"] is False
+    cfgmod.guardar(caso, Config(llm=LLMConfig(proveedor="fake"), verificar_relatoria=False))
+    r = api.continuar(caso)
+    assert r["ok"] is True and r["estado"] == "esperando_decision", r["error"]
+
+
+def test_los_fallos_por_clave_ausente_ya_registrados_no_cuentan(tmp_path):
+    for _ in range(3):
+        fallos.registrar(
+            tmp_path,
+            {"nodo": "apertura", "exitos": 0, "error": "No hay credenciales para el proveedor (ANTHROPIC_API_KEY): x"},
+        )
+    fallos.registrar(tmp_path, {"nodo": "apertura", "exitos": 0, "error": "El modelo rechazó la solicitud."})
+    assert [f["error"] for f in api._fallos_consecutivos("apertura", [], tmp_path)] == ["El modelo rechazó la solicitud."]
+    fallos.registrar(
+        tmp_path,
+        {"nodo": "caso_concreto", "exitos": 0, "error": "Falta la clave de la API de Gemini (GEMINI_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo."},
+    )
+    assert api._fallos_consecutivos("caso_concreto", [], tmp_path) == []
 
 
 def test_nuevo_borra_los_fallos(caso, monkeypatch):
