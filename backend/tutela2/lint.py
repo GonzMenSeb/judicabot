@@ -649,6 +649,12 @@ _INFINITIVO_SUSTITUTIVA = {
     "CARENCIA_DANO_CONSUMADO": _CARENCIA_INF + r"da[ñn]o\s+consumado",
     "CARENCIA_SOBREVINIENTE": _CARENCIA_INF + r"sobrevinient",
 }
+# Conectivos que abren una oración del propio Despacho («Por lo expuesto, debe confirmar el fallo»). Solo valen al
+# arrancar la oración: tras un sujeto nominal («la EPS, por tanto, deberá confirmar la cita») el sujeto no es el Despacho.
+_CONECTIVO_DECISION = (
+    r"(?:por\s+lo\s+(?:expuesto|anterior|tanto)|por\s+(?:tanto|consiguiente)|en\s+consecuencia|as[ií]\s+las\s+cosas"
+    r"|en\s+(?:el\s+presente|este)\s+caso|en\s+conclusi[oó]n)"
+)
 # Un infinitivo solo anuncia la decisión si lo rige una fórmula de decisión («corresponde revocar», «debe revocar»)
 # o una coordinación que arranca en ella («…y negar el amparo»). «Al negar», «decidió negar» o «sin amparar»
 # describen o niegan, no anuncian; y tras un «que» ya no se sabe quién actúa.
@@ -657,9 +663,11 @@ _ANUNCIO_INFINITIVO = re.compile(
     r"|es\s+(?:necesario|preciso|procedente|menester)|resulta\s+(?:necesario|preciso|procedente)"
     r"|lo\s+(?:procedente|que\s+procede|que\s+corresponde)\s+es"
     r"|(?:(?:el|este)\s+(?:despacho|juzgado)|la\s+sala)\s+(?:decide|decidir[aá]|resuelve|resolver[aá]|dispone|dispondr[aá]))\b"
-    # «Deber» solo anuncia si el sujeto es el Despacho o está implícito: «la accionada deberá confirmar la cita» no anuncia nada.
-    r"|(?:\b(?:despacho|juzgado|sala)\s+|\b(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que\s+"
-    r"|(?:^|[.;:!?,])\s*)\b(?:deber[aá]n?|deben?)\b"
+    # «Deber» solo anuncia si el sujeto es el Despacho o está implícito al arrancar la oración (con o sin conectivo):
+    # «la accionada deberá confirmar la cita» o «la EPS, por tanto, deberá confirmarla» no anuncian nada.
+    rf"|(?:\b(?:despacho|juzgado|sala)(?:\s*,\s*{_CONECTIVO_DECISION}\s*,)?\s+"
+    r"|\b(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que\s+"
+    rf"|(?:^|[.;:!?])\s*(?:{_CONECTIVO_DECISION}\s*,\s*)*)\b(?:deber[aá]n?|deben?)\b"
 )
 _COORDINADO = re.compile(
     r"(?:\b(?:y|e|o)\s+(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n)\s*,?\s*)?"

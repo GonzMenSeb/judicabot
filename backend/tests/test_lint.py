@@ -1319,6 +1319,9 @@ def test_coherencia_decision_el_tipo_de_carencia_decidido_no_se_confunde_con_otr
         "Por lo anterior, el Despacho debe confirmar la sentencia y amparar el derecho a la salud.",
         "La Sala deberá confirmar la sentencia y amparar el derecho a la salud.",
         "Por lo expuesto, debe confirmar el fallo y amparar el derecho a la salud.",
+        "Corresponde amparar el derecho a la salud; en consecuencia, deberá confirmar el fallo.",
+        "Corresponde amparar el derecho a la salud. Así las cosas, por lo tanto, debe confirmar el fallo.",
+        "Corresponde amparar el derecho a la salud; el Despacho, por tanto, debe confirmar el fallo.",
     ],
 )
 def test_coherencia_decision_deber_con_sujeto_el_despacho_anuncia_un_resultado_contradictorio(conclusion):
@@ -1332,9 +1335,24 @@ def test_coherencia_decision_deber_con_sujeto_el_despacho_anuncia_un_resultado_c
         "El Despacho considera que debe revocar el fallo y amparar el derecho a la salud, y la accionada deberá confirmar la cita.",
         "Corresponde revocar el fallo y amparar el derecho a la salud. La EPS debe confirmar la cita médica del accionante.",
         "El Despacho debe revocar el fallo y amparar el derecho a la salud, mientras que las entidades deben confirmar la cita.",
+        # Un sujeto nominal con un inciso antes de «deber» sigue siendo un tercero: la coma del inciso no deja el sujeto implícito.
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la EPS, por tanto, deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la entidad accionada, en consecuencia, deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; las demás entidades, además, deben confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; el hospital, por su parte, deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud; la Nueva EPS S.A., desde ahora, deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud, y la EPS, así las cosas, deberá confirmar la cita.",
     ],
 )
 def test_coherencia_decision_deber_de_un_tercero_no_anuncia_el_resultado(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+@pytest.mark.parametrize("sujeto", ["la EPS", "la entidad accionada", "las demás entidades", "el hospital", "la Nueva EPS S.A."])
+@pytest.mark.parametrize("inciso", [", por tanto,", ", en consecuencia,", ", además,", ", por su parte,", ", desde ahora,", ", por lo expuesto,"])
+@pytest.mark.parametrize("verbo", ["deberá", "debe"])
+def test_coherencia_decision_deber_de_un_sujeto_nominal_con_inciso_no_anuncia_el_resultado(sujeto, inciso, verbo):
+    conclusion = f"Corresponde revocar el fallo y amparar el derecho a la salud; {sujeto}{inciso} {verbo} confirmar la cita."
     assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
 
 
