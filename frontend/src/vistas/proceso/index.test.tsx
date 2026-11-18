@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Evento } from "../../api/contrato";
-import { casoActual, jobActual, toasts } from "../../estado";
+import { casoActual, estadoServidor, jobActual, toasts } from "../../estado";
 import Proceso from "./index";
 import { Seguimiento } from "./Seguimiento";
 
@@ -47,6 +47,8 @@ interface Servidor {
   jobs: Record<string, { caso: string; cmd: string }>;
   nuevoJob: string;
   runs: unknown[];
+  claves: { api_key?: boolean; gemini_key?: boolean } | null;
+  claveGuardada: unknown;
 }
 
 let servidor: Servidor;
@@ -61,6 +63,14 @@ function instalarFetch() {
       servidor.llamadas.push(ruta);
       if (/^\/api\/casos\/c1\/resumen$/.test(ruta)) return json(servidor.resumen);
       if (/^\/api\/casos\/c1\/estado$/.test(ruta)) return json(servidor.estado, servidor.estadoStatus);
+      if (ruta === "/api/estado-servidor" && servidor.claves) {
+        return json({ proveedor: "anthropic", api_key: false, gemini_key: false, jev_key: false, modelo: "claude-sonnet-5-5", modelos: [], modelos_gemini: [], festivos: [], ...servidor.claves });
+      }
+      if (metodo === "POST" && (ruta === "/api/api-key" || ruta === "/api/gemini-key")) {
+        servidor.claveGuardada = JSON.parse(String(init?.body));
+        servidor.claves = { ...servidor.claves, [ruta === "/api/api-key" ? "api_key" : "gemini_key"]: true };
+        return json({ ok: true });
+      }
       if (metodo === "POST" && ruta === "/api/casos/c1/run") {
         servidor.runs.push(JSON.parse(String(init?.body)));
         return json({ job_id: servidor.nuevoJob });
@@ -95,7 +105,10 @@ beforeEach(() => {
     jobs: { j1: { caso: "c1", cmd: "iniciar" } },
     nuevoJob: "j2",
     runs: [],
+    claves: null,
+    claveGuardada: null,
   };
+  estadoServidor.value = null;
   jobActual.value = null;
   casoActual.value = null;
   toasts.value = [];
@@ -205,6 +218,34 @@ describe("proceso en vivo", () => {
     expect(primera.cerrada).toBe(true);
     expect(jobActual.value).toBe("j2");
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("tras un fallo en vivo por clave ausente, «Continuar» pide la clave", async () => {
+    servidor.estado = { ok: false, estado: "error", error: "Falta la clave.", job_activo: "j1", resumen: {}, proveedor_llm: "anthropic" };
+    servidor.claves = { api_key: false };
+    await montar();
+    emitir("fin", {
+      estado: "error",
+      error: "Falta la clave de la API de Anthropic (ANTHROPIC_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo.",
+    });
+    const alerta = await screen.findByRole("alert");
+    expect(within(alerta).getByRole("link", { name: "Ir a Inteligencia artificial" }).getAttribute("href")).toBe("#/configuracion/ia");
+
+    fireEvent.click(within(alerta).getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByLabelText("Clave de la API")).toBeTruthy();
+    expect(servidor.runs).toEqual([]);
+  });
+
+  it("tras un fallo en vivo con tope, muestra el texto del tope y el botón", async () => {
+    const tope =
+      "La llamada a la IA falló 3 veces seguidas en la apertura (último error: El modelo rechazó la solicitud.). Revise la clave y el modelo en Inteligencia artificial y use «Reintentar de todos modos».";
+    servidor.estado = { ok: false, estado: "error", error: tope, tope_intentos: true, job_activo: "j1", resumen: {}, proveedor_llm: "anthropic" };
+    await montar();
+    emitir("fin", { estado: "error", error: "El modelo rechazó la solicitud." });
+    const alerta = await screen.findByRole("alert");
+    expect(await within(alerta).findByText(tope)).toBeTruthy();
+    expect(within(alerta).getByRole("button", { name: "Reintentar de todos modos" })).toBeTruthy();
+    expect(within(alerta).queryByRole("button", { name: "Continuar" })).toBeNull();
   });
 
   it("si el error ocurrió al decidir, «Volver» lleva a la decisión", async () => {
@@ -330,6 +371,148 @@ describe("sin ejecución activa", () => {
     fireEvent.click(within(alerta).getByRole("button", { name: "Continuar" }));
     await waitFor(() => expect(FuenteSimulada.instancias).toHaveLength(1));
     expect(ultima().url).toBe("/api/jobs/j2/eventos");
+  });
+
+  it("sin el tope, «Continuar» no envía forzar", async () => {
+    servidor.estado = { ok: false, estado: "error", error: "Quedó a medias en apertura.", job_activo: null, resumen: {} };
+    render(<Proceso caso="c1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+    await waitFor(() => expect(servidor.runs).toHaveLength(1));
+    expect(servidor.runs[0]).toEqual({ cmd: "continuar" });
+    expect(screen.queryByRole("button", { name: "Reintentar de todos modos" })).toBeNull();
+  });
+
+  describe("clave de la API", () => {
+    const enError = (extra: Record<string, unknown> = {}) => {
+      servidor.estado = { ok: false, estado: "error", error: "La ejecución quedó a medias.", job_activo: null, resumen: {}, ...extra };
+    };
+
+    it("sin la clave del proveedor, «Continuar» pide la clave antes de lanzar", async () => {
+      enError({ proveedor_llm: "anthropic" });
+      servidor.claves = { api_key: false };
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+
+      const campo = await screen.findByLabelText("Clave de la API");
+      expect(screen.getByText("Falta la clave de la API")).toBeTruthy();
+      expect(servidor.runs).toEqual([]);
+
+      fireEvent.input(campo, { target: { value: "sk-ant-prueba" } });
+      fireEvent.click(within(campo.closest("dialog") as HTMLElement).getByRole("button", { name: "Guardar y continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar" }]));
+      expect(servidor.claveGuardada).toEqual({ key: "sk-ant-prueba" });
+      await waitFor(() => expect(ultima().url).toBe("/api/jobs/j2/eventos"));
+    });
+
+    it("con la clave del proveedor, «Continuar» lanza sin diálogo", async () => {
+      enError({ proveedor_llm: "anthropic" });
+      servidor.claves = { api_key: true };
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar" }]));
+      expect(screen.queryByLabelText("Clave de la API")).toBeNull();
+    });
+
+    it("pide la clave del proveedor del caso, no la del servidor", async () => {
+      enError({ proveedor_llm: "gemini" });
+      servidor.claves = { api_key: true, gemini_key: false };
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+
+      const campo = await screen.findByLabelText("Clave de la API");
+      expect(within(campo.closest("dialog") as HTMLElement).getByText(/la clave de la API de Gemini/)).toBeTruthy();
+      fireEvent.input(campo, { target: { value: "AIza-prueba" } });
+      fireEvent.click(within(campo.closest("dialog") as HTMLElement).getByRole("button", { name: "Guardar y continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar" }]));
+      expect(servidor.claveGuardada).toEqual({ key: "AIza-prueba" });
+    });
+
+    it("con el proveedor del caso en fake no pide clave", async () => {
+      enError({ proveedor_llm: "fake" });
+      servidor.claves = { api_key: false };
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar" }]));
+      expect(screen.queryByLabelText("Clave de la API")).toBeNull();
+    });
+
+    it("si el servidor no informa de las claves, no bloquea", async () => {
+      enError({ proveedor_llm: "anthropic" });
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar" }]));
+    });
+
+    it("ofrece ir a Inteligencia artificial solo si el mensaje la nombra", async () => {
+      enError({ error: "Falta la clave de la API de Anthropic (ANTHROPIC_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo." });
+      const { unmount } = render(<Proceso caso="c1" />);
+      expect((await screen.findByRole("link", { name: "Ir a Inteligencia artificial" })).getAttribute("href")).toBe("#/configuracion/ia");
+      unmount();
+
+      enError({ error: "El modelo rechazó la solicitud." });
+      render(<Proceso caso="c1" />);
+      await screen.findByRole("button", { name: "Continuar" });
+      expect(screen.queryByRole("link", { name: "Ir a Inteligencia artificial" })).toBeNull();
+    });
+  });
+
+  describe("tope de intentos", () => {
+    const conTope = (extra: Record<string, unknown> = {}) => {
+      servidor.estado = {
+        ok: false,
+        estado: "error",
+        error: "La llamada a la IA falló 3 veces seguidas en la apertura (último error: x). Revise la clave y el modelo en Inteligencia artificial.",
+        tope_intentos: true,
+        job_activo: null,
+        resumen: {},
+        ...extra,
+      };
+    };
+
+    it("ofrece reintentar de todos modos con confirmación", async () => {
+      conTope();
+      render(<Proceso caso="c1" />);
+      const alerta = await screen.findByRole("alert");
+      expect(within(alerta).queryByRole("button", { name: "Continuar" })).toBeNull();
+      expect(within(alerta).getByRole("link", { name: "Ir a Inteligencia artificial" })).toBeTruthy();
+
+      fireEvent.click(within(alerta).getByRole("button", { name: "Reintentar de todos modos" }));
+      const dialogo = (await screen.findByText("¿Reintentar de todos modos?")).closest("dialog") as HTMLElement;
+      expect(within(dialogo).getByText(/puede volver a cobrarse/)).toBeTruthy();
+      expect(servidor.runs).toEqual([]);
+
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Reintentar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar", forzar: true }]));
+      await waitFor(() => expect(ultima().url).toBe("/api/jobs/j2/eventos"));
+    });
+
+    it("«Cancelar» cierra la confirmación sin lanzar nada", async () => {
+      conTope();
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Reintentar de todos modos" }));
+      const dialogo = (await screen.findByText("¿Reintentar de todos modos?")).closest("dialog") as HTMLElement;
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => expect(screen.queryByText("¿Reintentar de todos modos?")).toBeNull());
+      expect(servidor.runs).toEqual([]);
+    });
+
+    it("sin clave, cierra la confirmación, pide la clave y lanza forzado al guardarla", async () => {
+      conTope({ proveedor_llm: "anthropic" });
+      servidor.claves = { api_key: false };
+      render(<Proceso caso="c1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Reintentar de todos modos" }));
+      const confirmar = (await screen.findByText("¿Reintentar de todos modos?")).closest("dialog") as HTMLElement;
+      fireEvent.click(within(confirmar).getByRole("button", { name: "Reintentar" }));
+
+      const campo = await screen.findByLabelText("Clave de la API");
+      expect(screen.queryByText("¿Reintentar de todos modos?")).toBeNull();
+      expect(servidor.runs).toEqual([]);
+
+      fireEvent.input(campo, { target: { value: "sk-ant-prueba" } });
+      fireEvent.click(within(campo.closest("dialog") as HTMLElement).getByRole("button", { name: "Guardar y continuar" }));
+      await waitFor(() => expect(servidor.runs).toEqual([{ cmd: "continuar", forzar: true }]));
+      expect(screen.queryByText("¿Reintentar de todos modos?")).toBeNull();
+    });
   });
 
   it("ignora un job recordado que pertenece a otro caso", async () => {

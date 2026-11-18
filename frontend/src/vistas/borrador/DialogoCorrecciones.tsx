@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { api, ErrorApi } from "../../api";
-import type { JobInicio } from "../../api/contrato";
+import type { JobInicio, ProveedorCaso } from "../../api/contrato";
+import { cargarEstadoServidor, DATOS_PROVEEDOR, estadoServidor, proveedorSinClave } from "../../estado";
 import { Aviso, Boton, Dialogo } from "../../ui";
 import { avisosDeAlcance } from "./alcance";
 import type { CorreccionCuerpo } from "./tipos";
@@ -27,11 +28,14 @@ const OPCIONES: { valor: Accion; secciones: string; titulo: string; detalle: str
 export interface PropsDialogoCorrecciones {
   abierto: boolean;
   caso: string;
+  proveedor?: ProveedorCaso | null;
   onCerrar: () => void;
   onEnviado: (jobId: string) => void;
 }
 
-export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: PropsDialogoCorrecciones) {
+const FALTA_CLAVE = "Falta la clave de la API";
+
+export function DialogoCorrecciones({ abierto, caso, proveedor, onCerrar, onEnviado }: PropsDialogoCorrecciones) {
   const [accion, setAccion] = useState<Accion | null>(null);
   const [instruccion, setInstruccion] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -63,6 +67,13 @@ export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: Prop
     }
     setEnviando(true);
     setError(null);
+    await cargarEstadoServidor(true);
+    const sinClave = proveedorSinClave(estadoServidor.value, proveedor);
+    if (sinClave) {
+      setEnviando(false);
+      setError(`${FALTA_CLAVE} de ${DATOS_PROVEEDOR[sinClave].corto}: configúrela en Inteligencia artificial antes de pedir la corrección.`);
+      return;
+    }
     const cuerpo: CorreccionCuerpo = { cmd: "decidir", decision: { accion, instruccion: instruccion.trim() } };
     try {
       const { job_id } = await api.post<JobInicio>(`/api/casos/${encodeURIComponent(caso)}/run`, cuerpo);
@@ -149,7 +160,11 @@ export function DialogoCorrecciones({ abierto, caso, onCerrar, onEnviado }: Prop
         )}
       </div>
       {error && (
-        <Aviso tipo="error" class="bor-dialogo-error">
+        <Aviso
+          tipo="error"
+          class="bor-dialogo-error"
+          acciones={error.startsWith(FALTA_CLAVE) ? <Boton href="#/configuracion/ia">Ir a Inteligencia artificial</Boton> : undefined}
+        >
           {error}
         </Aviso>
       )}

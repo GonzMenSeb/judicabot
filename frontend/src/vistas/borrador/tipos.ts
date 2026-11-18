@@ -1,4 +1,4 @@
-import type { ApoderadoVista, Bloque, CitaVista, EstadoCasoApi, EvidenciaVista } from "../../api/contrato";
+import type { ApoderadoVista, Bloque, CitaVista, EstadoCasoApi, EvidenciaVista, ProveedorCaso } from "../../api/contrato";
 import type { TonoChip } from "../../ui";
 
 export type PreguntaJev = "sentido_fallo" | "sentido_clausula" | "rol_impugnante";
@@ -58,6 +58,7 @@ export interface EstadoCaso {
   resumen?: ResumenEstado | null;
   error?: string | null;
   job_activo?: string | null;
+  proveedor_llm?: ProveedorCaso | null;
 }
 
 export type EstadoComparacion = "coincide" | "difiere" | "sin_comparar";
