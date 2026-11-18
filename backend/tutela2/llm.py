@@ -9,7 +9,7 @@ from typing import Any, Iterable, Iterator, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from tutela2 import apoderados
+from tutela2 import apoderados, fallos
 from tutela2.config import (
     NODOS_LLM,
     RESPALDO_CLIENTE,
@@ -63,7 +63,56 @@ CITAS_FAKE = {
 
 
 class ErrorLLM(Exception):
-    pass
+    """Fallo de la llamada al modelo.
+
+    ``sin_coste`` marca el que ocurrió antes de que el proveedor recibiera o cobrara el expediente (clave ausente
+    o rechazada, límite de peticiones, servicio caído, sin conexión): no cuenta para el tope de reintentos.
+    """
+
+    def __init__(self, *args: object, sin_coste: bool = False):
+        super().__init__(*args)
+        self.sin_coste = sin_coste
+
+
+VARIABLE_CLAVE = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
+MENSAJE_SIN_CLAVE = {
+    "anthropic": "Falta la clave de la API de Anthropic (ANTHROPIC_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo.",
+    "gemini": "Falta la clave de la API de Gemini (GEMINI_API_KEY): agréguela en Inteligencia artificial y vuelva a intentarlo.",
+}
+
+
+def _familia_del_error(e: BaseException) -> str | None:
+    """Clave de ``fallos.FAMILIAS`` a la que pertenece una excepción del SDK o de la red; ``None`` si no se reconoce."""
+    import anthropic
+
+    if isinstance(e, anthropic.APITimeoutError) or isinstance(e, httpx.TimeoutException):
+        return "tiempo_agotado"
+    if isinstance(e, (anthropic.APIConnectionError, httpx.ConnectError)):
+        return "conexion"
+    estado = getattr(e, "status_code", None)
+    if estado is None:
+        estado = getattr(e, "code", None)
+    if isinstance(estado, int):
+        texto = str(e).lower()
+        if estado in (401, 403):
+            return "credenciales"
+        if estado == 429:
+            return "limite"
+        if 500 <= estado <= 599:
+            return "servicio"
+        if estado == 400 and "credit balance is too low" in texto:
+            return "saldo"
+        if estado == 400 and "api key not valid" in texto:
+            return "clave_gemini"
+        return None
+    if isinstance(e, httpx.HTTPError):
+        return "corte"
+    return None
+
+
+def _sin_coste(e: BaseException) -> bool:
+    familia = _familia_del_error(e)
+    return familia is not None and fallos.familia(familia).sin_coste
 
 
 class ErrorLLMDegenerado(ErrorLLM):
@@ -174,9 +223,9 @@ class AnthropicClient:
         except TypeError as e:
             if "authentication" not in str(e):
                 raise
-            raise ErrorLLM(f"No hay credenciales para el proveedor (ANTHROPIC_API_KEY): {e}") from e
+            raise ErrorLLM(MENSAJE_SIN_CLAVE["anthropic"], sin_coste=True) from e
         except (anthropic.AnthropicError, httpx.HTTPError) as e:
-            raise ErrorLLM(f"Error del proveedor ({type(e).__name__}): {e}") from e
+            raise ErrorLLM(f"Error del proveedor ({type(e).__name__}): {e}", sin_coste=_sin_coste(e)) from e
         if resp.stop_reason == "refusal":
             raise ErrorLLM("El modelo rechazó la solicitud (stop_reason=refusal).")
         if resp.stop_reason == "max_tokens":
@@ -310,11 +359,12 @@ class GeminiClient:
 
             clave = os.environ.get("GEMINI_API_KEY", "").strip()
             if not clave:
-                raise ErrorLLM("No hay credenciales para el proveedor (GEMINI_API_KEY): agregue la clave de Gemini en Inteligencia artificial.")
+                raise ErrorLLM(MENSAJE_SIN_CLAVE["gemini"], sin_coste=True)
             if not clave_valida(clave):
                 raise ErrorLLM(
                     "La clave de Gemini (GEMINI_API_KEY) tiene caracteres no válidos (solo ASCII visible, sin espacios ni saltos de línea): "
-                    "vuelva a agregarla en Inteligencia artificial."
+                    "vuelva a agregarla en Inteligencia artificial.",
+                    sin_coste=True,
                 )
             self._client = genai.Client(api_key=clave, vertexai=False)
         return self._client
@@ -348,7 +398,7 @@ class GeminiClient:
                 _consumir_gemini,
             )
         except (errors.APIError, errors.UnknownApiResponseError, httpx.HTTPError) as e:
-            raise ErrorLLM(f"Error del proveedor ({type(e).__name__}): {e}") from e
+            raise ErrorLLM(f"Error del proveedor ({type(e).__name__}): {e}", sin_coste=_sin_coste(e)) from e
         if resp.bloqueo:
             raise ErrorLLM(f"Gemini bloqueó la solicitud (block_reason={_nombre(resp.bloqueo)}).")
         if resp.fin == types.FinishReason.MAX_TOKENS:
@@ -810,10 +860,18 @@ def _exigir_modelos_permitidos(cfg: Config) -> None:
             )
 
 
+def _exigir_clave(cfg: Config) -> None:
+    """Falla antes de abrir el hilo si el proveedor necesita una clave que el servidor no tiene."""
+    proveedor = cfg.llm.proveedor
+    if proveedor in VARIABLE_CLAVE and not os.environ.get(VARIABLE_CLAVE[proveedor], "").strip():
+        raise ErrorLLM(MENSAJE_SIN_CLAVE[proveedor], sin_coste=True)
+
+
 def cliente_para(cfg: Config) -> LLMClient:
     if cfg.llm.proveedor == "fake":
         return FakeClient()
     _exigir_modelos_permitidos(cfg)
+    _exigir_clave(cfg)
     if cfg.llm.proveedor == "gemini":
         return GeminiClient()
     return AnthropicClient()

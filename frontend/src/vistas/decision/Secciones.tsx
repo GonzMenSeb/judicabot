@@ -203,9 +203,19 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
   return (
     <Seccion id="dec-derechos" titulo="Derechos invocados" sub="Se piden solo al amparar o negar." oculta={sust !== "AMPARAR" && sust !== "NEGAR"}>
       {f.derechos.length === 0 && <p class="dec-vacio">No se recibieron derechos extraídos.</p>}
-      {f.derechos.map((d) => (
+      {f.derechos.map((d, i) => (
         <div class="dec-reparo dec-derecho" key={d.id}>
-          <div class="quien">{d.nombre}</div>
+          <div class="quien">
+            <input
+              type="text"
+              aria-label={`Nombre del derecho ${i + 1}`}
+              value={d.nombre}
+              onInput={(e) => {
+                const nombre = e.currentTarget.value;
+                cambiar((x) => ({ ...x, derechos: x.derechos.map((y) => (y.id === d.id ? { ...y, nombre } : y)) }));
+              }}
+            />
+          </div>
           <select
             aria-label={`Disposición del derecho ${d.nombre}`}
             value={d.disposicion}
@@ -229,6 +239,7 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
           type="text"
           placeholder="Otro derecho"
           aria-label="Otro derecho"
+          aria-describedby="dec-derecho-nuevo-ayuda"
           value={nuevo}
           onInput={(e) => setNuevo(e.currentTarget.value)}
           onKeyDown={(e) => {
@@ -239,6 +250,9 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
         />
         <Boton onClick={agregar}>Agregar derecho</Boton>
       </div>
+      <small id="dec-derecho-nuevo-ayuda">
+        El RESUELVE antepone «a la» o «al» según el derecho. Si no concuerda, corrija el nombre escribiendo el artículo: «la pensión de sobrevivientes», «el libre desarrollo de la personalidad».
+      </small>
     </Seccion>
   );
 }
@@ -344,8 +358,12 @@ export function Otras({ f, cambiar, err }: PropsSeccion) {
           <Campo id="dec-compulsa-respecto" etiqueta="Respecto de quién" error={eRespecto}>
             <input {...atributos("dec-compulsa-respecto", eRespecto)} type="text" value={f.respectoDe} onInput={(e) => cambiar((x) => ({ ...x, respectoDe: e.currentTarget.value }))} />
           </Campo>
-          <Campo id="dec-compulsa-organo" etiqueta="Órgano" ayuda="Opcional. Por defecto: Comisión Seccional de Disciplina Judicial de Antioquia.">
-            <input id="dec-compulsa-organo" type="text" value={f.organo} onInput={(e) => cambiar((x) => ({ ...x, organo: e.currentTarget.value }))} />
+          <Campo
+            id="dec-compulsa-organo"
+            etiqueta="Órgano"
+            ayuda="Opcional. Por defecto: la Comisión Seccional de Disciplina Judicial de Antioquia. Se antepone «el» o «la» según el órgano; para forzarlo escríbalo con artículo: «el Consejo Seccional de la Judicatura…»."
+          >
+            <input {...atributos("dec-compulsa-organo", undefined, true)} type="text" value={f.organo} onInput={(e) => cambiar((x) => ({ ...x, organo: e.currentTarget.value }))} />
           </Campo>
           <Campo id="dec-compulsa-hechos" etiqueta="Hechos de referencia" ayuda="Opcional.">
             <textarea id="dec-compulsa-hechos" rows={2} value={f.hechosRef} onInput={(e) => cambiar((x) => ({ ...x, hechosRef: e.currentTarget.value }))} />

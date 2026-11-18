@@ -232,6 +232,18 @@ describe("aDecision (claves del legado)", () => {
     expect(validar(d)).toEqual([]);
   });
 
+  it("aDecision recorta el nombre de los derechos y descarta los vacíos", () => {
+    const f = completo();
+    const base = f.derechos[0];
+    if (!base) throw new Error("falta el derecho extraído");
+    const derechos = [
+      { ...base, nombre: " la pensión " },
+      { ...base, id: base.id + 100, nombre: "" },
+      { ...base, id: base.id + 101, nombre: "   " },
+    ];
+    expect(aDecision({ ...f, derechos }).derechos).toEqual([{ derecho: "la pensión", disposicion: "AMPARA" }]);
+  });
+
   it("solo envía derechos al amparar o negar", () => {
     const f = completo();
     expect(aDecision(f).derechos).toHaveLength(2);

@@ -274,7 +274,7 @@ export function aDecision(f: Formulario): DecisionCuerpo {
     causal: sustitutiva === "IMPROCEDENTE" && f.causal ? f.causal : null,
     eje: limpiarTexto(f.eje),
     por_reparo: f.reparos.map((r) => ({ reparo_id: r.id, disposicion: r.disposicion, nota: limpiarTexto(r.nota) })),
-    derechos: aplicanDerechos ? f.derechos.map((d) => ({ derecho: d.nombre, disposicion: d.disposicion })) : [],
+    derechos: aplicanDerechos ? f.derechos.filter((d) => d.nombre.trim()).map((d) => ({ derecho: d.nombre.trim(), disposicion: d.disposicion })) : [],
     ordenes: admiteOrdenes(f)
       ? f.ordenes.map((o) => ({
           mismo_termino: o.mismo,

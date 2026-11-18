@@ -50,6 +50,7 @@
 .dec-reparo > input[type=text] { grid-column: 1 / -1; }
 .dec-derecho { grid-template-columns: minmax(0, 1fr) 11rem auto; align-items: center; }
 .dec-agregar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; margin-top: 0.8rem; }
+.dec-agregar + small { display: block; margin-top: 0.4rem; color: var(--suave); font-size: 0.83rem; }
 
 .dec-orden { display: grid; gap: 0.8rem; margin-bottom: 0.8rem; padding: 1rem; border: 1px solid var(--linea); border-radius: 10px; background: #fff; }
 .dec-orden-fila { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 9rem; gap: 0.8rem; }

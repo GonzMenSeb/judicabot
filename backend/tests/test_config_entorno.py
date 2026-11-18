@@ -169,6 +169,7 @@ def test_cliente_para_sin_modelos_validos_dice_ninguno(monkeypatch):
 
 
 def test_cliente_para_acepta_los_modelos_permitidos_y_no_restringe_sin_variable(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-prueba")
     monkeypatch.setattr(llm, "AnthropicClient", lambda: "cliente")
     assert llm.cliente_para(Config(llm=LLMConfig(modelo=OPUS))) == "cliente"
     monkeypatch.setenv(VARIABLE, f"{SONNET},{OPUS}")
@@ -219,6 +220,7 @@ def test_el_proveedor_falso_no_filtra_los_ajustes_por_nodo():
 
 
 def test_cliente_para_gemini_usa_su_cliente_y_su_lista_permitida(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-prueba")
     monkeypatch.setattr(llm, "GeminiClient", lambda: "gemini")
     assert llm.cliente_para(gemini()) == "gemini"
     monkeypatch.setenv(VARIABLE, f"{SONNET},{CARBON}")

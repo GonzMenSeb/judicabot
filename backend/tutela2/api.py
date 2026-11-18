@@ -203,7 +203,12 @@ def _leer_estado(g: Any, hilo: dict, cfg: Config, caso_dir: Path, regenerar_prev
     valores = dict(snap.values)
     if estado == "esperando_decision" and regenerar_previo:
         _sincronizar(caso_dir, cfg, valores, regenerar=True)
-    return _respuesta(estado, caso_dir, ok=estado != "error", payload=payload, resumen=_resumen(valores), error=error)
+    tope = _mensaje_tope(snap, cfg, caso_dir) if estado == "error" else None
+    respuesta = _respuesta(
+        estado, caso_dir, ok=estado != "error", payload=payload, resumen=_resumen(valores), error=tope or error
+    )
+    respuesta["tope_intentos"] = tope is not None
+    return respuesta
 
 
 def _fallo(caso_dir: Path, e: Exception) -> dict:
@@ -422,15 +427,63 @@ def decidir(caso_dir: str | Path, decision: dict) -> dict:
         return _fallo(caso_dir, e)
 
 
-def _fallos_consecutivos(nodo: str, bitacora: list[dict], caso_dir: Path) -> list[dict]:
+def _fallos_consecutivos(nodo: str, bitacora: list[dict], caso_dir: Path, cfg: Config | None = None) -> list[dict]:
+    """Fallos del nodo posteriores a su último éxito que cuentan para el tope de reintentos.
+
+    No cuentan los que no costaron nada (``fallos.sin_coste``: clave ausente, 401/403/429, 5xx, sin conexión) ni,
+    si se da ``cfg``, los de otro proveedor, modelo o ``max_tokens`` (cambiar la causa reinicia la cuenta). Una
+    línea sin esos campos, escrita por una versión anterior, cuenta como coincidente.
+    """
     exitos = [b for b in bitacora if b.get("nodo") == nodo]
     ultima = max((b.get("fecha") or "" for b in exitos), default="")
-    return [
+    registros = [
         f
         for f in fallos.leer(caso_dir)
         if f.get("nodo") == nodo
         and (f["exitos"] == len(exitos) if "exitos" in f else (f.get("fecha") or "") > ultima)
+        and not fallos.sin_coste(f)
     ]
+    if cfg is None:
+        return registros
+    modelo = cfg.modelo_para(nodo)
+    return [
+        f
+        for f in registros
+        if f.get("proveedor", cfg.llm.proveedor) == cfg.llm.proveedor
+        and f.get("modelo_pedido", modelo) == modelo
+        and f.get("max_tokens", cfg.llm.max_tokens) == cfg.llm.max_tokens
+    ]
+
+
+# Etiqueta con artículo de cada nodo del grafo, para los mensajes que los nombran sin enseñar el nombre interno.
+_ETAPAS = {
+    "apertura": "la apertura",
+    "validar_apertura": "la revisión de la apertura",
+    "apoderados": "la identificación de los apoderados",
+    "consideraciones": "las consideraciones",
+    "verificar_consideraciones": "la verificación de las citas",
+    "decision": "la decisión",
+    "caso_concreto": "el caso concreto",
+    "validar_caso": "la revisión del caso concreto",
+    "ensamblar": "el armado de los documentos",
+}
+
+
+def _mensaje_tope(snap: Any, cfg: Config, caso_dir: Path) -> str | None:
+    """Texto del tope de reintentos si el paso pendiente ya falló ``max_intentos`` veces seguidas; si no, ``None``."""
+    if not snap.next:
+        return None
+    nodo = snap.next[0]
+    seguidos = _fallos_consecutivos(nodo, snap.values.get("bitacora") or [], caso_dir, cfg)
+    if len(seguidos) < cfg.max_intentos:
+        return None
+    return (
+        f"La llamada a la IA falló {len(seguidos)} veces seguidas en {_ETAPAS.get(nodo, nodo)} "
+        f"(último error: {seguidos[-1].get('error', 'desconocido')}). Para no volver a enviar y cobrar el "
+        "expediente sin necesidad, «Continuar» ya no la repite. Revise la clave y el modelo en Inteligencia "
+        "artificial y, cuando haya corregido la causa, use «Reintentar de todos modos» "
+        "(en la línea de comandos, `continuar --forzar`)."
+    )
 
 
 @resumen_caso.tras_transicion
@@ -443,22 +496,10 @@ def continuar(caso_dir: str | Path, forzar: bool = False) -> dict:
         with _grafo(caso_dir, cfg, llm.cliente_para(cfg)) as (g, hilo):
             snap = g.get_state(hilo)
             actual, _, _ = _clasificar(snap)
-            if actual == "error" and not forzar and snap.next:
-                nodo = snap.next[0]
-                seguidos = _fallos_consecutivos(nodo, snap.values.get("bitacora") or [], caso_dir)
-                if len(seguidos) >= cfg.max_intentos:
-                    respuesta = _respuesta(
-                        "error",
-                        caso_dir,
-                        ok=False,
-                        resumen=_resumen(dict(snap.values)),
-                        error=(
-                            f"La llamada a la IA del paso {nodo} falló {len(seguidos)} veces seguidas "
-                            f"(último error: {seguidos[-1].get('error', 'desconocido')}). No se reintenta "
-                            "automáticamente para no reenviar y cobrar el expediente otra vez. Revise la "
-                            "configuración o la clave de API antes de forzar un nuevo intento."
-                        ),
-                    )
+            if actual == "error" and not forzar:
+                tope = _mensaje_tope(snap, cfg, caso_dir)
+                if tope:
+                    respuesta = _respuesta("error", caso_dir, ok=False, resumen=_resumen(dict(snap.values)), error=tope)
                     respuesta["tope_intentos"] = True
                     return respuesta
             if actual == "error":

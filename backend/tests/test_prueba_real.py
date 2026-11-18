@@ -48,6 +48,9 @@ def gasto_aislado(pr, tmp_path_factory, monkeypatch):
     base = tmp_path_factory.mktemp("cache_tutela2")
     monkeypatch.setattr(pr, "CARPETA_DEFECTO", base / "prueba_real")
     monkeypatch.setattr(pr, "RUTA_GASTO", base / "prueba_real_gasto.json")
+    # ``cliente_para`` exige la clave del proveedor; los tests que la quieren ausente la borran después.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-prueba")
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-prueba")
     return base
 
 
