@@ -1260,14 +1260,15 @@ def test_signo_pegado_al_dia_del_encabezado_lo_vuelve_ilegible_y_no_lo_sustituye
     assert ingest._fecha_encabezado(texto) is None
 
 
-# Encabezado con fecha que no se lee y que no es «Ciudad, fecha» (un título o un número antes del lugar, «:» en vez de
-# coma, el día entre paréntesis sin resolver, un resto en minúsculas tras la fecha): tiene forma de encabezado, así que
-# ningún «Fecha:» ni fecha sola cerca (señuelo) lo sustituye. Main los leía cuando eran la primera fecha del texto.
+# Encabezado con fecha que no se lee y que no es «Ciudad, fecha» (un título o un número antes del lugar, el día entre
+# paréntesis sin resolver, un resto en minúsculas tras la fecha): tiene forma de encabezado, así que ningún «Fecha:» ni
+# fecha sola cerca (señuelo) lo sustituye. Main los leía cuando eran la primera fecha del texto.
 ENCABEZADOS_CON_TITULO_O_SEPARADOR = [
     "Sentencia No. 123 - Medellín, 28 de septiembre de 2026",
     "Sentencia de tutela No. 123, Medellín, 28 de septiembre de 2026",
     "Sentencia de primera instancia No. 123, Medellín, 28 de septiembre de 2026",
-    "Medellín: 28 de septiembre de 2026",
+    "Medellín, Antioquia: 28 de septiembre de 2026",  # con una coma o un título antes, los dos puntos sí dan forma de encabezado
+    "Sentencia No. 123, Medellín: 28 de septiembre de 2026",
     "Medellín, diez y seis (16) de septiembre de dos mil veintiséis (2026)",
     "Medellín, veinte y ocho (28) de septiembre de dos mil veintiséis (2026)",
     "Medellín, (28) de septiembre de 2026",
@@ -1286,6 +1287,50 @@ def test_encabezado_con_titulo_o_separador_que_no_se_lee_no_se_sustituye_por_un_
     linea = [senuelo, encabezado] if antes else [encabezado, senuelo]
     texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(linea) + CUERPO_CON_FECHAS
     assert ingest._fecha_encabezado(texto) is None
+
+
+# «Medellín: <fecha>» tiene la misma forma que «Admitida: <fecha>»: con solo los dos puntos no se sabe si hay un lugar. Es una
+# señal más débil que las de arriba y solo vuelve ilegible el encabezado si va antes de la fecha que se leería (la fecha
+# sola o «Fecha:»). Si el señuelo va antes no se distingue de un encabezado legible con otra fecha tras él: se lee el señuelo.
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+def test_encabezado_con_dos_puntos_no_se_sustituye_por_un_senuelo_que_va_despues(senuelo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín: 28 de septiembre de 2026\n" + senuelo + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) is None
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_encabezado_con_dos_puntos_sin_otra_fecha_no_se_sustituye_por_una_del_cuerpo():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín: 28 de septiembre de 2026" + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_fecha_del_encabezado_con_otra_fecha_con_rotulo_no_listado_no_pierde_la_fecha_del_encabezado():
+    # «Admitida:» no es un lugar ni un rótulo de la lista: tiene la forma de «Medellín: <fecha>». Con la fecha del
+    # encabezado («Fecha:» o sola) antes, esa otra fecha no la vuelve ilegible (antes: None y aviso falso)
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nFecha: 28 de septiembre de 2026\nAdmitida: 15 de junio de 2026\n"
+        "Radicado: 05001\nHECHOS\nPrimero. El 20 de agosto de 2026 pidió.\n"
+    )
+    assert ingest._leer_encabezado(texto) == ("2026-09-28", False)
+
+
+ROTULOS_DE_OTRA_FECHA_NO_LISTADOS = ["Remitida", "Concedida", "Impugnación", "Anexo", "Sala", "Accionante"]
+ENCABEZADOS_CON_FECHA_SOLA = ["Fecha: 28 de septiembre de 2026", "28 de septiembre de 2026", "Fecha de la providencia: 28/09/2026"]
+
+
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_CON_FECHA_SOLA)
+@pytest.mark.parametrize("rotulo", ROTULOS_DE_OTRA_FECHA_NO_LISTADOS)
+def test_otra_fecha_con_rotulo_no_listado_tras_el_encabezado_con_fecha_sola_no_lo_vuelve_ilegible(encabezado, rotulo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + rotulo + ": 15 de junio de 2026" + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == ("2026-09-28", False)
+
+
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_CON_FECHA_SOLA)
+@pytest.mark.parametrize("rotulo", ROTULOS_DE_OTRA_FECHA_NO_LISTADOS)
+def test_otra_fecha_con_rotulo_no_listado_antes_del_encabezado_con_fecha_sola_nunca_da_esa_otra_fecha(encabezado, rotulo):
+    # va antes y tiene la forma de «Medellín: <fecha>»: no se lee ninguna (vacío y aviso), nunca la otra fecha
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + rotulo + ": 15 de junio de 2026\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == (None, True)
 
 
 def test_numero_de_sentencia_antes_del_lugar_no_deja_que_el_renglon_fecha_que_sigue_sea_el_encabezado():
@@ -1318,6 +1363,12 @@ LINEAS_CON_OTRA_FECHA = [
     "Radicación: 15 de junio de 2026",
     "Vence: 20 de octubre de 2026",
     "Recibido: 15 de junio de 2026",
+    "Admitida: 15 de junio de 2026",
+    "Admisión: 15 de junio de 2026",
+    "Presentada: 15 de junio de 2026",
+    "Audiencia: 15 de junio de 2026",
+    "Informe: 15 de junio de 2026",
+    "Plazo: 15 de junio de 2026",
 ]
 
 

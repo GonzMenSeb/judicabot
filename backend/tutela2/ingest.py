@@ -661,15 +661,18 @@ _CIUDAD_SOLA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}\s*$")  # «Medell�
 _LUGAR_CON_SEPARADOR = re.compile(
     rf"^\s*{_ROTULO_DE_LUGAR}[^\W\d_][^\W\d_.]*(?:\s+(?:(?:de|del|la|las|los|y)\s+)*[^\W\d_.]+){{0,3}}\s*[,;–—-]\s*(?:[^\W\d_]{{3,10}}\.?,?\s*)?$"
 )
-# «Medellín: », «Bogotá D.C. - », «Medellín; » (con coma, `_CIUDAD_Y_COMA`), con el «a»/«el» y el día de la semana tras el
-# separador. Con dos puntos no se lee como encabezado (solo cuenta como un encabezado que no se lee): «Reparto: » o
-# «Vence: » tienen la misma forma y dan otra fecha (`_ROTULO_DE_OTRA_FECHA`).
-_LUGAR_Y_SEPARADOR = re.compile(
-    rf"^\s*{_LUGARES}\s*[:;–—-]\s*(?:(?:a|el)\s+)?(?:(?i:lun|mar|mi[eé]|jue|vie|s[aá]b|dom)[^\W\d_]*\.?,?\s*)?$"
-)
+# «Bogotá D.C. - », «Medellín; » (con coma, `_CIUDAD_Y_COMA`), con el «a»/«el» y el día de la semana tras el separador.
+# Con ese separador no se lee como encabezado (solo cuenta como un encabezado que no se lee).
+_DESPUES_DEL_SEPARADOR = r"\s*(?:(?:a|el)\s+)?(?:(?i:lun|mar|mi[eé]|jue|vie|s[aá]b|dom)[^\W\d_]*\.?,?\s*)?$"
+_LUGAR_Y_SEPARADOR = re.compile(rf"^\s*{_LUGARES}\s*[;–—-]{_DESPUES_DEL_SEPARADOR}")
+_LUGAR_Y_DOS_PUNTOS = re.compile(rf"^\s*{_LUGARES}\s*:{_DESPUES_DEL_SEPARADOR}")
+# «Medellín: » tiene la misma forma que «Admitida: », «Presentada: » o «Plazo: », que dan otra fecha: una sola palabra (o un
+# nombre) y los dos puntos no dicen si hay un lugar, así que es una señal más débil (`parece_encabezado`). Con una coma
+# («Medellín, Antioquia: ») o un título antes del lugar («Sentencia No. 123, Medellín: ») ya tiene forma de encabezado.
+_UN_LUGAR_Y_DOS_PUNTOS = re.compile(rf"^\s*{_LUGAR}\s*:{_DESPUES_DEL_SEPARADOR}")
 _ROTULO_DE_OTRA_FECHA = re.compile(
     r"^\s*(?:fecha\b|(?:reparto|radicad[oa]|radicaci[oó]n|vence|vencimiento|notificaci[oó]n|t[eé]rmino|asunto|referencia|"
-    r"recibid[oa]|ingreso)\b)",
+    r"recibid[oa]|ingreso|admitid[oa]|admisi[oó]n|presentad[oa]|presentaci[oó]n|audiencia|informe|plazo|traslado)\b)",
     re.I,
 )
 _SEPARADOR_DE_TITULO = re.compile(r"[,;:/]|\s[-–—]\s|[–—]")  # «Sentencia No. 123 - Medellín, », «Sentencia de tutela No. 123, Medellín, »
@@ -715,9 +718,11 @@ def _fecha_encabezado(texto: str) -> str | None:
     renglón, esa se lee.
     Tampoco sustituye al encabezado la fecha sola ni «Fecha:» cuando hay otra fecha con forma de encabezado que no se
     lee: va tras un lugar, o un título y un lugar, y un separador («Sentencia No. 123 - Medellín, 28 de …»,
-    «Medellín: …», «Medellín, diez y seis (16) de …»; `parece_encabezado`) o tras un «Fecha:» con más texto en el
-    renglón. Esa señal es más débil que una «Ciudad, fecha» legible, que manda: un renglón «Ciudad, fecha» citado
-    antes del primer renglón de cuerpo gana a un encabezado de este tipo."""
+    «Medellín, Antioquia: …», «Medellín, diez y seis (16) de …»; `parece_encabezado`) o tras un «Fecha:» con más texto
+    en el renglón. Esa señal es más débil que una «Ciudad, fecha» legible, que manda: un renglón «Ciudad, fecha» citado
+    antes del primer renglón de cuerpo gana a un encabezado de este tipo. Una sola palabra y los dos puntos («Medellín: …»,
+    «Admitida: …») es una señal aún más débil, porque tiene la forma de otra fecha con su rótulo: solo cuenta si va antes de
+    la fecha sola o «Fecha:» que se leería («Fecha: 28 de …» ⏎ «Admitida: 15 de …» se lee; al revés no se lee ninguna)."""
     return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000])[0]
 
 
@@ -770,22 +775,27 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
     def propias(candidatas: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
         return [c for c in candidatas if not _OFICIO.search(_plano(texto[c[0] : c[0] + VENTANA_OFICIO]))]
 
-    def parece_encabezado(pos: int) -> bool:
-        """La fecha va tras un lugar (o un título y un lugar) y un separador, o tras un «Fecha:» con más texto en su
-        renglón: tiene forma de encabezado. Se mira cada tramo tras un separador porque lo que va antes del lugar
-        puede ser cualquier título («Sentencia de tutela No. 123, Medellín, »)."""
+    def parece_encabezado(pos: int) -> int:
+        """2 si la fecha va tras un lugar (o un título y un lugar) y un separador, o tras un «Fecha:» con más texto en su
+        renglón: tiene forma de encabezado. 1 si solo va tras «<Palabra>: » (señal débil, ver `_UN_LUGAR_Y_DOS_PUNTOS`).
+        0 si no. Se mira cada tramo tras un separador porque lo que va antes del lugar puede ser cualquier título
+        («Sentencia de tutela No. 123, Medellín, »)."""
         col = columna(pos)
         if re.match(r"\d{1,2}\s*\)", texto[pos:]):  # «Medellín, (28) de …», «diez y seis (16) de …»: el día en paréntesis no se resolvió
             col = re.sub(r"(?:[^\W\d_]+[ \t]+){0,3}\(\s*$", "", col)
         col = re.sub(r"\s*\([^)\d]*\)", "", col)  # «Medellín (Ant) - »
         if _ROTULO_FECHA.match(col):  # «Radicado …      Fecha: <fecha>»
-            return bool(col.strip())
+            return 2 if col.strip() else 0
         if _ROTULO_DE_OTRA_FECHA.match(col):  # «Fecha de radicación: », «Reparto: », «Asunto: »
-            return False
+            return 0
         tramos = [col] + [col[m.end() :] for m in _SEPARADOR_DE_TITULO.finditer(col)]
-        return any(
-            r.match(t) for t in tramos for r in (_CIUDAD_Y_COMA, _CIUDAD_SOLA, _LUGAR_CON_SEPARADOR)
-        ) or any(_LUGAR_Y_SEPARADOR.match(t) and not _ROTULO_DE_OTRA_FECHA.match(t) for t in tramos)
+        if any(r.match(t) for t in tramos for r in (_CIUDAD_Y_COMA, _CIUDAD_SOLA, _LUGAR_CON_SEPARADOR)) or any(
+            _LUGAR_Y_SEPARADOR.match(t) and not _ROTULO_DE_OTRA_FECHA.match(t) for t in tramos
+        ):
+            return 2
+        if any(_LUGAR_Y_DOS_PUNTOS.match(t) and not _ROTULO_DE_OTRA_FECHA.match(t) for t in tramos):
+            return 1 if _UN_LUGAR_Y_DOS_PUNTOS.match(col) else 2
+        return 0
 
     ciudad = [f for f in fechas if con_ciudad(f[0], f[1])]
     leidos = {ini_renglon(f[0]) for f in ciudad}
@@ -831,12 +841,18 @@ def _leer_encabezado(texto: str, relectura: bool = False) -> tuple[str | None, b
     # Hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen. Una «Ciudad, fecha» legible manda sobre todo
     # esto, y por eso las fechas con forma de encabezado (`parece_encabezado`), que son una señal más débil, solo cuentan
     # aquí: un renglón «Reparto: <fecha>» antes de un «Medellín, <fecha>» no desplaza al encabezado legible.
-    if sin_leer or any(not sola(f[0], f[1]) and parece_encabezado(f[0]) for f in fechas):
+    solas = [f for f in fechas if sola(f[0], f[1])]
+    elegidas = propias(solas) or solas
+    # «<Palabra>: <fecha>» (señal débil) solo vuelve ilegible el encabezado si va antes de la fecha que se leería: tras ella
+    # es otra fecha con su rótulo («Fecha: 28 de septiembre …» ⏎ «Admitida: 15 de junio …»). En la relectura (tras un oficio)
+    # no hay fecha sola que valga, y cualquiera cuenta.
+    limite_debil = elegidas[0][0] if elegidas and not relectura else len(texto)
+    if sin_leer or any(
+        not sola(f[0], f[1]) and (fuerza := parece_encabezado(f[0])) and (fuerza == 2 or f[0] < limite_debil) for f in fechas
+    ):
         return None, True
     if relectura:
         return None, False
-    solas = [f for f in fechas if sola(f[0], f[1])]
-    elegidas = propias(solas) or solas
     return (elegidas[0][2] if elegidas else None), False
 
 
