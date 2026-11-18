@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import date
 
@@ -123,3 +124,22 @@ _TABLA = _tabla_letras()
 
 def letras_a_numero(texto: str) -> int | None:
     return _TABLA.get(" ".join(_sin_tildes(texto).split()))
+
+
+def letras_a_entero(texto: str) -> int | None:
+    """«dos mil veintiséis» → 2026. Admite «mil» y hasta 999 999; None si no es un número en letras."""
+    t = " ".join(_sin_tildes(texto).split())
+    total = 0
+    m = re.match(r"^(?:(.+?)\s+)?mil\b\s*(.*)$", t)
+    if m:
+        n = letras_a_numero(m.group(1)) if m.group(1) else 1
+        if n is None:
+            return None
+        total += n * 1000
+        t = m.group(2)
+    if t:
+        n = letras_a_numero(t)
+        if n is None:
+            return None
+        total += n
+    return total or None

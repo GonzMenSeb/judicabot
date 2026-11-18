@@ -27,7 +27,7 @@ from . import eventos
 from .config import Config
 from .jev import JevClient, cliente_jev
 from .jev_roles import aplicar, segunda_opinion
-from .letras import letras_a_numero
+from .letras import letras_a_entero, letras_a_numero
 from .models import Doc, Fechas, Ingesta, Metadatos, Pagina, Rol
 from .radicado import Juzgado, juzgado_de_radicado, nombre_juzgado
 
@@ -477,15 +477,8 @@ _MESES = {
         1,
     )
 }
-_F_LETRAS = re.compile(
-    r"(?<!\d)(\d{1,2})\)?\s+de\s+("
-    + "|".join(_MESES)
-    + r")\s+(?:de|del)\s+(?:[^\W\d_]+(?:\s+[^\W\d_]+){0,4}\s*\(\s*)?(\d\.?\d{3})(?!\d)",
-    re.I,
-)
 _F_NUM = re.compile(r"(?<![\d/.\-])(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})(?![\d/])")
 _F_ISO = re.compile(r"(?<![\d\-])(\d{4})-(\d{2})-(\d{2})(?![\d\-])")
-_ENCABEZADO_CIUDAD = re.compile(r"^\s*[^\W\d_][^\d\n,]{0,40},\s*[^\d\n,]*$")
 _FECHA_CORREO = re.compile(r"^[ \t]*Fecha[ \t]+[^\W\d_]{2,4}\.?[ \t]+(\S+)", re.M)
 
 
@@ -496,14 +489,94 @@ def _iso(a: str, m: str | int, d: str) -> str | None:
         return None
 
 
+_ABREVIATURAS = {m[:3]: i for m, i in _MESES.items()} | {"set": 9}
+_MES = re.compile(
+    r"(?<![^\W\d_])(" + "|".join(sorted([*_MESES, *_ABREVIATURAS], key=len, reverse=True)) + r")(?![^\W\d_])\.?",
+    re.I,
+)
+_TOKEN = re.compile(r"\d+(?:\.\d{3})?[º°ª]?|[^\W\d_]+")
+_ORDINAL = "º°ª"
+_ENTRE_DIA_Y_MES = re.compile(r"[\s\-/.º°ª()]*(?:de[\s\-/.]*)?")
+
+
+def _dia_antes(izq: str) -> tuple[int, int] | None:
+    """Día que precede al mes: «28», «1º» o «veintiocho» (con o sin «(28)»). Devuelve (día, posición)."""
+    tokens = list(_TOKEN.finditer(izq))
+    j = len(tokens)
+    if j and _plano(tokens[j - 1].group()) == "de":
+        j -= 1
+    if j == 0 or not _ENTRE_DIA_Y_MES.fullmatch(_plano(izq[tokens[j - 1].end() :])):
+        return None
+    ultimo = tokens[j - 1]
+    if ultimo.group()[0].isdigit():
+        dia = ultimo.group().rstrip(_ORDINAL)
+        if len(dia) > 2:
+            return None
+        en_letras = re.search(r"((?:[^\W\d_]+\s+){0,2}[^\W\d_]+)\s*\(\s*$", izq[: ultimo.start()])  # «veintiocho (28)»
+        if en_letras and letras_a_entero(en_letras.group(1)) == int(dia):
+            return int(dia), en_letras.start(1)
+        return int(dia), ultimo.start()
+    for k in range(min(3, j), 0, -1):
+        grupo = tokens[j - k : j]
+        if any(g.group()[0].isdigit() for g in grupo):
+            continue
+        n = letras_a_entero(" ".join(g.group() for g in grupo))
+        if n and 1 <= n <= 31:
+            return n, grupo[0].start()
+    return None
+
+
+def _anio_despues(der: str) -> tuple[int, int] | None:
+    """Año que sigue al mes: «2026», «2.026» o «dos mil veintiséis» (con o sin «(2026)»). Devuelve (año, fin)."""
+    tokens = list(_TOKEN.finditer(der))
+    i = 0
+    while i < len(tokens) and _plano(tokens[i].group()) in ("de", "del", "ano"):
+        i += 1
+    if i >= len(tokens):
+        return None
+    primero = tokens[i]
+    if primero.group()[0].isdigit():
+        anio = primero.group().replace(".", "")
+        return (int(anio), primero.end()) if len(anio) == 4 else None
+    palabras = []
+    for t in tokens[i : i + 6]:
+        if t.group()[0].isdigit():
+            break
+        palabras.append(t)
+    for k in range(len(palabras), 0, -1):
+        n = letras_a_entero(" ".join(p.group() for p in palabras[:k]))
+        if n and 1900 <= n <= 2100:
+            fin = palabras[k - 1].end()
+            entre_parentesis = re.match(r"\s*\(\s*\d\.?\d{3}\s*\)", der[fin:])
+            return n, fin + (entre_parentesis.end() if entre_parentesis else 0)
+    return None
+
+
+def _fechas_con_mes(texto: str) -> list[tuple[int, str | None]]:
+    """Fechas con el mes escrito (completo o abreviado), con día y año en cifras o en letras, en el orden
+    «día de mes de año» («28 de sep. de 2026», «veintiocho de septiembre de dos mil veintiséis»,
+    «28-sep-2026») o «mes día de año» («septiembre 28 de 2026»). Devuelve (posición del inicio, ISO)."""
+    halladas = []
+    for m in _MES.finditer(texto):
+        clave = _plano(m.group(1))
+        mes = _MESES.get(clave) or _ABREVIATURAS.get(clave[:3])
+        desde = max(0, m.start() - 60)
+        izq, der = texto[desde : m.start()], texto[m.end() : m.end() + 90]
+        dia = _dia_antes(izq)
+        if dia is not None:
+            anio = _anio_despues(der)
+            if anio:
+                halladas.append((desde + dia[1], _iso(str(anio[0]), mes, str(dia[0]))))
+            continue
+        d = re.match(r"\s*(\d{1,2})(?!\d)", der)
+        anio = _anio_despues(der[d.end() :]) if d else None
+        if d and anio:
+            halladas.append((m.start(), _iso(str(anio[0]), mes, d.group(1))))
+    return halladas
+
+
 def fechas_en(texto: str) -> list[tuple[int, str]]:
-    halladas = [
-        (
-            m.start(),
-            _iso(m.group(3).replace(".", ""), _MESES[_plano(m.group(2))], m.group(1)),
-        )
-        for m in _F_LETRAS.finditer(texto)
-    ]
+    halladas = _fechas_con_mes(texto)
     halladas += [
         (m.start(), _iso(m.group(3), m.group(2), m.group(1)))
         for m in _F_NUM.finditer(texto)
@@ -519,22 +592,42 @@ _OFICIO = re.compile(r"oficio\s+(?:no|n[°º.]|\d)|adjunt\w+\s+(?:el\s+)?(?:fall
 VENTANA_OFICIO = 500
 
 
+_PALABRA_MAYUS = r"[A-ZÁÉÍÓÚÑ][^\W\d_]*\.?(?:[A-Z]\.)*"
+_LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)?{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
+# «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «Medellín (Antioquia), », «Medellín, Antioquia, », «Medellín, martes »
+_CIUDAD_Y_COMA = re.compile(rf"^\s*{_LUGAR}(?:\s*,\s*{_LUGAR})?\s*,\s*(?:[^\W\d_]{{4,10}}\s+)?$")
+_ROTULO_FECHA = re.compile(r"^\s*(?:fecha(?:\s+de(?:\s+la)?\s+[^\W\d_]+)?\s*:?\s*)?$", re.I)
+
+
 def _fecha_encabezado(texto: str) -> str | None:
+    """Fecha del encabezado de la providencia. Solo vale la que está en el encabezado: «Ciudad, <fecha>»
+    (lugar con mayúsculas, coma y, si acaso, el día de la semana antes de la fecha) o la fecha sola en su
+    renglón, con «Fecha:» opcional. Si el encabezado no se puede leer devuelve None: nunca se sustituye por
+    otra fecha del cuerpo (hechos, términos)."""
     texto = texto[:6000]
-    halladas = fechas_en(texto)
-    con_ciudad = [
-        (pos, iso)
-        for pos, iso in halladas
-        if _ENCABEZADO_CIUDAD.search(texto[texto.rfind("\n", 0, pos) + 1 : pos])
-    ]
+
+    def renglon(pos: int) -> tuple[str, str]:
+        ini = texto.rfind("\n", 0, pos) + 1
+        fin = texto.find("\n", pos)
+        return texto[ini:pos], texto[pos : fin if fin >= 0 else len(texto)]
+
+    def es_encabezado(pos: int) -> bool:
+        antes, despues = renglon(pos)
+        columna = re.split(r"\s{3,}", antes)[-1]  # «JUZGADO …      Medellín, » en columnas (pdftotext -layout)
+        if "," in columna and _CIUDAD_Y_COMA.search(columna):
+            return True
+        resto = re.sub(r"^.*?\d{4}\)?", "", despues, count=1).strip(" .,;\r\t")  # \r: saltos de línea de pdfium
+        return _ROTULO_FECHA.match(antes) is not None and not resto
+
+    candidatas = [(pos, iso) for pos, iso in fechas_en(texto) if es_encabezado(pos)]
     propias = [
         (pos, iso)
-        for pos, iso in con_ciudad
+        for pos, iso in candidatas
         if not _OFICIO.search(_plano(texto[pos : pos + VENTANA_OFICIO]))
     ]
-    for pos, iso in propias or con_ciudad:
+    for _, iso in propias or candidatas:
         return iso
-    return halladas[0][1] if halladas else None
+    return None
 
 
 def _fecha_correo(texto: str) -> str | None:
@@ -871,6 +964,21 @@ def _nombra_al_caso(
     return None
 
 
+def _alertas_fechas(legibles: list[Doc], fechas: Fechas) -> list[str]:
+    alertas = []
+    for rol, valor, de_que, marca in (
+        ("fallo_a_quo", fechas.fallo_a_quo, "del fallo de primera instancia", "⟦FALTA: fecha⟧ en el fallo"),
+        ("auto_admisorio", fechas.admision, "del auto admisorio", "⟦FALTA: fecha de admisión⟧ en el formato de calidad"),
+    ):
+        d = next((d for d in legibles if d.rol == rol), None)
+        if d is not None and valor is None:
+            alertas.append(
+                f"No se pudo leer la fecha {de_que} en el encabezado de «{d.nombre}»; saldrá como {marca}. "
+                "Verifíquela en el documento y complétela a mano."
+            )
+    return alertas
+
+
 def _derivar(
     docs: list[Doc],
     ignorados: list[str],
@@ -979,6 +1087,7 @@ def _derivar(
         fechas=_extraer_fechas(legibles),
         **_juzgado_a_quo(legibles, cui_1a_, derivadas),
     )
+    derivadas += _alertas_fechas(legibles, metadatos.fechas)
     return Ingesta(
         documentos=docs,
         docs_ajenos=ajenos,

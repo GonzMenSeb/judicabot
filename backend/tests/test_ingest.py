@@ -712,6 +712,134 @@ def test_fecha_del_fallo_ignora_el_oficio_de_notificacion():
     assert ingest._fecha_encabezado("Medellín, 3 de marzo de 2027\nTexto.") == "2027-03-03"
 
 
+CUERPO_CON_FECHAS = (
+    "\nRadicado: 05001408800920270012300\nHECHOS\nPrimero. La accionante sufrió una lesión y su médico tratante\n"
+    "tratante, circunstancia que fue puesta en conocimiento del empleador el 20 de agosto de 2027.\n"
+    "Según la accionante, el 15 de junio de 2027 se presentó la solicitud.\n20 de agosto de 2027 la accionante pidió.\n"
+)
+
+
+@pytest.mark.parametrize(
+    "texto,iso",
+    [
+        ("Medellín, septiembre 28 de 2026", "2026-09-28"),
+        ("28 de Septiembre del año 2026", "2026-09-28"),
+        ("28 de sep de 2026", "2026-09-28"),
+        ("28-sep-2026", "2026-09-28"),
+        ("28 septiembre 2026", "2026-09-28"),
+        ("veintiocho de septiembre de 2026", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("veintiocho de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("dos (2) de octubre de dos mil veintiséis", "2026-10-02"),
+        ("treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
+        ("1º de octubre de 2026", "2026-10-01"),
+        ("31 de febrero de dos mil veintisiete", None),
+        ("Decreto 2591 de 1991 y ley 100 de 1993", None),
+        ("la sentencia T-760 de 2008", None),
+    ],
+)
+def test_fechas_en_formatos_con_mes_en_letras(texto, iso):
+    halladas = fechas_en(texto)
+    assert (halladas[0][1] if halladas else None) == iso
+
+
+@pytest.mark.parametrize(
+    "encabezado,iso",
+    [
+        ("Medellín, veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, septiembre 28 de 2026", "2026-09-28"),
+        ("Medellín, 28 de Septiembre del año 2026", "2026-09-28"),
+        ("Medellín, 28 de sep de 2026", "2026-09-28"),
+        ("Medellín, 28-sep-2026", "2026-09-28"),
+        ("Medellín, 28 septiembre 2026", "2026-09-28"),
+        ("Medellín, veintiocho de septiembre de 2026", "2026-09-28"),
+        ("Medellín, 28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("Medellín, dos (2) de octubre de dos mil veintiséis", "2026-10-02"),
+        ("Medellín, veintiocho de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("Medellín, 1º de octubre de 2026", "2026-10-01"),
+        ("Medellín, treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
+        ("Medellín D.C., 28 de septiembre de 2026", "2026-09-28"),
+        ("Bogotá D.C., 28 de septiembre de 2026", "2026-09-28"),
+        ("Santiago de Cali, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín (Antioquia), 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, martes 6 de octubre de 2026", "2026-10-06"),
+        ("MEDELLÍN, septiembre 28 de 2026", "2026-09-28"),
+        ("Medellín, 28/09/2026", "2026-09-28"),
+        ("Medellín, 2026-09-28", "2026-09-28"),
+        ("Fecha: 28 de septiembre de 2026", "2026-09-28"),
+        ("Fecha de la providencia: 28 de septiembre de 2026", "2026-09-28"),
+        ("28 de septiembre de 2026", "2026-09-28"),
+        # encabezado ilegible: None, nunca la fecha de un hecho del cuerpo
+        ("Medellín, Sept. 28/26", None),
+        ("Medellín, 28.IX.2026", None),
+        ("Medellín 28 de septiembre de 2026", None),
+        ("Medellín, 31 de abril de 2026", None),
+    ],
+)
+def test_fecha_del_encabezado_no_se_sustituye_por_una_fecha_del_cuerpo(encabezado, iso):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == iso
+
+
+def test_fecha_del_fallo_ilegible_queda_vacia_y_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    ilegible = FALLO.replace(
+        "Medellín, doce (12) de marzo de dos mil veintisiete (2027)",
+        "Medellín, 12.III.2027\nSegún la accionante, el 15 de febrero de 2027 radicó la solicitud.",
+    )
+    escribir(tmp_path, P1 + "004Fallo.txt", ilegible)
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.fallo_a_quo is None
+    assert any("No se pudo leer la fecha del fallo de primera instancia en el encabezado de «004Fallo.txt»" in a for a in ing.alertas)
+
+
+def test_fecha_del_fallo_en_letras_sin_cifras_se_lee_y_no_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    en_letras = FALLO.replace(
+        "Medellín, doce (12) de marzo de dos mil veintisiete (2027)", "Medellín, doce de marzo de dos mil veintisiete"
+    )
+    escribir(tmp_path, P1 + "004Fallo.txt", en_letras)
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.fallo_a_quo == "2027-03-12"
+    assert not any("No se pudo leer la fecha" in a for a in ing.alertas)
+
+
+def test_fecha_de_admision_ilegible_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    escribir(tmp_path, P1 + "003Admite.txt", ADMISORIO.replace("veintitrés (23) de febrero de dos mil veintisiete (2027)", "23.II.2027"))
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.admision is None
+    assert any("No se pudo leer la fecha del auto admisorio en el encabezado de «003Admite.txt»" in a for a in ing.alertas)
+
+
+def test_caso_sintetico_conserva_las_fechas_y_no_trae_alertas_de_fecha(tmp_path):
+    caso_sintetico(tmp_path)
+    ing = ingerir(tmp_path, Config())
+    fechas = ing.metadatos.fechas
+    assert (fechas.admision, fechas.fallo_a_quo, fechas.concesion_impugnacion) == ("2027-02-23", "2027-03-12", "2027-03-27")
+    assert not any("No se pudo leer la fecha" in a for a in ing.alertas)
+
+
+@pytest.mark.parametrize(
+    "encabezado", ["Medellín, septiembre 28 de 2026", "Fecha: 28 de septiembre de 2026"]
+)
+def test_fecha_del_encabezado_con_saltos_de_linea_de_windows(encabezado):  # pdfium devuelve \r\n
+    texto = ("JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS).replace("\n", "\r\n")
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_fecha_del_encabezado_en_columna_junto_al_membrete():  # pdftotext -layout
+    texto = "REPÚBLICA DE COLOMBIA\nJUZGADO NOVENO PENAL MUNICIPAL            Medellín, septiembre 28 de 2026\nSENTENCIA\n" + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_fecha_al_final_de_un_renglon_justificado_del_cuerpo_no_es_encabezado():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28.IX.2027\nPrimero. La accionante radicó la solicitud ante la entidad   el   20 de agosto de 2027.\n"
+    assert ingest._fecha_encabezado(texto) is None
+
+
 def test_partes_tabla_sin_documento_y_nombre_en_dos_lineas():
     texto = (
         "        TIPO ID          IDENTIFICACIÓN        NOMBRE        APELLIDO        PARTE\n"
