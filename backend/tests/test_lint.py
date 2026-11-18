@@ -11,9 +11,9 @@ from tutela2.models import (
     CitaVerificada,
     ConsideracionesLLM,
     Decision,
-    Doc,
     DisposicionDerecho,
     DisposicionReparo,
+    Doc,
     Evento,
     Fechas,
     Ingesta,
@@ -1286,10 +1286,54 @@ def test_coherencia_decision_resultado_en_infinitivo_contradictorio_bloquea():
         ("CONFIRMAR", "NEGAR", "Corresponde confirmar la sentencia, que negó el amparo."),
         ("CONFIRMAR", "IMPROCEDENTE", "Corresponde confirmar la decisión del a quo de declarar improcedente la acción de tutela."),
         ("REVOCAR", "NEGAR", "Corresponde revocar el fallo, que había decidido amparar los derechos, y negar la tutela."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar el fallo y amparar el derecho a la salud, ordenando a la EPS autorizar el procedimiento y confirmar la fecha de la cita."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar el fallo, amparar el derecho a la salud y ordenar a la EPS entregar el medicamento y confirmar su entrega."),
+        ("REVOCAR", "AMPARAR", "El Despacho debe revocar el fallo y amparar el derecho a la salud, ordenando a la EPS programar la cirugía y confirmar la fecha por escrito."),
     ],
 )
 def test_coherencia_decision_infinitivo_coherente_o_descriptivo_no_bloquea(resultado, sustitutiva, conclusion):
     assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva)) == []
+
+
+_INTRODUCCIONES_DE_ORDEN = (
+    "Corresponde {res} el fallo y amparar el derecho a la salud, ordenando a la EPS",
+    "El Despacho debe {res} el fallo y amparar el derecho a la salud, ordenando a la EPS",
+    "Corresponde {res} el fallo, amparar el derecho a la salud y ordenar a la EPS",
+)
+_VERBOS_DE_ORDEN = ("autorizar", "programar", "entregar", "suministrar", "garantizar", "practicar")
+_ENLACES_DE_ORDEN = (" y", ", y", " o", ", además,")
+# (resultado decidido, su infinitivo, el otro verbo de resultado que una orden a la EPS puede traer, su complemento)
+_RESULTADO_Y_VERBO_DE_TERCERO = (
+    ("REVOCAR", "revocar", "confirmar", "la fecha de la cita"),
+    ("CONFIRMAR", "confirmar", "revocar", "la negativa previa"),
+)
+
+
+@pytest.mark.parametrize(("resultado", "infinitivo", "tercero", "complemento"), _RESULTADO_Y_VERBO_DE_TERCERO)
+@pytest.mark.parametrize("enlace", _ENLACES_DE_ORDEN)
+@pytest.mark.parametrize("orden", _VERBOS_DE_ORDEN)
+@pytest.mark.parametrize("introduccion", _INTRODUCCIONES_DE_ORDEN)
+def test_coherencia_decision_el_verbo_de_una_orden_a_un_tercero_no_es_el_resultado_anunciado(
+    introduccion, orden, enlace, resultado, infinitivo, tercero, complemento
+):
+    # «confirmar» o «revocar» coordinado con otro verbo de orden («programar la cirugía y confirmar la fecha») lo hace
+    # un tercero: el anuncio del Despacho acaba donde empiezan las órdenes.
+    conclusion = f"{introduccion.format(res=infinitivo)} {orden} el tratamiento{enlace} {tercero} {complemento}."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Corresponde confirmar el fallo y amparar el derecho a la salud, ordenando a la EPS autorizar el procedimiento.",
+        "Corresponde confirmar el fallo y ordenar a la EPS entregar el medicamento.",
+        "Corresponde revocar el fallo y negar el amparo, ordenando a la EPS programar la cirugía.",
+        "El Despacho debe confirmar el fallo, amparar el derecho a la salud y ordenar a la EPS programar la cirugía y confirmar la fecha.",
+    ],
+)
+def test_coherencia_decision_la_contradiccion_escrita_antes_de_las_ordenes_sigue_bloqueando(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert msgs and all(m.startswith("BLOQUEA: ") for m in msgs)
 
 
 def test_coherencia_decision_carencia_sin_tipo_ya_no_basta():

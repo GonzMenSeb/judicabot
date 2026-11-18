@@ -677,6 +677,12 @@ _COORDINADO = re.compile(
     r"(?:\b(?:y|e|o)\s+(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n)\s*,?\s*)?"
     r"|,\s*(?:(?:y|e|o)\s+)?(?:(?:en\s+su\s+lugar|adem[aá]s)\s*,?\s*)?)$"
 )
+# El anuncio del Despacho termina donde empieza otra cosa: una relativa («que decidió…») o las órdenes a un tercero
+# («ordenando a la EPS programar la cirugía y confirmar la fecha»), cuyos verbos no son el resultado de la conclusión.
+_CORTE_DE_ANUNCIO = re.compile(
+    r"\b(?:que|[oó]rden(?!amiento)\w*|prevenir|previniendo|advertir|advirtiendo|exhortar|exhortando"
+    r"|requerir|requiriendo|instar|instando)\b"
+)
 _RELLENO_TRAS_ANUNCIO = re.compile(
     r"(?:(?:en\s+consecuencia|entonces|por\s+lo\s+tanto|as[ií])\s*,?\s*)?"
     r"(?:(?:(?:al|a\s+este)\s+(?:despacho|juzgado)|a\s+la\s+sala)\s*,?\s*)?"
@@ -704,8 +710,8 @@ def _tramos_de_anuncio(texto: str) -> list[tuple[int, int]]:
             continue
         cortes = [k for k in (texto.find(c, t.end()) for c in ".;!?") if k != -1]
         fin = min(cortes) if cortes else len(texto)
-        relativa = re.search(r"\bque\b", texto[t.end() : fin])
-        tramos.append((t.end(), t.end() + relativa.start() if relativa else fin))
+        corte = _CORTE_DE_ANUNCIO.search(texto, t.end(), fin)
+        tramos.append((t.end(), corte.start() if corte else fin))
     return tramos
 
 
