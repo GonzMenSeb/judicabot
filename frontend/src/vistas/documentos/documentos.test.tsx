@@ -397,6 +397,34 @@ describe("Documentos", () => {
     expect(location.hash).toBe("#/segunda/c1/documentos");
   });
 
+  it("con un job activo no muestra el error transitorio del estado", async () => {
+    base(
+      {
+        ...estadoRevision(),
+        estado: "error",
+        error: "El proceso quedó a medias en apertura. Use continuar para reanudarlo.",
+        job_activo: "j1",
+      },
+      { "GET /api/jobs/j1": () => ok({ id: "j1", caso: "c1", cmd: "iniciar", estado: "corriendo", error: null }) },
+    );
+    render(<Documentos caso="c1" />);
+
+    expect((await screen.findAllByText("Hay una ejecución en curso para este caso.")).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/El proceso quedó a medias en apertura/)).toBeNull();
+  });
+
+  it("con estado corriendo muestra solo el aviso en curso", async () => {
+    base(
+      { ...estadoRevision(), estado: "corriendo", error: null, job_activo: "j1" },
+      { "GET /api/jobs/j1": () => ok({ id: "j1", caso: "c1", cmd: "iniciar", estado: "corriendo", error: null }) },
+    );
+    render(<Documentos caso="c1" />);
+
+    expect((await screen.findAllByText("Hay una ejecución en curso para este caso.")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText("Rol de 001.pdf") as HTMLSelectElement).disabled).toBe(true);
+  });
+
   it("ofrece procesar un caso sin iniciar y muestra los documentos al terminar", async () => {
     let leido = false;
     const llamadas = base(

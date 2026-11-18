@@ -157,6 +157,45 @@ describe("Decisión: render con datos", () => {
     expect(await screen.findByText(/La decisión ya fue enviada/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Ver el fallo" }).getAttribute("href")).toBe(`#/segunda/${CASO}/fallo`);
   });
+
+  const MEDIAS = "El proceso quedó a medias en apertura. Use continuar para reanudarlo.";
+
+  function verEnCurso() {
+    expect(screen.getByText(/Hay una ejecución en curso para este caso\./)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ir al proceso" }).getAttribute("href")).toBe(`#/segunda/${CASO}/proceso`);
+    expect(screen.queryByText(/La decisión ya está guardada/)).toBeNull();
+    expect(screen.queryByText(/La decisión ya fue enviada/)).toBeNull();
+    expect(screen.queryByText(/quedó a medias/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ver el fallo" })).toBeNull();
+  }
+
+  it("durante una ejecución dice que está en curso aunque el estado diga error", async () => {
+    servidor({ estado: { ok: false, estado: "error", error: MEDIAS, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("durante una ejecución dice que está en curso aunque el estado diga terminado", async () => {
+    servidor({ estado: { ok: true, estado: "terminado", error: null, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("con estado corriendo dice que está en curso", async () => {
+    servidor({ estado: { ok: true, estado: "corriendo", error: null, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("sin ejecución en curso el error del estado sigue explicándose", async () => {
+    servidor({ estado: { ok: false, estado: "error", error: MEDIAS, payload: null, salidas: [], resumen: {}, job_activo: null } });
+    render(<Decision caso={CASO} />);
+    expect(await screen.findByText(/La decisión ya está guardada/)).toBeTruthy();
+    expect(screen.getByText(/quedó a medias en apertura/)).toBeTruthy();
+  });
 });
 
 describe("Decisión: resumen del caso", () => {

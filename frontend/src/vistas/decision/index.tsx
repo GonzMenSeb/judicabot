@@ -146,14 +146,15 @@ function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: st
   if (estado.estado === "esperando_decision" && estado.payload) {
     return <Editor caso={caso} payload={estado.payload} proveedor={estado.proveedor_llm ?? null} config={datos.config} bloqueado={Boolean(estado.job_activo)} base={base} />;
   }
-  const terminado = estado.estado === "terminado";
-  const enCurso = Boolean(estado.job_activo);
-  const mensaje = terminado
-    ? "La decisión ya fue enviada y el fallo está generado."
-    : estado.estado === "error"
-      ? "El proceso quedó a medias. La decisión ya está guardada: continúe desde la vista del proceso, no hace falta enviarla otra vez."
-      : enCurso
-        ? "Hay una ejecución en curso para este caso."
+  // Una ejecución en curso manda sobre el estado: el hilo a medias se lee como «error» o «terminado».
+  const enCurso = Boolean(estado.job_activo) || estado.estado === "corriendo";
+  const terminado = !enCurso && estado.estado === "terminado";
+  const mensaje = enCurso
+    ? "Hay una ejecución en curso para este caso."
+    : terminado
+      ? "La decisión ya fue enviada y el fallo está generado."
+      : estado.estado === "error"
+        ? "El proceso quedó a medias. La decisión ya está guardada: continúe desde la vista del proceso, no hace falta enviarla otra vez."
         : "No hay una decisión pendiente. Genere primero el borrador previo.";
   return (
     <Vacio
@@ -165,7 +166,7 @@ function Contenido({ caso, datos, base }: { caso: string; datos: Datos; base: st
       }
     >
       {mensaje}
-      {estado.error && !terminado && <span> {estado.error}</span>}
+      {estado.error && !terminado && !enCurso && <span> {estado.error}</span>}
     </Vacio>
   );
 }

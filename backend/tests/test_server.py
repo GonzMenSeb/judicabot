@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from tutela2 import config as cfgmod
 from tutela2 import server, termino
 from tutela2.config import Config, LLMConfig
+from tutela2.rutas_ajustes_apoderados import CMD_IDENTIFICAR
 
 
 def _envelope(estado: str, **extra) -> dict:
@@ -224,7 +225,10 @@ def test_job_nuevo_ciclo_de_vida(cliente, caso, api):
     assert r.status_code == 200
     job_id = r.json()["job_id"]
     assert cliente.get(f"/api/jobs/{job_id}").json()["estado"] == "corriendo"
-    assert cliente.get(f"/api/casos/{caso}/estado").json()["job_activo"] == job_id
+    durante = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert durante["job_activo"] == job_id
+    # La lectura del expediente no es el grafo: /estado conserva lo que dice ``api.estado``.
+    assert durante["estado"] == "sin_iniciar"
     assert cliente.get("/api/casos").json()[0]["estado"] == "corriendo"
 
     segundo = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "continuar"})
@@ -238,6 +242,57 @@ def test_job_nuevo_ciclo_de_vida(cliente, caso, api):
     assert any("paso uno del borrador" in linea for linea in job["log"])
     assert api.llamadas[0][0] == "nuevo"
     assert cliente.get(f"/api/casos/{caso}/estado").json()["job_activo"] is None
+
+
+_A_MEDIAS = "El proceso quedó a medias en apertura. Use continuar para reanudarlo."
+
+
+def _estado_a_medias(caso_dir):
+    # Lo que ``api.estado`` lee de un checkpoint intermedio; ``tope_intentos`` simula la clave que añade #22.
+    return {**_envelope("error"), "ok": False, "error": _A_MEDIAS, "tope_intentos": True}
+
+
+@pytest.mark.parametrize("cmd", ["iniciar", "continuar", "decidir"])
+def test_estado_durante_un_job_del_grafo_dice_corriendo(cliente, caso, api, cmd):
+    def bloqueado(caso_dir, *args, **kwargs):
+        api.soltar.wait(5)
+        return _envelope("esperando_decision")
+
+    api.modulo.estado = _estado_a_medias
+    setattr(api.modulo, cmd, bloqueado)
+    cuerpo = {"cmd": cmd}
+    if cmd == "decidir":
+        cuerpo["decision"] = {"accion": "rehacer_consideraciones", "instruccion": "x"}
+    api.soltar.clear()
+    try:
+        job_id = cliente.post(f"/api/casos/{caso}/run", json=cuerpo).json()["job_id"]
+        durante = cliente.get(f"/api/casos/{caso}/estado").json()
+        assert durante["estado"] == "corriendo"
+        assert durante["ok"] is True
+        assert durante["error"] is None
+        assert durante["payload"] is None
+        assert durante["job_activo"] == job_id
+        assert "tope_intentos" not in durante
+    finally:
+        api.soltar.set()
+    _esperar(cliente, job_id)
+    despues = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert despues["estado"] == "error"
+    assert despues["error"] == _A_MEDIAS
+    assert despues["tope_intentos"] is True
+    assert despues["job_activo"] is None
+
+
+def test_estado_durante_identificar_apoderados_no_cambia(cliente, caso, api, monkeypatch):
+    # Identificar apoderados de casos anteriores corre mientras el caso espera la decisión: no es el grafo.
+    api.modulo.estado = lambda caso_dir: _envelope("esperando_decision", payload={"reparos": []})
+    job = {"id": "x", "caso": caso, "cmd": CMD_IDENTIFICAR, "estado": "corriendo", "log": [], "resultado": None, "error": None}
+    monkeypatch.setitem(server.JOBS, "x", job)
+    estado = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert estado["estado"] == "esperando_decision"
+    assert estado["ok"] is True
+    assert estado["payload"] == {"reparos": []}
+    assert estado["job_activo"] == "x"
 
 
 def test_job_con_excepcion_queda_en_error(cliente, caso):

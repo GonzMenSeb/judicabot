@@ -390,7 +390,7 @@ function VistaDocumentos({ caso }: { caso: string }) {
   return raiz(
     <>
       {avisoActual}
-      {estado.error && estado.estado === "error" && (
+      {estado.error && estado.estado === "error" && !trabajo && (
         <Aviso tipo="error" acciones={<Boton href={hrefEtapa(caso, "proceso")}>Ver el proceso</Boton>}>
           {estado.error}
         </Aviso>

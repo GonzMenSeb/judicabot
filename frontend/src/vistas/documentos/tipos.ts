@@ -64,7 +64,7 @@ export interface ResumenIngesta {
   auto: DatosAuto;
 }
 
-export type EstadoApi = "sin_iniciar" | "revision" | "incompleto" | "esperando_decision" | "terminado" | "error";
+export type EstadoApi = "sin_iniciar" | "revision" | "incompleto" | "esperando_decision" | "corriendo" | "terminado" | "error";
 
 export interface EstadoCaso {
   ok: boolean;
