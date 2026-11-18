@@ -504,6 +504,36 @@ describe("Decisión: interacción principal", () => {
     expect((screen.getByRole("radio", { name: "Modificar" }) as HTMLInputElement).checked).toBe(true);
   });
 
+  it("se puede corregir el nombre de un derecho extraído", async () => {
+    const llamadas = servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Nombre del derecho 1", "la salud integral");
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+    expect(screen.getByLabelText("Disposición del derecho la salud integral")).toBeTruthy();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    await waitFor(() => expect(location.hash).toBe(`#/segunda/${CASO}/proceso`));
+    const run = llamadas.find((l) => l.url.endsWith("/run"));
+    expect(run?.cuerpo.decision.derechos).toEqual([{ derecho: "la salud integral", disposicion: "AMPARA" }]);
+  });
+
+  it("explica en pantalla cómo forzar el artículo del derecho y del órgano", async () => {
+    servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    const ayuda = document.getElementById("dec-derecho-nuevo-ayuda");
+    expect(ayuda?.textContent).toContain("«la pensión de sobrevivientes»");
+    expect(screen.getByLabelText("Otro derecho").getAttribute("aria-describedby")).toBe("dec-derecho-nuevo-ayuda");
+    fireEvent.click(screen.getByLabelText(/Compulsar copias/));
+    expect(document.getElementById("dec-compulsa-organo-ayuda")?.textContent).toContain("«el Consejo Seccional de la Judicatura…»");
+    expect(screen.getByLabelText("Órgano").getAttribute("aria-describedby")).toBe("dec-compulsa-organo-ayuda");
+  });
+
   it("al rehacer la apertura el borrador guardado reconcilia los derechos con el payload nuevo", async () => {
     const estadoCon = (derechos: string[]) => ({
       ok: true,
