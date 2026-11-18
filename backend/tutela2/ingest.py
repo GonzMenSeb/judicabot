@@ -602,6 +602,7 @@ def fechas_en(texto: str) -> list[tuple[int, str]]:
 _OFICIO = re.compile(r"oficio\s+(?:no|n[°º.]|\d)|adjunt\w+\s+(?:el\s+)?(?:fallo|sentencia)")
 VENTANA_OFICIO = 500
 ZONA_ENCABEZADO = 1500  # caracteres desde el inicio; el encabezado no está más lejos
+MAX_REINICIOS = 200  # renglones, tras un oficio de notificación, desde los que se vuelve a buscar el encabezado
 
 _PALABRA_MAYUS = r"[A-ZÁÉÍÓÚÑ][^\W\d_]*\.?(?:[A-Z]\.)*"
 _LUGAR = rf"{_PALABRA_MAYUS}(?:\s+(?:(?:de|del|la|las|los|y)\s+)*{_PALABRA_MAYUS}){{0,3}}(?:\s*\([^)\d]*\))?"
@@ -636,7 +637,11 @@ def _fecha_encabezado(texto: str) -> str | None:
     acaso, el día de la semana antes de la fecha) y solo si no hay ninguna así, la fecha sola en su renglón
     (con «Fecha:» opcional). Si el encabezado no se puede leer devuelve None: nunca se sustituye por otra
     fecha del cuerpo (hechos, términos), ni cuando hay un «Ciudad, <cifras>» ilegible."""
-    texto = unicodedata.normalize("NFC", texto)[:6000]
+    return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000], reiniciar=True)[0]
+
+
+def _leer_encabezado(texto: str, reiniciar: bool) -> tuple[str | None, bool]:
+    """(fecha, hay un encabezado que no se lee) del comienzo de `texto`. Ver `_fecha_encabezado`."""
     seccion = _SECCION.search(texto)
     zona = min(seccion.start() if seccion else len(texto), ZONA_ENCABEZADO)
     fechas = [f for f in _fechas(texto[: zona + 200]) if f[0] < zona]
@@ -686,7 +691,7 @@ def _fecha_encabezado(texto: str) -> str | None:
     # («Medellín, 28.IX.2026», «Medellín 28 de septiembre de 2026», «medellín, 28 de …») o fecha que no se entiende.
     sin_leer = [
         m.start()
-        for m in re.finditer(r"^.*$", texto[:zona], re.M)
+        for m in re.finditer(r"^.*\S.*$", texto[:zona], re.M)
         if m.start() not in leidos and any(_CIUDAD_Y_CIFRAS.match(c) for c in re.split(r"\s{3,}|\t", m.group()))
     ]
     sin_leer += [
@@ -703,12 +708,22 @@ def _fecha_encabezado(texto: str) -> str | None:
     ]
     ciudad = [f for f in ciudad if f[0] < min(sin_leer, default=len(texto))]
     if ciudad:
-        return (propias(ciudad) or ciudad)[0][2]
+        if propias(ciudad):
+            return propias(ciudad)[0][2], False
+        # Solo hay oficios de notificación: la providencia empieza después, aunque el oficio sea largo (o
+        # traiga numerales). Se vuelve a leer el comienzo desde cada renglón con texto que sigue al oficio.
+        if reiniciar:
+            ini = ciudad[-1][1]
+            for m in list(re.finditer(r"\n(?=[^\S\n]*\S)", texto[ini:]))[:MAX_REINICIOS]:
+                fecha, ilegible = _leer_encabezado(texto[ini + m.end() :], reiniciar=False)
+                if fecha or ilegible:
+                    return fecha, ilegible
+        return ciudad[0][2], False
     if sin_leer:  # hay encabezado y no se lee: ni la fecha sola ni «Fecha:» lo sustituyen
-        return None
+        return None, True
     solas = [f for f in fechas if sola(f[0], f[1])]
     elegidas = propias(solas) or solas
-    return elegidas[0][2] if elegidas else None
+    return (elegidas[0][2] if elegidas else None), False
 
 
 def _fecha_correo(texto: str) -> str | None:

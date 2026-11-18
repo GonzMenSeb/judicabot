@@ -713,6 +713,31 @@ def test_fecha_del_fallo_ignora_el_oficio_de_notificacion():
     assert ingest._fecha_encabezado("Medellín, 3 de marzo de 2027\nTexto.") == "2027-03-03"
 
 
+def oficio_largo(relleno: int, con_numeral: bool = False, encabezado: str = "Medellín, veinte (20) de agosto de dos mil veintisiete (2027)") -> str:
+    """Oficio de notificación de `relleno` caracteres (con el espaciado de pdftotext -layout) y luego la sentencia."""
+    lineas = ["Asunto:" + " " * 60 + "Notificación del fallo de tutela, radicado " + CUI] * (relleno // 110)
+    if con_numeral:
+        lineas.insert(2, "1. Copia del fallo de tutela.")
+    return (
+        "Medellín, veintiuno (21) de agosto de dos mil veintisiete (2027)\n\nOficio No. 986\n"
+        + "\n".join(lineas)
+        + "\nLes adjunto el fallo de tutela.\nAtentamente,\nSecretaría\n\f"
+        + f"JUZGADO TREINTA Y TRES PENAL MUNICIPAL DE MEDELLÍN\n{encabezado}\nRadicado {CUI}\n"
+        "Acción de tutela. ANTECEDENTES. CONSIDERACIONES. Competencia. RESUELVE: PRIMERO. Niega.\n"
+    )
+
+
+@pytest.mark.parametrize("con_numeral", [False, True])
+@pytest.mark.parametrize("relleno", [200, 1600, 3000])
+def test_fecha_del_fallo_tras_un_oficio_largo_no_es_la_del_oficio(relleno, con_numeral):
+    assert ingest._fecha_encabezado(oficio_largo(relleno, con_numeral)) == "2027-08-20"
+
+
+@pytest.mark.parametrize("relleno", [200, 1600, 3000])
+def test_fecha_ilegible_tras_un_oficio_largo_queda_vacia_y_no_es_la_del_oficio(relleno):
+    assert ingest._fecha_encabezado(oficio_largo(relleno, encabezado="Medellín, 20.VIII.2027")) is None
+
+
 CUERPO_CON_FECHAS = (
     "\nRadicado: 05001408800920270012300\nHECHOS\nPrimero. La accionante sufrió una lesión y su médico tratante\n"
     "tratante, circunstancia que fue puesta en conocimiento del empleador el 20 de agosto de 2027.\n"
