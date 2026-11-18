@@ -12,6 +12,7 @@ from tutela2.models import (
     ConsideracionesLLM,
     Decision,
     Doc,
+    DisposicionDerecho,
     DisposicionReparo,
     Evento,
     Fechas,
@@ -688,7 +689,7 @@ def _decision(resultado=None, sustitutiva=None, accion="decidir") -> Decision:
         ("CONFIRMAR", "NEGAR", "Se confirma el fallo, pues el juez le niega razón al actor."),
         ("MODIFICAR", "IMPROCEDENTE", "Se modificará el fallo para declarar la improcedencia de la acción."),
         ("REVOCAR", "IMPROCEDENTE", "Se revoca y se declara improcedente la acción de tutela."),
-        ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "Se revocará para declarar la carencia actual de objeto."),
+        ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "Se revocará para declarar la carencia actual de objeto por hecho superado."),
         ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "Se revocará al configurarse un hecho superado."),
         ("REVOCAR", "CARENCIA_DANO_CONSUMADO", "Se revocará y se declarará el daño consumado."),
         ("REVOCAR", "CARENCIA_SOBREVINIENTE", "Se revocará por la situación sobreviniente."),
@@ -1131,6 +1132,240 @@ def test_coherencia_decision_negar_lo_demas_sigue_bloqueando_si_se_decidio_impro
     conclusion = "Se revocará el fallo, se amparará el derecho y se negarán las demás pretensiones."
     msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "IMPROCEDENTE"))
     assert any("AMPARAR" in m for m in msgs)
+
+
+# --- #87: MODIFICAR confirma una parte y revoca otra -------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Por lo anterior, el Despacho modificará el numeral segundo del fallo de primera instancia y, en lo demás, lo confirmará, amparando los derechos fundamentales.",
+        "Por lo anterior, se modificará el fallo impugnado y se confirmarán los demás numerales, de modo que se ampara el derecho a la salud.",
+        "Se revocará el numeral tercero y se modificará el cuarto, de manera que se ampara el derecho a la salud.",
+        "Se confirmará parcialmente la sentencia impugnada, se modificará el plazo y se amparará el derecho.",
+        "Procede modificar la sentencia para amparar el derecho a la salud, adicionando una orden, y confirmarla en lo demás.",
+        "Corresponde modificar el numeral segundo, confirmar en lo demás la sentencia y amparar el derecho.",
+        "El Despacho considera que debe modificar el fallo, revocando el numeral tercero y confirmando en lo demás, y amparar el derecho.",
+    ],
+)
+def test_coherencia_decision_modificar_admite_confirmar_y_revocar_partes(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("MODIFICAR", "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "esperado"),
+    [
+        ("Se confirmará el fallo y se amparará el derecho a la salud.", "MODIFICAR"),
+        ("Se modificará el fallo y se negará el amparo.", "AMPARAR"),
+    ],
+)
+def test_coherencia_decision_modificar_sigue_exigiendo_su_raiz_y_la_sustitutiva(conclusion, esperado):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("MODIFICAR", "AMPARAR"))
+    assert msgs and all(m.startswith("BLOQUEA: ") for m in msgs) and any(esperado in m for m in msgs)
+
+
+# --- #88: amparo parcial -------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("resultado", "conclusion"),
+    [
+        ("REVOCAR", "Se revocará el fallo que negó el amparo y se amparará el derecho a la salud; en cambio, se negará el tratamiento integral por no haberse acreditado una omisión futura."),
+        ("REVOCAR", "El Despacho revocará la sentencia de primera instancia, amparará el derecho a la salud y negará la solicitud de exoneración de copagos."),
+        ("REVOCAR", "Corresponde revocar el fallo y amparar el derecho; no obstante se negará el pago de transporte."),
+        ("CONFIRMAR", "El Despacho confirmará la sentencia impugnada, que amparó los derechos, y negará la solicitud de reembolso formulada por la accionada."),
+        ("REVOCAR", "El Despacho considera que debe revocar el fallo, amparar el derecho a la salud y negar el tratamiento integral."),
+        ("REVOCAR", "Se revocará el fallo, se amparará el derecho a la salud y se negarán los copagos y el transporte."),
+        ("REVOCAR", "Se revocará el fallo, se amparará el derecho a la salud y se negará la pretensión de tratamiento integral."),
+        ("REVOCAR", "Se revocará el fallo, se amparará el derecho y se negará su pretensión de ser exonerada de copagos."),
+        ("REVOCAR", "El Despacho revocaría la sentencia, ampararía el derecho y negaría los copagos."),
+        ("REVOCAR", "Se revocará el fallo, se ampararán los derechos a la salud y a la vida y se negarán los viáticos y el hospedaje."),
+        ("REVOCAR", "Se revocará el fallo, amparando el derecho a la salud, y se negará el tratamiento integral."),
+        ("REVOCAR", "Se revocará el fallo, se ampara el derecho a la salud y se negará el tratamiento integral."),
+    ],
+)
+def test_coherencia_decision_negar_una_pretension_accesoria_no_contradice_amparar(resultado, conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará el fallo y se negará el amparo.",
+        "Se revocará el fallo y se negará la tutela.",
+        "Se revocará el fallo y se negarán las pretensiones de la acción de tutela.",
+        "Se revocará el fallo y se negarán las pretensiones.",
+        "Se revocará el fallo y se negará la solicitud de amparo.",
+        "Se revocará el fallo y se negará la acción de tutela.",
+        "Se revocará el fallo, se amparará el derecho y se negará.",
+        "Se revocará el fallo, se amparará el derecho y se negará por falta de prueba.",
+        "Se revocará el fallo, se amparará el derecho y se negará lo solicitado.",
+        "Se revocará el fallo, se amparará el derecho y se negará el derecho a la salud.",
+        "Se revocará el fallo, se amparará el derecho y se negará su pretensión.",
+        "Se revocará el fallo, se amparará el derecho y se negarán todas las pretensiones.",
+        "Se revocará el fallo, se amparará el derecho y se negará integralmente el amparo.",
+        "La Sala revocará el fallo, no amparará el derecho invocado y negará el tratamiento integral.",
+    ],
+)
+def test_coherencia_decision_negar_el_amparo_mismo_sigue_bloqueando_bajo_amparar(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia NEGAR" in m for m in msgs)
+
+
+def test_coherencia_decision_confirmar_amparo_y_negar_el_amparo_bloquea():
+    msgs = lint.coherencia_decision(
+        _caso(conclusion="Se confirmará el fallo y se negará el amparo."), _decision("CONFIRMAR", "AMPARAR")
+    )
+    assert any("anuncia NEGAR" in m for m in msgs)
+
+
+def test_coherencia_decision_derecho_marcado_niega_admite_negar_el_amparo_de_ese_derecho():
+    conclusion = "Se revocará el fallo, se amparará la salud y se negará el amparo respecto del mínimo vital."
+    derechos = [DisposicionDerecho(derecho="salud", disposicion="AMPARA"), DisposicionDerecho(derecho="mínimo vital", disposicion="NIEGA")]
+    decision = _decision("REVOCAR", "AMPARAR").model_copy(update={"derechos": derechos})
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), decision) == []
+    sin_marca = _decision("REVOCAR", "AMPARAR")
+    assert any("anuncia NEGAR" in m for m in lint.coherencia_decision(_caso(conclusion=conclusion), sin_marca))
+
+
+def test_coherencia_decision_el_mensaje_orienta_en_vez_de_hablar_del_a_quo_en_general():
+    msgs = lint.coherencia_decision(_caso(conclusion="Se revocará el fallo y se negará el amparo."), _decision("REVOCAR", "AMPARAR"))
+    texto = " ".join(msgs)
+    assert "«amparar»" in texto and "pretensión accesoria" in texto
+    msgs = lint.coherencia_decision(_caso(conclusion="Se confirmará el fallo y se amparará el derecho."), _decision("REVOCAR", "AMPARAR"))
+    assert "«revocar»" in " ".join(msgs) and "pretensión accesoria" not in " ".join(msgs)
+
+
+# --- #89: infinitivo y tipo de carencia ----------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("sustitutiva", "conclusion"),
+    [
+        ("CARENCIA_DANO_CONSUMADO", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por hecho superado."),
+        ("CARENCIA_HECHO_SUPERADO", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por situación sobreviniente."),
+        ("CARENCIA_SOBREVINIENTE", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por daño consumado."),
+        ("CARENCIA_HECHO_SUPERADO", "Se revocará el fallo y se declarará la carencia actual de objeto por daño consumado."),
+        ("AMPARAR", "Corresponde revocar la sentencia y negar el amparo."),
+        ("AMPARAR", "Procede revocar la sentencia, amparar el derecho a la salud y, en su lugar, negar la tutela."),
+        ("AMPARAR", "Por lo anterior, el Despacho debe revocar el fallo, amparar el derecho y negar el amparo solicitado por la accionante."),
+        ("AMPARAR", "El Despacho decide revocar el fallo, amparar el derecho y negar las pretensiones de la acción de tutela."),
+        ("AMPARAR", "Corresponde revocar la sentencia de primera instancia, amparar el derecho y declarar improcedente la acción de tutela."),
+        ("AMPARAR", "Corresponde revocar la sentencia, amparar el derecho a la salud y declarar la carencia actual de objeto por hecho superado."),
+        ("NEGAR", "Corresponde revocar la sentencia, negar la tutela y conceder el amparo."),
+    ],
+)
+def test_coherencia_decision_detecta_contradiccion_en_infinitivo_y_tipo_de_carencia_equivocado(sustitutiva, conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", sustitutiva))
+    assert msgs and all(m.startswith("BLOQUEA: ") for m in msgs)
+
+
+def test_coherencia_decision_resultado_en_infinitivo_contradictorio_bloquea():
+    msgs = lint.coherencia_decision(_caso(conclusion="Corresponde confirmar la sentencia y amparar el derecho."), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    ("resultado", "sustitutiva", "conclusion"),
+    [
+        ("REVOCAR", "CARENCIA_HECHO_SUPERADO", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por hecho superado."),
+        ("REVOCAR", "CARENCIA_DANO_CONSUMADO", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por daño consumado."),
+        ("REVOCAR", "CARENCIA_SOBREVINIENTE", "Corresponde revocar la sentencia y declarar la carencia actual de objeto por situación sobreviniente."),
+        ("REVOCAR", "CARENCIA_DANO_CONSUMADO", "El Despacho considera que debe revocar el fallo y declarar la carencia actual de objeto por daño consumado, y no por hecho superado."),
+        ("REVOCAR", "AMPARAR", "En consecuencia, el Despacho considera que debe revocar el fallo de primera instancia y amparar los derechos fundamentales invocados."),
+        ("CONFIRMAR", "NEGAR", "En consecuencia, el Despacho considera que debe confirmar el fallo de primera instancia y negar el amparo solicitado."),
+        ("REVOCAR", "IMPROCEDENTE", "En consecuencia, el Despacho considera que debe revocar el fallo de primera instancia y declarar improcedente la acción de tutela."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar la sentencia, que decidió negar el amparo, y amparar el derecho a la salud."),
+        ("REVOCAR", "AMPARAR", "El a quo erró al negar el amparo; por eso corresponde revocar el fallo y amparar el derecho."),
+        ("REVOCAR", "AMPARAR", "No corresponde confirmar el fallo; procede revocarlo y amparar el derecho a la salud."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar la sentencia y amparar el derecho, sin negar el amparo."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar la sentencia y amparar el derecho, no negar el amparo."),
+        ("REVOCAR", "AMPARAR", "No es necesario negar el amparo: corresponde revocar y amparar el derecho."),
+        ("REVOCAR", "AMPARAR", "Corresponde revocar la sentencia y amparar el derecho; no procede negar el amparo."),
+        ("REVOCAR", "AMPARAR", "Dado que la decisión de negar el amparo no se sostiene, corresponde revocar el fallo y amparar el derecho."),
+        ("REVOCAR", "AMPARAR", "Si se acreditara el perjuicio, correspondería negar el amparo; como no es así, corresponde revocar y amparar."),
+        ("CONFIRMAR", "NEGAR", "Corresponde confirmar la decisión de primera instancia de negar el amparo."),
+        ("CONFIRMAR", "NEGAR", "Corresponde confirmar la sentencia, que negó el amparo."),
+        ("CONFIRMAR", "IMPROCEDENTE", "Corresponde confirmar la decisión del a quo de declarar improcedente la acción de tutela."),
+        ("REVOCAR", "NEGAR", "Corresponde revocar el fallo, que había decidido amparar los derechos, y negar la tutela."),
+    ],
+)
+def test_coherencia_decision_infinitivo_coherente_o_descriptivo_no_bloquea(resultado, sustitutiva, conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva)) == []
+
+
+def test_coherencia_decision_carencia_sin_tipo_ya_no_basta():
+    msgs = lint.coherencia_decision(
+        _caso(conclusion="Se revocará para declarar la carencia actual de objeto."), _decision("REVOCAR", "CARENCIA_HECHO_SUPERADO")
+    )
+    assert any("«declarar la carencia actual de objeto por hecho superado»" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    ("sustitutiva", "conclusion"),
+    [
+        ("CARENCIA_SOBREVINIENTE", "Corresponde revocar y declarar la carencia actual de objeto por situación sobreviniente, distinta del hecho superado."),
+        ("CARENCIA_SOBREVINIENTE", "Se revocará el fallo y se declarará la carencia actual de objeto por situación sobreviniente, distinta del hecho superado."),
+        ("CARENCIA_DANO_CONSUMADO", "Corresponde revocar y declarar la carencia actual de objeto por daño consumado, a diferencia del hecho superado."),
+        ("CARENCIA_DANO_CONSUMADO", "Se revocará el fallo y se declarará la carencia actual de objeto por daño consumado, a diferencia del hecho superado."),
+    ],
+)
+def test_coherencia_decision_el_tipo_de_carencia_decidido_no_se_confunde_con_otro_que_solo_se_contrasta(sustitutiva, conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", sustitutiva)) == []
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "El Despacho considera que debe confirmar el fallo y amparar el derecho a la salud.",
+        "Por lo anterior, el Despacho debe confirmar la sentencia y amparar el derecho a la salud.",
+        "La Sala deberá confirmar la sentencia y amparar el derecho a la salud.",
+        "Por lo expuesto, debe confirmar el fallo y amparar el derecho a la salud.",
+    ],
+)
+def test_coherencia_decision_deber_con_sujeto_el_despacho_anuncia_un_resultado_contradictorio(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "El Despacho considera que debe revocar el fallo y amparar el derecho a la salud, y la accionada deberá confirmar la cita.",
+        "Corresponde revocar el fallo y amparar el derecho a la salud. La EPS debe confirmar la cita médica del accionante.",
+        "El Despacho debe revocar el fallo y amparar el derecho a la salud, mientras que las entidades deben confirmar la cita.",
+    ],
+)
+def test_coherencia_decision_deber_de_un_tercero_no_anuncia_el_resultado(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
+# --- #149: formas conjugadas de «negar» ----------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará el fallo y se negarán las pretensiones de la acción de tutela.",
+        "Se revocará la decisión de primera instancia y, en su lugar, se negarán las pretensiones.",
+        "Se revocará el fallo y se negarían las pretensiones.",
+        "Se revocará el fallo y se negará el amparo solicitado.",
+        "Corresponde revocar la sentencia y negar el amparo.",
+        "Se revocará el fallo, por lo que corresponde negarse a conceder lo pedido.",
+        "Se revocará el fallo y se negaron las pretensiones.",
+    ],
+)
+def test_coherencia_decision_reconoce_todas_las_formas_de_negar(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "NEGAR")) == []
+
+
+def test_coherencia_decision_mensaje_de_negar_muestra_las_formas_completas():
+    msgs = lint.coherencia_decision(_caso(conclusion="Se revocará el fallo y se declarará improcedente."), _decision("REVOCAR", "NEGAR"))
+    texto = " ".join(msgs)
+    assert "«negar»" in texto and "«negarán»" in texto and "«negarían»" in texto and "«neg…»" not in texto
+
+
+def test_coherencia_decision_neg_sigue_sin_coincidir_con_negocio_ni_negligencia():
+    for palabra in ("negocio", "negativo", "negligencia", "negociación"):
+        msgs = lint.coherencia_decision(_caso(conclusion=f"Se revocará el fallo por el {palabra}."), _decision("REVOCAR", "NEGAR"))
+        assert any("NEGAR" in m for m in msgs), palabra
 
 
 TEXTO_CITA = (

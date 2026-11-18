@@ -73,14 +73,23 @@ _RESULTADO = {
     "REVOCAR": ["revoc"],
     "MODIFICAR": ["modific"],
 }
-_ETIQUETA_RAIZ = {r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)": "conceder la tutela/protección"}
+_RAIZ_CONCEDER = r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)"
+_RAIZ_NEGAR = r"neg(?:ar(?:a|an|ia|ian|se|l[aeo]s?)?|o|aron|ando)\b"
+# Lo que el mensaje muestra por cada raíz que no sea el prefijo literal.
+_ETIQUETA_RAIZ = {
+    _RAIZ_CONCEDER: ["conceder la tutela/protección…"],
+    _RAIZ_NEGAR: ["negar", "negará", "negarán", "negaría", "negarían", "negó", "negaron", "negando"],
+    "hecho superado": ["declarar la carencia actual de objeto por hecho superado"],
+    "daño consumado": ["declarar la carencia actual de objeto por daño consumado"],
+    "sobrevinient": ["declarar la carencia actual de objeto por situación sobreviniente"],
+}
 _SUSTITUTIVA = {
-    "AMPARAR": ["ampar", r"tutel(?!as?\b)", r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)"],
-    "NEGAR": [r"neg(?:ar|ara|aria|o|ando|aron)\b", "nieg", "deneg"],
+    "AMPARAR": ["ampar", r"tutel(?!as?\b)", _RAIZ_CONCEDER],
+    "NEGAR": [_RAIZ_NEGAR, "nieg", "deneg"],
     "IMPROCEDENTE": ["improceden"],
-    "CARENCIA_HECHO_SUPERADO": ["carencia", "hecho superado"],
-    "CARENCIA_DANO_CONSUMADO": ["carencia", "daño consumado"],
-    "CARENCIA_SOBREVINIENTE": ["carencia", "sobrevinient"],
+    "CARENCIA_HECHO_SUPERADO": ["hecho superado"],
+    "CARENCIA_DANO_CONSUMADO": ["daño consumado"],
+    "CARENCIA_SOBREVINIENTE": ["sobrevinient"],
 }
 
 
@@ -557,17 +566,43 @@ _SI_POSTERIOR = re.compile(
     r"|a\s+condici[oó]n\s+de\s+que|en\s+caso\s+de\s+que)\b"
 )
 _MARCA_PARCIAL = re.compile(r"\b(?:dem[aá]s|restantes)\b")
-_CONCESION_FUTURA = re.compile(
-    r"\b(?:ampar|tutel)(?:ar[aá]n?|ar[ií]an?)\b|\bconceder[aá]n?\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo)\b"
+_CONCESION = re.compile(
+    r"\b(?:ampar|tutel)(?:ar[aá]n?|ar[ií]an?|ar|ando)\b|\bampar(?:an?)\b"
+    r"|\bconceder(?:[aá]n?)?\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo)\b"
 )
+# Qué se niega. Si es el amparo mismo, la negación contradice AMPARAR; si es una pretensión accesoria («el tratamiento
+# integral», «la exoneración de copagos»), es una negación parcial legítima.
+_DETERMINANTE = (
+    r"(?:(?:[a-zñ]+mente|el|la|los|las|su|sus|un|una|todas?|todos?|tales|dichas?|estas?|estos?|esas?|esos?"
+    r"|la\s+totalidad\s+de(?:\s+(?:el|la|los|las))?)\s+)*"
+)
+_PRETENSION_GENERICA = r"(?:pretensi[oó]n(?:es)?|s[uú]plicas?|solicitud(?:es)?|petici[oó]n(?:es)?|pedimentos?|reclamaci[oó]n(?:es)?|demanda)"
+_AMPARO_COMO_OBJETO = r"(?:la\s+|el\s+)?(?:amparo|tutela|acci[oó]n|protecci[oó]n|accionante|actor|actora|demandante|peticionari\w+)"
+_ES_EL_AMPARO = re.compile(
+    rf"\s*{_DETERMINANTE}(?:(?:amparo|tutela|protecci[oó]n|acci[oó]n|derechos?)\b"
+    rf"|{_PRETENSION_GENERICA}\b(?!\s+(?:de|del)\s+(?!{_AMPARO_COMO_OBJETO}\b))"
+    r"|lo\s+(?:solicitado|pedido|pretendido|impetrado|reclamado|demandado))"
+)
+_SIN_COMPLEMENTO = re.compile(
+    r"\s*(?:$|[,.;:!?)»\"]|(?:por|en|con|pues|porque|ya|dado|toda|sin|para|ante|al|a|y|e|o|que|como|aunque|pero|si)\b)"
+)
+_PALABRA_SUSTANTIVA = re.compile(rf"\s*{_DETERMINANTE}(?:lo\s+)?[a-zñáéíóú]{{3,}}")
 
 
-def _negacion_parcial(texto: str, m: re.Match[str]) -> bool:
-    if not any(
-        not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end())
-        for g in _CONCESION_FUTURA.finditer(texto)
+def _niega_pretension_accesoria(texto: str, m: re.Match[str]) -> bool:
+    if _SIN_COMPLEMENTO.match(texto, m.end()) or _ES_EL_AMPARO.match(texto, m.end()):
+        return False
+    return _PALABRA_SUSTANTIVA.match(texto, m.end()) is not None
+
+
+def _negacion_parcial(texto: str, m: re.Match[str], decision: Decision) -> bool:
+    # Confirmar un amparo ya es conceder: no hace falta que la conclusión lo vuelva a anunciar.
+    if decision.resultado != "CONFIRMAR" and not any(
+        not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end()) for g in _CONCESION.finditer(texto)
     ):
         return False
+    if _niega_pretension_accesoria(texto, m):
+        return True
     ini = max(texto.rfind(c, 0, m.start()) for c in ".;!?") + 1
     fins = [k for k in (texto.find(c, m.end()) for c in ".;!?") if k != -1]
     fin = min(fins) if fins else len(texto)
@@ -584,7 +619,11 @@ def _excusada(texto: str, inicio: int) -> bool:
     )
 
 
-_CARENCIA = r"declarar(?:á|án|ía|ían)\s+la\s+carencia[^.;]{0,60}?"
+# Hueco entre «la carencia» y el tipo: no cruza una negación («…por daño consumado, y no por hecho superado»).
+_HUECO_CARENCIA = r"(?:(?!\b(?:no|ni|sino|sin)\b|hecho\s+superado|da[ñn]o\s+consumado|sobrevinient)[^.;]){0,60}?"
+_CARENCIA = r"declarar(?:á|án|ía|ían)\s+la\s+carencia" + _HUECO_CARENCIA
+_CARENCIA_INF = r"declarar\s+la\s+carencia" + _HUECO_CARENCIA
+_CLITICO = r"(?:l[aeo]s?)?"
 _FUTURO_RESULTADO = {
     "CONFIRMAR": r"confirmar(?:á|án|ía|ían)\b",
     "REVOCAR": r"revocar(?:á|án|ía|ían)\b",
@@ -597,26 +636,115 @@ _FUTURO_SUSTITUTIVA = {
     "CARENCIA_DANO_CONSUMADO": _CARENCIA + r"da[ñn]o\s+consumado",
     "CARENCIA_SOBREVINIENTE": _CARENCIA + r"sobrevinient",
 }
+# La misma familia en infinitivo, que es la forma que ordena el prompt («corresponde revocar y negar el amparo»).
+_INFINITIVO_RESULTADO = {
+    "CONFIRMAR": rf"confirmar{_CLITICO}\b",
+    "REVOCAR": rf"revocar{_CLITICO}\b",
+}
+_INFINITIVO_SUSTITUTIVA = {
+    "AMPARAR": rf"(?:(?:ampar|tutel)ar{_CLITICO}\b|conceder\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo))",
+    "NEGAR": rf"(?:neg|deneg)ar{_CLITICO}\b",
+    "IMPROCEDENTE": r"declarar\s+(?:la\s+)?(?:acci[oó]n\s+(?:de\s+tutela\s+)?)?improcedente",
+    "CARENCIA_HECHO_SUPERADO": _CARENCIA_INF + r"hecho\s+superado",
+    "CARENCIA_DANO_CONSUMADO": _CARENCIA_INF + r"da[ñn]o\s+consumado",
+    "CARENCIA_SOBREVINIENTE": _CARENCIA_INF + r"sobrevinient",
+}
+# Un infinitivo solo anuncia la decisión si lo rige una fórmula de decisión («corresponde revocar», «debe revocar»)
+# o una coordinación que arranca en ella («…y negar el amparo»). «Al negar», «decidió negar» o «sin amparar»
+# describen o niegan, no anuncian; y tras un «que» ya no se sabe quién actúa.
+_ANUNCIO_INFINITIVO = re.compile(
+    r"\b(?:corresponde|procede|proceder[aá]\s+a|se\s+impone|hay\s+que|habr[aá]\s+de|ha\s+de|se\s+debe"
+    r"|es\s+(?:necesario|preciso|procedente|menester)|resulta\s+(?:necesario|preciso|procedente)"
+    r"|lo\s+(?:procedente|que\s+procede|que\s+corresponde)\s+es"
+    r"|(?:(?:el|este)\s+(?:despacho|juzgado)|la\s+sala)\s+(?:decide|decidir[aá]|resuelve|resolver[aá]|dispone|dispondr[aá]))\b"
+    # «Deber» solo anuncia si el sujeto es el Despacho o está implícito: «la accionada deberá confirmar la cita» no anuncia nada.
+    r"|(?:\b(?:despacho|juzgado|sala)\s+|\b(?:considera|estima|concluye|entiende|encuentra|advierte)\s+que\s+"
+    r"|(?:^|[.;:!?,])\s*)\b(?:deber[aá]n?|deben?)\b"
+)
+_COORDINADO = re.compile(
+    r"(?:\b(?:y|e|o)\s+(?:(?:en\s+su\s+lugar|adem[aá]s|tambi[eé]n)\s*,?\s*)?"
+    r"|,\s*(?:(?:y|e|o)\s+)?(?:(?:en\s+su\s+lugar|adem[aá]s)\s*,?\s*)?)$"
+)
+_RELLENO_TRAS_ANUNCIO = re.compile(
+    r"(?:(?:en\s+consecuencia|entonces|por\s+lo\s+tanto|as[ií])\s*,?\s*)?"
+    r"(?:(?:(?:al|a\s+este)\s+(?:despacho|juzgado)|a\s+la\s+sala)\s*,?\s*)?"
+)
+_FORMULA = {
+    "CONFIRMAR": "confirmar",
+    "REVOCAR": "revocar",
+    "MODIFICAR": "modificar",
+    "AMPARAR": "amparar",
+    "NEGAR": "negar",
+    "IMPROCEDENTE": "declarar improcedente",
+    "CARENCIA_HECHO_SUPERADO": "declarar la carencia actual de objeto por hecho superado",
+    "CARENCIA_DANO_CONSUMADO": "declarar la carencia actual de objeto por daño consumado",
+    "CARENCIA_SOBREVINIENTE": "declarar la carencia actual de objeto por situación sobreviniente",
+}
+_PISTA_NEGACION_PARCIAL = (
+    " Si solo niega una pretensión accesoria, nómbrela (por ejemplo, «negar el tratamiento integral») o diga «las demás pretensiones»."
+)
+
+
+def _tramos_de_anuncio(texto: str) -> list[tuple[int, int]]:
+    tramos = []
+    for t in _ANUNCIO_INFINITIVO.finditer(texto):
+        if _excusada(texto, t.start()):
+            continue
+        cortes = [k for k in (texto.find(c, t.end()) for c in ".;!?") if k != -1]
+        fin = min(cortes) if cortes else len(texto)
+        relativa = re.search(r"\bque\b", texto[t.end() : fin])
+        tramos.append((t.end(), t.end() + relativa.start() if relativa else fin))
+    return tramos
+
+
+def _anunciado_en_infinitivo(texto: str, m: re.Match[str], tramos: list[tuple[int, int]]) -> bool:
+    for ini, fin in tramos:
+        if ini <= m.start() < fin:
+            previo = texto[ini : m.start()]
+            if _COORDINADO.search(previo) or _RELLENO_TRAS_ANUNCIO.fullmatch(previo.strip()):
+                return True
+    return False
+
+
+def _cuenta_como_contradiccion(
+    texto: str, m: re.Match[str], otro: str, decidido: str, decision: Decision, tramos: list[tuple[int, int]] | None
+) -> bool:
+    if _excusada(texto, m.start()):
+        return False
+    if tramos is not None and not _anunciado_en_infinitivo(texto, m, tramos):
+        return False
+    return not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m, decision))
 
 
 def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
     texto = " ".join(conclusion.lower().split())
+    tramos = _tramos_de_anuncio(texto)
+    # Un derecho marcado «Niega» ya declara un amparo parcial: negar algo no contradice AMPARAR.
+    niega_un_derecho = decision.sustitutiva == "AMPARAR" and any(d.disposicion == "NIEGA" for d in decision.derechos)
     msgs: list[str] = []
     familias = (
-        ("el resultado", decision.resultado, _FUTURO_RESULTADO),
-        ("la decisión sustitutiva", decision.sustitutiva, _FUTURO_SUSTITUTIVA),
+        ("el resultado", decision.resultado, _FUTURO_RESULTADO, _INFINITIVO_RESULTADO),
+        ("la decisión sustitutiva", decision.sustitutiva, _FUTURO_SUSTITUTIVA, _INFINITIVO_SUSTITUTIVA),
     )
-    for nombre, decidido, patrones in familias:
-        if not decidido:
+    for nombre, decidido, futuros, infinitivos in familias:
+        # MODIFICAR confirma una parte y cambia otra: «en lo demás lo confirmará» o «revocará el numeral…» no contradicen.
+        if not decidido or decidido == "MODIFICAR":
             continue
-        for otro, patron in patrones.items():
-            if otro != decidido and any(
-                not _excusada(texto, m.start()) and not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m))
-                for m in re.finditer(_NO_PRECEDE + patron, texto)
+        for otro, futuro in futuros.items():
+            if otro == decidido or (otro == "NEGAR" and niega_un_derecho):
+                continue
+            if any(
+                _cuenta_como_contradiccion(texto, m, otro, decidido, decision, None)
+                for m in re.finditer(_NO_PRECEDE + futuro, texto)
+            ) or any(
+                _cuenta_como_contradiccion(texto, m, otro, decidido, decision, tramos)
+                for m in re.finditer(_NO_PRECEDE + infinitivos[otro], texto)
             ):
+                pista = _PISTA_NEGACION_PARCIAL if (otro, decidido) == ("NEGAR", "AMPARAR") else ""
                 msgs.append(
                     f"{BLOQUEA}La conclusión anuncia {otro} como {nombre}, pero el juez decidió {decidido}; "
-                    "lo que hizo el a quo se menciona en pasado."
+                    f"anuncie solo lo decidido («{_FORMULA[decidido]}») y, si menciona lo que resolvió el a quo, "
+                    f"escríbalo en pasado.{pista}"
                 )
     return msgs
 
@@ -636,7 +764,7 @@ def coherencia_decision(caso: CasoConcretoLLM, decision: Decision) -> list[str]:
     if decision.sustitutiva:
         raices = _SUSTITUTIVA[decision.sustitutiva]
         if not any(_contiene_raiz(norm, r) for r in raices):
-            esperadas = ", ".join(f"«{_ETIQUETA_RAIZ.get(r, r.partition('(')[0])}…»" for r in raices)
+            esperadas = ", ".join(f"«{e}»" for r in raices for e in _ETIQUETA_RAIZ.get(r, [r.partition("(")[0] + "…"]))
             msgs.append(
                 f"{BLOQUEA}La conclusión no anuncia la decisión sustitutiva ({decision.sustitutiva}); "
                 f"debe contener alguna de estas expresiones: {esperadas}."
