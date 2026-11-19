@@ -1422,6 +1422,105 @@ def test_tabla_negar_una_pretension_accesoria_pasa_con_palabras_sueltas_antes_de
     assert not fallos, f"{len(fallos)} de {len(filas)} bloquean; las primeras: {fallos[:5]}"
 
 
+# --- #88: el complemento que sigue a «pretensiones de / solicitud de / petición de…» se lee con la misma regla --------------
+# «Se negarán las pretensiones de la presente acción» es el fraseo más habitual para negar el amparo mismo. El complemento tras
+# «de/del» no era una lista cerrada pelada de núcleos («la acción», «el amparo»…): admite los mismos determinantes y hasta tres
+# palabras sueltas que lo que sigue al verbo («de la presente acción», «de esta acción», «del citado amparo»), y su núcleo, el
+# singular o el plural. Sin eso, main bloqueaba «las pretensiones de la presente acción de tutela» y la rama la dejaba pasar.
+@pytest.mark.parametrize("resultado", ["REVOCAR", "CONFIRMAR"])
+@pytest.mark.parametrize(
+    "negado",
+    [
+        "negarán las pretensiones de la presente acción de tutela", "negarán las pretensiones de la presente acción",
+        "negarán las pretensiones de esta acción", "negarán las pretensiones de la citada acción",
+        "negarán las pretensiones de la referida acción", "negarán las pretensiones de dicha acción",
+        "negarán las pretensiones de la misma acción", "negarán las pretensiones del presente amparo",
+        "negarán las pretensiones de la presente tutela", "negará la solicitud de la presente tutela",
+        "negará la solicitud de la presente acción", "negará la petición de la presente acción",
+        "negará la pretensión de la presente acción", "negará la solicitud del citado referido amparo",
+        "negarán las pretensiones de la presente protección", "negarán las pretensiones de la totalidad de la acción",
+        "negarán las pretensiones de ahora la acción",
+        # los que ya bloqueaban: el contraste, para que el hueco se vea de forma y no de léxico
+        "negarán las pretensiones de la acción de tutela", "negarán las pretensiones de la acción",
+        "negarán las pretensiones de la tutela", "negarán las pretensiones del amparo",
+        # la parte, en singular y en plural, con determinantes y palabras sueltas
+        "negarán las pretensiones de las accionantes", "negarán las pretensiones de los actores",
+        "negarán las pretensiones de los accionantes", "negarán las pretensiones de la señora accionante",
+        "negarán las pretensiones del demandante", "negarán las pretensiones de los demandantes",
+        "negarán las pretensiones de la citada actora", "negarán las pretensiones del peticionario",
+        "negarán las pretensiones de las peticionarias", "negarán las pretensiones de la parte accionante",
+        "negarán las pretensiones de la parte actora",
+    ],
+)
+def test_coherencia_decision_negar_las_pretensiones_de_la_presente_accion_bloquea(resultado, negado):
+    conclusion = f"{_PREFIJO_NEGACION[resultado]} {negado}."
+    assert _anuncia_negar(resultado, conclusion), conclusion
+
+
+@pytest.mark.parametrize("resultado", ["REVOCAR", "CONFIRMAR"])
+@pytest.mark.parametrize(
+    "negado",
+    [
+        "negará la solicitud de la citada exoneración de copagos", "negará la solicitud de la presente medida provisional",
+        "negará la solicitud de cambio de EPS", "negará la pretensión de la presente exoneración de copagos",
+        "negará la solicitud de reembolso de los gastos de la acción", "negará el pago de los gastos del proceso de tutela",
+        "negarán las pretensiones de la citada exoneración de copagos y de la presente medida provisional",
+        "negarán las pretensiones de tratamiento integral",
+        # un nexo antes del núcleo lo vuelve de otra frase, igual que tras el verbo
+        "negarán las pretensiones de tratamiento integral de la tutela", "negará la solicitud de reembolso en la acción",
+    ],
+)
+def test_coherencia_decision_negar_la_solicitud_de_una_accesoria_con_palabras_sueltas_pasa(resultado, negado):
+    conclusion = f"{_PREFIJO_NEGACION[resultado]} {negado}."
+    assert not _anuncia_negar(resultado, conclusion), conclusion
+
+
+# La tabla: «pretensión/solicitud/petición» × «de/del» + determinante × 0 a 2 palabras sueltas × núcleo (o accesoria) × resultado.
+_PRETENSIONES = {"s": ["la pretensión", "la solicitud"], "p": ["las pretensiones", "las peticiones"]}
+_COMPLEMENTO_AMPARO = {
+    "ms": ["amparo", "accionante", "actor", "demandante"],
+    "fs": ["tutela", "acción", "acción de tutela", "protección", "actora"],
+    "mp": ["amparos", "accionantes", "actores", "demandantes"],
+    "fp": ["tutelas", "acciones", "acciones de tutela", "accionantes", "actoras"],
+}
+_COMPLEMENTO_ACCESORIO = {
+    "ms": ["tratamiento integral", "pago de transporte", "cambio de EPS"],
+    "fs": ["exoneración de copagos", "medida provisional", "cita con el especialista"],
+    "mp": ["copagos", "gastos de transporte", "pañales"],
+    "fp": ["terapias solicitadas", "citas médicas", "exoneraciones de copagos"],
+}
+
+
+def _filas_complemento(objetos: dict[str, list[str]]) -> list[tuple[str, str]]:
+    filas = []
+    for genero in _GENEROS:
+        verbo = "negarán" if genero.endswith("p") else "negará"
+        nucleo_plural = "p" if verbo == "negarán" else "s"
+        palabras = _ADVERBIOS[:3] + _SUELTAS[genero][:3]
+        for pretension, determinante, sueltas, objeto in itertools.product(
+            _PRETENSIONES[nucleo_plural], _DETERMINANTES[genero], _secuencias(palabras, {2: 5}, 2), objetos[genero]
+        ):
+            # «de» + «el» es «del»; con otro determinante, o sin él, «de»
+            partes = ["del" if determinante == "el" else "de", "" if determinante == "el" else determinante, sueltas, objeto]
+            frase = " ".join(p for p in (pretension, *partes) if p)
+            filas += [(resultado, f"{_PREFIJO_NEGACION[resultado]} {verbo} {frase}.") for resultado in ("REVOCAR", "CONFIRMAR")]
+    return filas
+
+
+def test_tabla_negar_las_pretensiones_del_amparo_mismo_bloquea_con_determinantes_y_palabras_sueltas_tras_de():
+    filas = _filas_complemento(_COMPLEMENTO_AMPARO)
+    fallos = [f for f in filas if not _anuncia_negar(*f)]
+    assert len(filas) == 7560  # si cambia una lista, cambia esta cifra; el cuerpo del PR cita la tabla
+    assert not fallos, f"{len(fallos)} de {len(filas)} no bloquean; las primeras: {fallos[:5]}"
+
+
+def test_tabla_negar_las_pretensiones_de_una_accesoria_pasa_con_determinantes_y_palabras_sueltas_tras_de():
+    filas = _filas_complemento(_COMPLEMENTO_ACCESORIO)
+    fallos = [f for f in filas if _anuncia_negar(*f)]
+    assert len(filas) == 5040
+    assert not fallos, f"{len(fallos)} de {len(filas)} bloquean; las primeras: {fallos[:5]}"
+
+
 # Los falsos negativos que se aceptan (los dice el contrato): lo que cuenta como el amparo mismo es una lista cerrada de núcleos, las
 # palabras sueltas tienen tope y solo se mira lo que sigue al verbo. Se fijan aquí para que, si cambian, cambie también el contrato.
 @pytest.mark.parametrize(
@@ -1436,6 +1535,11 @@ def test_tabla_negar_una_pretension_accesoria_pasa_con_palabras_sueltas_antes_de
         "negará todo",  # un cuantificador solo es un determinante sin núcleo
         "negará lo anteriormente solicitado",  # «lo solicitado» no admite palabras sueltas en medio
         "negará el tratamiento integral y el amparo",  # solo se examina lo que sigue al verbo
+        # la parte nombrada por algo que no es la lista cerrada («accionante», «actor», «demandante», «peticionario»)
+        "negarán las pretensiones de la señora Pérez",
+        "negarán las pretensiones de la madre",
+        "negarán las pretensiones del tutelante",
+        "negarán las pretensiones del agenciado",
     ],
 )
 def test_coherencia_decision_falsos_negativos_conocidos_de_negar_bajo_amparar(negado):
@@ -1582,8 +1686,19 @@ _ENTRADAS_ADVERSARIAS = {
     "_RAIZ_CONCEDER": (lambda t: lint._contiene_raiz(t, lint._RAIZ_CONCEDER), "concedera la tutx concedieron la x " * 300),
     "_CONCESION": (lambda t: list(lint._CONCESION.finditer(t)), "ampararanx amparandox amparax tutelarx conceder la x " * 300),
     "_SIN_COMPLEMENTO": (lambda t: lint._SIN_COMPLEMENTO.match(t), " " * 300 + "tratamiento integral"),
-    # la excepción de «pretensiones de…» es una búsqueda hacia delante de longitud fija
     "_ES_EL_AMPARO": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "las " * 300 + "pretensiones de la de la de la x"),
+    # el complemento de «pretensiones de…» (`_AMPARO_COMO_OBJETO`) lleva los mismos determinantes y palabras sueltas que el objeto
+    # de «negará», dentro de una búsqueda hacia delante negativa: cada tira de abajo es su peor caso y no casa (sin núcleo)
+    "_COMPLEMENTO_DETERMINANTES": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "el la su un " * 300 + "x."),
+    "_COMPLEMENTO_PALABRAS_SUELTAS": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "la presente " * 300 + "x."),
+    "_COMPLEMENTO_CITADO": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "citado " * 300 + "x."),
+    "_COMPLEMENTO_ADVERBIOS": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "totalmente " * 300 + "x."),
+    "_COMPLEMENTO_MENTE": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "xmente " * 300 + "x."),
+    "_COMPLEMENTO_ALTERNADO": (
+        lambda t: lint._ES_EL_AMPARO.match(t),
+        " las pretensiones de " + "la totalidad de la citada presente el referido " * 300 + "x.",
+    ),
+    "_COMPLEMENTO_CON_NEXOS": (lambda t: lint._ES_EL_AMPARO.match(t), " las pretensiones de " + "la presente de la acción y " * 300 + "x."),
     # un adverbio en «-mente» larguísimo: «[a-zñ]+mente» retrocede letra a letra una sola vez
     "_DETERMINANTE": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "mente" * 300 + " x."),
     # lo mismo con letras con tilde, que ahora entran en el adverbio, y con la lista de palabras de relleno
@@ -1640,6 +1755,10 @@ def test_coherencia_decision_con_un_enlace_repetido_termina_a_tiempo(repeticione
         ("REVOCAR", "Se revocará el fallo y se amparará el derecho. " + "Se negará " + "el la su un " * 2000 + "tratamiento.", []),
         ("REVOCAR", "Se revocará el fallo y se amparará el derecho. " + ("Se negará " + "el citado la presente " * 20 + "tratamiento; ") * 100, []),
         ("CONFIRMAR", "Se confirmará el fallo y " + ("se negará " + "el citado referido amparo; ") * 500, None),
+        # lo mismo con el complemento de «pretensiones de…»: una tira de palabras sueltas, o muchas negaciones que la llevan
+        ("REVOCAR", "Se revocará el fallo y se amparará el derecho. " + "Se negarán las pretensiones de " + "la presente " * 3000 + "x.", []),
+        ("REVOCAR", "Se revocará el fallo y se amparará el derecho. " + ("Se negarán las pretensiones de " + "la citada " * 20 + "x; ") * 100, []),
+        ("CONFIRMAR", "Se confirmará el fallo y se amparará el derecho. " + ("Se negarán las pretensiones de la citada exoneración de copagos; ") * 500, []),
     ],
 )
 def test_coherencia_decision_con_muchas_negaciones_termina_a_tiempo(resultado, conclusion, esperado):

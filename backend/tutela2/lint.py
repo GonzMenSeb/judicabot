@@ -599,7 +599,13 @@ _RELLENO = rf"(?:(?!{_DET_PALABRA}\b|{_CORTE}\b)[a-zñáéíóú]+\s+{_DETERMINA
 _PRETENSION_GENERICA = r"(?:pretensi[oó]n(?:es)?|s[uú]plicas?|solicitud(?:es)?|petici[oó]n(?:es)?|pedimentos?|reclamaci[oó]n(?:es)?|demanda)"
 # «las pretensiones accesorias» no es el amparo mismo: la pretensión que el adjetivo califica de accesoria es la que se niega.
 _ADJETIVO_ACCESORIO = r"(?:accesori|adicional|subsidiari|complementari)"
-_AMPARO_COMO_OBJETO = r"(?:la\s+|el\s+)?(?:amparo|tutela|acci[oó]n|protecci[oó]n|accionante|actor|actora|demandante|peticionari\w+)"
+# Lo que sigue a «pretensiones de / solicitud de / petición de…» se lee con la misma regla que lo que sigue a «negará»: determinantes
+# y hasta tres palabras sueltas («de la presente acción», «de esta acción», «del citado amparo») y, tras ellas, el núcleo
+# («acción», «tutela», «amparo», «protección», o la parte: «accionante», «actor», «demandante», «peticionario», en plural también).
+_AMPARO_COMO_OBJETO = (
+    rf"{_DETERMINANTE}{_RELLENO}(?:amparos?|tutelas?|acci(?:[oó]n|ones)|protecci(?:[oó]n|ones)|accionantes?|actor(?:es|as?)?"
+    r"|demandantes?|peticionari\w+)"
+)
 _ES_EL_AMPARO = re.compile(
     rf"\s*{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones)|derechos?)\b"
     rf"|{_PRETENSION_GENERICA}\b(?!\s+(?:de|del)\s+(?!{_AMPARO_COMO_OBJETO}\b))(?!\s+{_ADJETIVO_ACCESORIO})"
