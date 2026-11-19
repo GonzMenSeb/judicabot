@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from functools import lru_cache
 from itertools import combinations
 from typing import Iterable
 
@@ -73,10 +74,16 @@ _RESULTADO = {
     "REVOCAR": ["revoc"],
     "MODIFICAR": ["modific"],
 }
-_ETIQUETA_RAIZ = {r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)": "conceder la tutela/protección"}
+_RAIZ_CONCEDER = r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)"
+_RAIZ_NEGAR = r"neg(?:ar(?:a|an|ia|ian|se|l[aeo]s?)?|o|aron|ando)\b"
+# Lo que el mensaje muestra por cada raíz que no sea el prefijo literal.
+_ETIQUETA_RAIZ = {
+    _RAIZ_CONCEDER: ["conceder la tutela/protección…"],
+    _RAIZ_NEGAR: ["negar", "negará", "negarán", "negaría", "negarían", "negó", "negaron", "negando"],
+}
 _SUSTITUTIVA = {
-    "AMPARAR": ["ampar", r"tutel(?!as?\b)", r"conced\w*\s+(?:la\s+)?(?:tutela|proteccion)"],
-    "NEGAR": [r"neg(?:ar|ara|aria|o|ando|aron)\b", "nieg", "deneg"],
+    "AMPARAR": ["ampar", r"tutel(?!as?\b)", _RAIZ_CONCEDER],
+    "NEGAR": [_RAIZ_NEGAR, "nieg", "deneg"],
     "IMPROCEDENTE": ["improceden"],
     "CARENCIA_HECHO_SUPERADO": ["carencia", "hecho superado"],
     "CARENCIA_DANO_CONSUMADO": ["carencia", "daño consumado"],
@@ -557,30 +564,95 @@ _SI_POSTERIOR = re.compile(
     r"|a\s+condici[oó]n\s+de\s+que|en\s+caso\s+de\s+que)\b"
 )
 _MARCA_PARCIAL = re.compile(r"\b(?:dem[aá]s|restantes)\b")
-_CONCESION_FUTURA = re.compile(
-    r"\b(?:ampar|tutel)(?:ar[aá]n?|ar[ií]an?)\b|\bconceder[aá]n?\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo)\b"
+_CONCESION = re.compile(
+    r"\b(?:ampar|tutel)(?:ar[aá]n?|ar[ií]an?|ar|ando)\b|\bampar(?:an?)\b"
+    r"|\bconceder(?:[aá]n?)?\s+(?:la\s+|el\s+)?(?:tutela|protecci[oó]n|amparo)\b"
 )
+# Qué se niega. Si es el amparo mismo, la negación contradice AMPARAR; si es una pretensión accesoria («el tratamiento
+# integral», «la exoneración de copagos»), es una negación parcial legítima.
+# Eso se decide por el núcleo («amparo», «tutela», «acción»…), no por las palabras que lo preceden: tras el determinante caben
+# hasta tres palabras sueltas («el citado amparo», «la presente acción de tutela», «cualquier tutela», «ahora el amparo») y, si
+# tras ellas viene el núcleo, lo que se niega es el amparo mismo. Solo si antes del núcleo hay una preposición o una conjunción
+# («el tratamiento integral de la tutela», «el transporte pues la tutela…»), o más de tres palabras, el núcleo es de otra frase y
+# lo negado es una pretensión accesoria. Decidirlo por una lista de determinantes dejaba pasar la negación del amparo mismo con
+# cada palabra que la lista no traía, y la lista no se acababa nunca.
+# Cada palabra se lee de una sola forma (determinante, palabra suelta o corte): «la totalidad de» no absorbe el artículo que sigue
+# (lo toma la iteración siguiente) y las palabras sueltas excluyen a los determinantes. Con alternativas solapadas bajo un
+# cuantificador, un texto que no casa costaría 2^n pasos.
+_DET_PALABRA = (
+    r"(?:[a-zñáéíóú]+mente|también|además|asimismo|entonces|el|la|los|las|su|sus|un|una|todas?|todos?|tales"
+    r"|dich[oa]s?|estas?|estos?|este|esas?|esos?|ese|aquel(?:l[ao]s?)?)"
+)
+_DETERMINANTE = rf"(?:(?:{_DET_PALABRA}|la\s+totalidad\s+del?)\s+)*"
+# Las preposiciones y conjunciones de las que nace una frase nueva. `_SIN_COMPLEMENTO` (lo que sigue a «negará») y
+# `_CORTE` (lo que corta las palabras sueltas) parten de la misma lista para no desalinearse. `_CORTE` añade los relativos y
+# subordinantes («cuando», «cuyo», «donde»…) y los pronombres «se», «le», «les», que también abren una frase nueva.
+_NEXO = r"por|en|con|pues|porque|ya|dado|sin|para|ante|al|a|y|e|o|que|como|aunque|pero|si"
+_CORTE = (
+    rf"(?:{_NEXO}|de|del|u|ni|se|le|les|respecto|sobre|contra|desde|hasta|entre|seg[uú]n|cuando|mientras|mediante|durante"
+    r"|tras|bajo|hacia|salvo|excepto|donde|cual(?:es)?|quienes?|cuy[oa]s?)"
+)
+# Una palabra suelta no es determinante ni corte: así cada palabra tiene una sola lectura y las palabras sueltas son un `{0,3}`
+# aparte, no una alternativa más del `(?:…)*`. Los determinantes que siguen a una palabra suelta («solo el amparo») no gastan
+# ninguna de las tres.
+_RELLENO = rf"(?:(?!{_DET_PALABRA}\b|{_CORTE}\b)[a-zñáéíóú]+\s+{_DETERMINANTE}){{0,3}}"
+_PRETENSION_GENERICA = r"(?:pretensi[oó]n(?:es)?|s[uú]plicas?|solicitud(?:es)?|petici[oó]n(?:es)?|pedimentos?|reclamaci[oó]n(?:es)?|demanda)"
+# «las pretensiones accesorias» no es el amparo mismo: la pretensión que el adjetivo califica de accesoria es la que se niega.
+_ADJETIVO_ACCESORIO = r"(?:accesori|adicional|subsidiari|complementari)"
+# Lo que sigue a «pretensiones de / solicitud de / petición de…» se lee con la misma regla que lo que sigue a «negará»: determinantes
+# y hasta tres palabras sueltas («de la presente acción», «de esta acción», «del citado amparo») y, tras ellas, el núcleo
+# («acción», «tutela», «amparo», «protección», o la parte: «accionante», «actor», «demandante», «peticionario», en plural también).
+_AMPARO_COMO_OBJETO = (
+    rf"{_DETERMINANTE}{_RELLENO}(?:amparos?|tutelas?|acci(?:[oó]n|ones)|protecci(?:[oó]n|ones)|accionantes?|actor(?:es|as?)?"
+    r"|demandantes?|peticionari\w+)"
+)
+_ES_EL_AMPARO = re.compile(
+    rf"\s*{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones)|derechos?)\b"
+    rf"|{_PRETENSION_GENERICA}\b(?!\s+(?:de|del)\s+(?!{_AMPARO_COMO_OBJETO}\b))(?!\s+{_ADJETIVO_ACCESORIO})"
+    r"|lo\s+(?:solicitado|pedido|pretendido|impetrado|reclamado|demandado))"
+)
+_SIN_COMPLEMENTO = re.compile(rf"\s*(?:$|[,.;:!?)»\"]|(?:{_NEXO}|toda\s+vez)\b)")
+_PALABRA_SUSTANTIVA = re.compile(rf"\s*{_DETERMINANTE}(?:lo\s+)?[a-zñáéíóú]{{3,}}")
 
 
-def _negacion_parcial(texto: str, m: re.Match[str]) -> bool:
-    if not any(
-        not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end())
-        for g in _CONCESION_FUTURA.finditer(texto)
-    ):
+def _niega_pretension_accesoria(texto: str, m: re.Match[str]) -> bool:
+    if _SIN_COMPLEMENTO.match(texto, m.end()) or _ES_EL_AMPARO.match(texto, m.end()):
         return False
+    return _PALABRA_SUSTANTIVA.match(texto, m.end()) is not None
+
+
+@lru_cache(maxsize=8)
+def _hay_concesion(texto: str) -> bool:
+    """¿La conclusión anuncia una concesión del amparo que no niega ni condiciona? Se calcula una vez por texto y no una vez
+    por cada «negará», que la recorrería entera tantas veces como negaciones tenga."""
+    return any(not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end()) for g in _CONCESION.finditer(texto))
+
+
+def _negacion_parcial(texto: str, m: re.Match[str], decision: Decision) -> bool:
+    # Confirmar un amparo ya es conceder: no hace falta que la conclusión lo vuelva a anunciar.
+    if decision.resultado != "CONFIRMAR" and not _hay_concesion(texto):
+        return False
+    if _niega_pretension_accesoria(texto, m):
+        return True
     ini = max(texto.rfind(c, 0, m.start()) for c in ".;!?") + 1
     fins = [k for k in (texto.find(c, m.end()) for c in ".;!?") if k != -1]
     fin = min(fins) if fins else len(texto)
     return bool(_MARCA_PARCIAL.search(texto[max(ini, m.start() - 80) : min(fin, m.end() + 80)]))
 
 
+# Cada excusa empieza como mucho ~100 caracteres antes de lo que excusa (su palabra clave y «[^.;]{0,80}$», sobre texto con
+# los espacios ya normalizados): se busca solo en esa ventana y no desde el principio por cada coincidencia. Buscar con
+# `pos`/`endpos` no es recortar: «^» sigue siendo el inicio real y «\b» y las búsquedas hacia atrás ven lo anterior.
+_VENTANA_EXCUSA = 200
+
+
 def _excusada(texto: str, inicio: int) -> bool:
-    previo = texto[:inicio]
+    desde = max(0, inicio - _VENTANA_EXCUSA)
     return bool(
-        _NEGADOR_PREVIO.search(previo[-40:])
-        or _HIPOTETICO_PREVIO.search(previo)
-        or _CONDICIONAL_PREVIO.search(previo)
-        or _CONDICIONAL_EXCEPTO.search(previo)
+        _NEGADOR_PREVIO.search(texto[max(0, inicio - 40) : inicio])
+        or _HIPOTETICO_PREVIO.search(texto, desde, inicio)
+        or _CONDICIONAL_PREVIO.search(texto, desde, inicio)
+        or _CONDICIONAL_EXCEPTO.search(texto, desde, inicio)
     )
 
 
@@ -599,24 +671,48 @@ _FUTURO_SUSTITUTIVA = {
 }
 
 
+_FORMULA = {
+    "CONFIRMAR": "confirmar",
+    "REVOCAR": "revocar",
+    "MODIFICAR": "modificar",
+    "AMPARAR": "amparar",
+    "NEGAR": "negar",
+    "IMPROCEDENTE": "declarar improcedente",
+    "CARENCIA_HECHO_SUPERADO": "declarar la carencia actual de objeto por hecho superado",
+    "CARENCIA_DANO_CONSUMADO": "declarar la carencia actual de objeto por daño consumado",
+    "CARENCIA_SOBREVINIENTE": "declarar la carencia actual de objeto por situación sobreviniente",
+}
+_PISTA_NEGACION_PARCIAL = (
+    " Si solo niega una pretensión accesoria, nómbrela (por ejemplo, «negar el tratamiento integral») o diga «las demás pretensiones»."
+)
+
+
 def _contradicciones(conclusion: str, decision: Decision) -> list[str]:
     texto = " ".join(conclusion.lower().split())
+    # Un derecho marcado «Niega» ya declara un amparo parcial: negar algo no contradice AMPARAR.
+    niega_un_derecho = decision.sustitutiva == "AMPARAR" and any(d.disposicion == "NIEGA" for d in decision.derechos)
     msgs: list[str] = []
     familias = (
         ("el resultado", decision.resultado, _FUTURO_RESULTADO),
         ("la decisión sustitutiva", decision.sustitutiva, _FUTURO_SUSTITUTIVA),
     )
     for nombre, decidido, patrones in familias:
-        if not decidido:
+        # MODIFICAR confirma una parte y cambia otra: «en lo demás lo confirmará» o «revocará el numeral…» no contradicen.
+        if not decidido or decidido == "MODIFICAR":
             continue
         for otro, patron in patrones.items():
-            if otro != decidido and any(
-                not _excusada(texto, m.start()) and not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m))
+            if otro == decidido or (otro == "NEGAR" and niega_un_derecho):
+                continue
+            if any(
+                not _excusada(texto, m.start())
+                and not (otro == "NEGAR" and decidido == "AMPARAR" and _negacion_parcial(texto, m, decision))
                 for m in re.finditer(_NO_PRECEDE + patron, texto)
             ):
+                pista = _PISTA_NEGACION_PARCIAL if (otro, decidido) == ("NEGAR", "AMPARAR") else ""
                 msgs.append(
                     f"{BLOQUEA}La conclusión anuncia {otro} como {nombre}, pero el juez decidió {decidido}; "
-                    "lo que hizo el a quo se menciona en pasado."
+                    f"anuncie solo lo decidido («{_FORMULA[decidido]}») y, si menciona lo que resolvió el a quo, "
+                    f"escríbalo en pasado.{pista}"
                 )
     return msgs
 
@@ -636,7 +732,7 @@ def coherencia_decision(caso: CasoConcretoLLM, decision: Decision) -> list[str]:
     if decision.sustitutiva:
         raices = _SUSTITUTIVA[decision.sustitutiva]
         if not any(_contiene_raiz(norm, r) for r in raices):
-            esperadas = ", ".join(f"«{_ETIQUETA_RAIZ.get(r, r.partition('(')[0])}…»" for r in raices)
+            esperadas = ", ".join(f"«{e}»" for r in raices for e in _ETIQUETA_RAIZ.get(r, [r.partition("(")[0] + "…"]))
             msgs.append(
                 f"{BLOQUEA}La conclusión no anuncia la decisión sustitutiva ({decision.sustitutiva}); "
                 f"debe contener alguna de estas expresiones: {esperadas}."
