@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ErrorApi, esCasoNoEncontrado, MENSAJE_RED } from "./cliente";
+import { esDetalleDescarte } from "./contrato";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -36,6 +37,25 @@ describe("peticion: errores de red", () => {
   });
 });
 
+describe("peticion: detalle con objeto", () => {
+  it("un 422 con detail { mensaje, errores } deja message en el texto de mensaje y conserva el objeto", async () => {
+    const detail = { mensaje: "Su decisión no se aplicó: x.", errores: [] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ detail }, 422)));
+    const error = await api.post("/api/casos/x/run", {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ErrorApi);
+    expect(error).toMatchObject({ estado: 422, detalle: detail, message: "Su decisión no se aplicó: x." });
+  });
+
+  it.each([{ errores: [] }, { mensaje: "   ", errores: [] }, { mensaje: 4 }])(
+    "sin un mensaje de texto útil en %j sigue siendo «Error 422»",
+    async (detail) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ detail }, 422)));
+      const error = await api.post("/api/casos/x/run", {}).catch((e: unknown) => e);
+      expect(error).toMatchObject({ estado: 422, detalle: detail, message: "Error 422" });
+    },
+  );
+});
+
 describe("esCasoNoEncontrado", () => {
   it("reconoce el 404 del caso, con o sin punto final", () => {
     expect(esCasoNoEncontrado(new ErrorApi(404, "Caso no encontrado.", "Caso no encontrado."))).toBe(true);
@@ -48,4 +68,22 @@ describe("esCasoNoEncontrado", () => {
     expect(esCasoNoEncontrado(new ErrorApi(500, "Caso no encontrado.", "x"))).toBe(false);
     expect(esCasoNoEncontrado(new Error("Caso no encontrado."))).toBe(false);
   });
+});
+
+describe("esDetalleDescarte", () => {
+  const detalle = { codigo: "trabajo_previo", mensaje: "Este caso ya tiene el borrador.", trabajo: ["el borrador"] };
+
+  it("reconoce el detalle del 409 de nuevo/iniciar y su mensaje llega al ErrorApi", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ detail: detalle }, 409)));
+    const error = await api.post("/api/casos/x/run", { cmd: "nuevo" }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ estado: 409, message: "Este caso ya tiene el borrador." });
+    expect(esDetalleDescarte((error as ErrorApi).detalle)).toBe(true);
+  });
+
+  it.each([null, "Ya hay una ejecución en curso para este caso.", { mensaje: "x" }, { ...detalle, codigo: "otro" }, { ...detalle, trabajo: "el borrador" }, { ...detalle, trabajo: [1] }])(
+    "rechaza %j",
+    (valor) => {
+      expect(esDetalleDescarte(valor)).toBe(false);
+    },
+  );
 });

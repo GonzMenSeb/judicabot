@@ -499,7 +499,7 @@ def test_ediciones_no_editable_sin_hilo_ni_en_otro_estado(tmp_path, caso):
 def test_nuevo_borra_la_capa_y_su_bitacora(caso):
     editar(caso, ANTECEDENTES, lambda t: t.replace("dispuso la notificación", "dispuso con urgencia la notificación"), 1)
     assert (caso / ed.ARCHIVO).exists() and (caso / ed.LOG).exists()
-    assert api.nuevo(caso)["estado"] == "revision"
+    assert api.nuevo(caso, descartar=True)["estado"] == "revision"
     assert not (caso / ed.ARCHIVO).exists() and not (caso / ed.LOG).exists() and not (caso / "hilo.sqlite").exists()
 
 

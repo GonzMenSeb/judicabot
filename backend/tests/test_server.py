@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -19,6 +20,7 @@ from fastapi.testclient import TestClient
 from tutela2 import config as cfgmod
 from tutela2 import server, termino
 from tutela2.config import Config, LLMConfig
+from tutela2.rutas_ajustes_apoderados import CMD_IDENTIFICAR
 
 
 def _envelope(estado: str, **extra) -> dict:
@@ -224,7 +226,10 @@ def test_job_nuevo_ciclo_de_vida(cliente, caso, api):
     assert r.status_code == 200
     job_id = r.json()["job_id"]
     assert cliente.get(f"/api/jobs/{job_id}").json()["estado"] == "corriendo"
-    assert cliente.get(f"/api/casos/{caso}/estado").json()["job_activo"] == job_id
+    durante = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert durante["job_activo"] == job_id
+    # La lectura del expediente no es el grafo: /estado conserva lo que dice ``api.estado``.
+    assert durante["estado"] == "sin_iniciar"
     assert cliente.get("/api/casos").json()[0]["estado"] == "corriendo"
 
     segundo = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "continuar"})
@@ -238,6 +243,57 @@ def test_job_nuevo_ciclo_de_vida(cliente, caso, api):
     assert any("paso uno del borrador" in linea for linea in job["log"])
     assert api.llamadas[0][0] == "nuevo"
     assert cliente.get(f"/api/casos/{caso}/estado").json()["job_activo"] is None
+
+
+_A_MEDIAS = "El proceso quedó a medias en apertura. Use continuar para reanudarlo."
+
+
+def _estado_a_medias(caso_dir):
+    # Lo que ``api.estado`` lee de un checkpoint intermedio; ``tope_intentos`` simula la clave que añade #22.
+    return {**_envelope("error"), "ok": False, "error": _A_MEDIAS, "tope_intentos": True}
+
+
+@pytest.mark.parametrize("cmd", ["iniciar", "continuar", "decidir"])
+def test_estado_durante_un_job_del_grafo_dice_corriendo(cliente, caso, api, cmd):
+    def bloqueado(caso_dir, *args, **kwargs):
+        api.soltar.wait(5)
+        return _envelope("esperando_decision")
+
+    api.modulo.estado = _estado_a_medias
+    setattr(api.modulo, cmd, bloqueado)
+    cuerpo = {"cmd": cmd}
+    if cmd == "decidir":
+        cuerpo["decision"] = {"accion": "rehacer_consideraciones", "instruccion": "x"}
+    api.soltar.clear()
+    try:
+        job_id = cliente.post(f"/api/casos/{caso}/run", json=cuerpo).json()["job_id"]
+        durante = cliente.get(f"/api/casos/{caso}/estado").json()
+        assert durante["estado"] == "corriendo"
+        assert durante["ok"] is True
+        assert durante["error"] is None
+        assert durante["payload"] is None
+        assert durante["job_activo"] == job_id
+        assert "tope_intentos" not in durante
+    finally:
+        api.soltar.set()
+    _esperar(cliente, job_id)
+    despues = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert despues["estado"] == "error"
+    assert despues["error"] == _A_MEDIAS
+    assert despues["tope_intentos"] is True
+    assert despues["job_activo"] is None
+
+
+def test_estado_durante_identificar_apoderados_no_cambia(cliente, caso, api, monkeypatch):
+    # Identificar apoderados de casos anteriores corre mientras el caso espera la decisión: no es el grafo.
+    api.modulo.estado = lambda caso_dir: _envelope("esperando_decision", payload={"reparos": []})
+    job = {"id": "x", "caso": caso, "cmd": CMD_IDENTIFICAR, "estado": "corriendo", "log": [], "resultado": None, "error": None}
+    monkeypatch.setitem(server.JOBS, "x", job)
+    estado = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert estado["estado"] == "esperando_decision"
+    assert estado["ok"] is True
+    assert estado["payload"] == {"reparos": []}
+    assert estado["job_activo"] == "x"
 
 
 def test_job_con_excepcion_queda_en_error(cliente, caso):
@@ -280,6 +336,69 @@ def test_decidir_pasa_la_decision_intacta_a_api(cliente, caso, api):
     job_id = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": decision}).json()["job_id"]
     job = _esperar(cliente, job_id)
     assert job["estado"] == "terminado"
+    assert api.llamadas[0][2] == decision
+
+
+DECISION_COMPLETA = {
+    "accion": "decidir",
+    "resultado": "REVOCAR",
+    "sustitutiva": "AMPARAR",
+    "eje": "Procede el amparo.",
+    "ordenes": [{"destinatario": "la EPS X", "conducta": "cumpla", "plazo": {"n": 24, "unidad": "horas_habiles"}}],
+}
+
+
+def _con_plazo(n) -> dict:
+    return {**DECISION_COMPLETA, "ordenes": [{"destinatario": "la EPS X", "conducta": "cumpla", "plazo": {"n": n, "unidad": "dias"}}]}
+
+
+# (decisión, campos rechazados, mensaje exacto o None si solo se fija el campo)
+DECISIONES_RECHAZADAS = [
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": "20266-11-17"}, ["fecha_fallo"], None, id="fecha-de-seis-digitos"),
+    # La vista previa recorta la fecha y la acepta; el grafo no: la compuerta tiene que rechazarla igual.
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": " 2026-11-17"}, ["fecha_fallo"], None, id="fecha-con-espacio"),
+    pytest.param({**DECISION_COMPLETA, "fecha_fallo": ""}, ["fecha_fallo"], None, id="fecha-vacia"),
+    pytest.param(
+        _con_plazo(10_000_000), ["ordenes.0.plazo.n"], "El plazo de la orden 1 no puede superar 999.999.", id="plazo-enorme"
+    ),
+    pytest.param(_con_plazo(-5), ["ordenes.0.plazo.n"], "El plazo de cada orden debe ser mayor que cero.", id="plazo-negativo"),
+    pytest.param(_con_plazo(1.5), ["ordenes.0.plazo.n"], "El plazo de cada orden debe ser un número entero.", id="plazo-decimal"),
+    pytest.param({"accion": "rehacer_apertura"}, ["instruccion"], None, id="rehacer-sin-instruccion"),
+    pytest.param({**DECISION_COMPLETA, "eje": ""}, ["eje"], "Falta el eje: 2 a 5 líneas con el porqué de la decisión.", id="sin-eje"),
+]
+
+
+@pytest.mark.parametrize("decision, campos, mensaje", DECISIONES_RECHAZADAS)
+def test_run_decidir_rechaza_la_decision_invalida_sin_crear_el_job(cliente, caso, api, decision, campos, mensaje):
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": decision})
+    assert r.status_code == 422
+    detalle = r.json()["detail"]
+    assert [e["campo"] for e in detalle["errores"]] == campos
+    assert all(e["mensaje"] for e in detalle["errores"])
+    if mensaje:
+        assert detalle["errores"][0]["mensaje"] == mensaje
+    assert detalle["mensaje"].startswith("Su decisión no se aplicó: ")
+    assert detalle["errores"][0]["mensaje"] in detalle["mensaje"]
+    assert server.JOBS == {}
+    assert api.llamadas == []
+
+
+def test_run_decidir_rechaza_antes_de_mirar_si_hay_otra_ejecucion(cliente, caso, api):
+    api.soltar.clear()
+    try:
+        assert cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"}).status_code == 200
+        r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": {"accion": "rehacer_apertura"}})
+        assert r.status_code == 422 and r.json()["detail"]["errores"][0]["campo"] == "instruccion"
+    finally:
+        api.soltar.set()
+        for job in list(server.JOBS):
+            _esperar(cliente, job)
+
+
+def test_run_decidir_rehacer_valido_pasa_la_compuerta(cliente, caso, api):
+    decision = {"accion": "rehacer_apertura", "instruccion": "Más breve."}
+    job_id = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "decidir", "decision": decision}).json()["job_id"]
+    assert _esperar(cliente, job_id)["estado"] == "terminado"
     assert api.llamadas[0][2] == decision
 
 
@@ -410,6 +529,115 @@ def test_run_iniciar(cliente, caso, api):
     assert job["estado"] == "terminado"
     assert job["resultado"]["estado"] == "esperando_decision"
     assert api.llamadas[0][0] == "iniciar"
+
+
+def _dir(caso: str) -> Path:
+    return server.casos_dir() / caso
+
+
+def _hilo_con_fila(ruta: Path) -> None:
+    con = sqlite3.connect(ruta)
+    with con:
+        con.execute("CREATE TABLE checkpoints (thread_id TEXT)")
+        con.execute("INSERT INTO checkpoints VALUES ('x')")
+    con.close()
+
+
+def _previo(caso: str) -> None:
+    previo = _dir(caso) / "salidas" / "trabajo" / "previo.docx"
+    previo.parent.mkdir(parents=True, exist_ok=True)
+    previo.write_bytes(b"PK-previo")
+
+
+def test_run_nuevo_con_trabajo_previo_responde_409(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert detalle["codigo"] == "trabajo_previo" and detalle["trabajo"] == ["la decisión del juez"]
+    assert "Este caso ya tiene la decisión del juez." in detalle["mensaje"] and "papelera" in detalle["mensaje"]
+    assert api.llamadas == [] and not server.JOBS
+
+
+def test_run_nuevo_con_descartar_llama_a_api_con_descartar(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    vistos: list[bool] = []
+
+    def nuevo(caso_dir, descartar=False):
+        vistos.append(descartar)
+        return _envelope("revision")
+
+    api.modulo.nuevo = nuevo
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo", "descartar": True})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert vistos == [True]
+
+
+def test_run_nuevo_sin_trabajo_previo_no_pasa_descartar(cliente, caso, api):
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    assert r.status_code == 200
+    # El módulo falso define ``nuevo(caso_dir)``: pasarle ``descartar`` lo haría fallar con TypeError.
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert api.llamadas[0][0] == "nuevo"
+
+
+def test_run_iniciar_con_hilo_sano_no_responde_409_por_descarte(cliente, caso, api):
+    _hilo_con_fila(_dir(caso) / "hilo.sqlite")
+    _previo(caso)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert api.llamadas[0][0] == "iniciar"
+
+
+def test_run_iniciar_sin_hilo_con_salidas_responde_409(cliente, caso, api):
+    _previo(caso)
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert detalle["codigo"] == "trabajo_previo" and detalle["trabajo"] == ["el borrador", "la decisión del juez"]
+    assert "cuyo historial se perdió" in detalle["mensaje"]
+    assert api.llamadas == []
+    vistos: list[bool] = []
+
+    def iniciar(caso_dir, descartar=False):
+        vistos.append(descartar)
+        return _envelope("esperando_decision")
+
+    api.modulo.iniciar = iniciar
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar", "descartar": True})
+    assert r.status_code == 200
+    assert _esperar(cliente, r.json()["job_id"])["estado"] == "terminado"
+    assert vistos == [True]
+
+
+def test_run_iniciar_con_hilo_basura_y_sin_salidas_crea_job(cliente, caso, api):
+    (_dir(caso) / "hilo.sqlite").write_bytes(b"basura" * 100)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "iniciar"})
+    assert r.status_code == 200
+    _esperar(cliente, r.json()["job_id"])
+    assert api.llamadas[0][0] == "iniciar"
+
+
+def test_run_continuar_no_mira_el_trabajo_previo(cliente, caso, api):
+    (_dir(caso) / "decision.json").write_text("{}", encoding="utf-8")
+    _previo(caso)
+    r = cliente.post(f"/api/casos/{caso}/run", json={"cmd": "continuar"})
+    assert r.status_code == 200
+    _esperar(cliente, r.json()["job_id"])
+    assert api.llamadas[0][0] == "continuar"
+
+
+def test_estado_con_job_activo_no_avisa_historial_perdido(cliente, caso, api):
+    api.modulo.estado = lambda caso_dir: _envelope("revision", historial_perdido=True, trabajo_previo=["el borrador"])
+    assert cliente.get(f"/api/casos/{caso}/estado").json()["historial_perdido"] is True
+    api.soltar.clear()
+    cliente.post(f"/api/casos/{caso}/run", json={"cmd": "nuevo"})
+    durante = cliente.get(f"/api/casos/{caso}/estado").json()
+    assert "historial_perdido" not in durante and "trabajo_previo" not in durante
+    api.soltar.set()
 
 
 def test_revision_llama_a_api_revisar(cliente, caso, api):

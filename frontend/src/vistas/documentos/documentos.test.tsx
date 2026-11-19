@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EstadoServidor, Evento, TerminoRespuesta } from "../../api/contrato";
-import { estadoServidor } from "../../estado";
+import { estadoServidor, toasts } from "../../estado";
 import Documentos from "./index";
 import { Progreso } from "./Progreso";
 import { diasDe, fechaLarga, textoRestantes } from "./termino";
@@ -132,6 +132,7 @@ function base(estado: EstadoCaso, extra: Record<string, Manejador> = {}) {
 beforeEach(() => {
   location.hash = "#/segunda/c1/documentos";
   estadoServidor.value = servidor;
+  toasts.value = [];
 });
 
 afterEach(() => {
@@ -397,6 +398,34 @@ describe("Documentos", () => {
     expect(location.hash).toBe("#/segunda/c1/documentos");
   });
 
+  it("con un job activo no muestra el error transitorio del estado", async () => {
+    base(
+      {
+        ...estadoRevision(),
+        estado: "error",
+        error: "El proceso quedó a medias en apertura. Use continuar para reanudarlo.",
+        job_activo: "j1",
+      },
+      { "GET /api/jobs/j1": () => ok({ id: "j1", caso: "c1", cmd: "iniciar", estado: "corriendo", error: null }) },
+    );
+    render(<Documentos caso="c1" />);
+
+    expect((await screen.findAllByText("Hay una ejecución en curso para este caso.")).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/El proceso quedó a medias en apertura/)).toBeNull();
+  });
+
+  it("con estado corriendo muestra solo el aviso en curso", async () => {
+    base(
+      { ...estadoRevision(), estado: "corriendo", error: null, job_activo: "j1" },
+      { "GET /api/jobs/j1": () => ok({ id: "j1", caso: "c1", cmd: "iniciar", estado: "corriendo", error: null }) },
+    );
+    render(<Documentos caso="c1" />);
+
+    expect((await screen.findAllByText("Hay una ejecución en curso para este caso.")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText("Rol de 001.pdf") as HTMLSelectElement).disabled).toBe(true);
+  });
+
   it("ofrece procesar un caso sin iniciar y muestra los documentos al terminar", async () => {
     let leido = false;
     const llamadas = base(
@@ -415,6 +444,211 @@ describe("Documentos", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Procesar los documentos" }));
     expect(await screen.findByLabelText("Rol de 001.pdf")).toBeTruthy();
     expect(llamadas.find((l) => l.metodo === "POST")?.cuerpo).toEqual({ cmd: "nuevo" });
+  });
+
+  const SIN_LEER: EstadoCaso = { ok: true, estado: "sin_iniciar", salidas: [], resumen: {}, error: null, job_activo: null };
+  const TRABAJO = ["el borrador", "la decisión del juez", "el fallo con sus documentos"];
+  const MENSAJE_NUEVO =
+    "Este caso ya tiene el borrador, la decisión del juez y el fallo con sus documentos. Volver a procesar los documentos los descarta; antes se guarda una copia del caso en la papelera, donde se puede recuperar durante 30 días.";
+  const conflictoDescarte = (mensaje = MENSAJE_NUEVO): Salida => ({ estado: 409, cuerpo: { detail: { codigo: "trabajo_previo", mensaje, trabajo: TRABAJO } } });
+  const terminado = (): EstadoCaso => ({ ...estadoRevision(), estado: "terminado", salidas: ["trabajo/previo.docx"], ingesta: ingesta(DOCS) });
+  const cuerpoDe = (llamadas: Llamada[], ruta = "/api/casos/c1/run") => llamadas.filter((l) => l.metodo === "POST" && l.ruta === ruta).map((l) => l.cuerpo);
+
+  it("si procesar responde 409 por trabajo previo, recarga y pide confirmar antes de descartar", async () => {
+    let avanzo = false;
+    let jobs = 0;
+    const llamadas = base(SIN_LEER, {
+      "GET /api/casos/c1/estado": () => ok(avanzo ? terminado() : SIN_LEER),
+      "POST /api/casos/c1/run": (cuerpo) => {
+        if ((cuerpo as { descartar?: boolean }).descartar) {
+          jobs += 1;
+          return ok({ job_id: "j9" });
+        }
+        avanzo = true;
+        return conflictoDescarte();
+      },
+      "GET /api/jobs/j9": () => ok({ id: "j9", caso: "c1", cmd: "nuevo", estado: "terminado", error: null, resultado: { ok: true, papelera: "c1@20261118T200000000000Z" } }),
+    });
+    render(<Documentos caso="c1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Procesar los documentos" }));
+    const titulo = await screen.findByRole("heading", { name: "¿Volver a procesar los documentos?" });
+    const dialogo = titulo.closest("dialog") as HTMLElement;
+    expect(within(dialogo).getByText(MENSAJE_NUEVO)).toBeTruthy();
+    expect(within(dialogo).getByText(/Si este caso avanzó en otra pestaña o ventana, cancele/)).toBeTruthy();
+    // La pantalla ya cambió a la rama con ingesta y el diálogo no se perdió con la recarga.
+    expect(await screen.findByLabelText("Rol de 001.pdf")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "¿Volver a procesar los documentos?" })).toBeTruthy();
+    expect(llamadas.filter((l) => l.ruta === "/api/casos/c1/estado").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Ya hay una ejecución en curso para este caso.")).toBeNull();
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "nuevo" }]);
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Descartar y volver a procesar" }));
+    await waitFor(() => expect(jobs).toBe(1));
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "nuevo" }, { cmd: "nuevo", descartar: true }]);
+    await waitFor(() => expect(toasts.value.map((t) => t.texto)).toEqual([expect.stringMatching(/Lo anterior se descartó y una copia del caso quedó en la papelera durante 30 días \(c1@20261118T200000000000Z\)/)]));
+  });
+
+  it("cancelar el descarte no envía nada", async () => {
+    const llamadas = base(SIN_LEER, { "POST /api/casos/c1/run": () => conflictoDescarte() });
+    render(<Documentos caso="c1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Procesar los documentos" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Volver a procesar los documentos?" })).closest("dialog") as HTMLElement;
+    expect(document.activeElement).toBe(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(dialogo.hasAttribute("open")).toBe(false));
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "nuevo" }]);
+    expect(location.hash).toBe("#/segunda/c1/documentos");
+  });
+
+  it("si el descarte confirmado falla, lo dice y no vuelve a abrir el diálogo", async () => {
+    base(SIN_LEER, {
+      "POST /api/casos/c1/run": (cuerpo) => ((cuerpo as { descartar?: boolean }).descartar ? fallo(500, "Disco lleno.") : conflictoDescarte()),
+    });
+    render(<Documentos caso="c1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Procesar los documentos" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Volver a procesar los documentos?" })).closest("dialog") as HTMLElement;
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Descartar y volver a procesar" }));
+
+    expect(await screen.findByText("Disco lleno.")).toBeTruthy();
+    expect(dialogo.hasAttribute("open")).toBe(false);
+  });
+
+  const perdido = (extra: Partial<EstadoCaso> = {}): EstadoCaso => ({
+    ...estadoRevision(),
+    salidas: ["trabajo/previo.docx", "02SegundaInstancia/C01Principal/003FalloSegunda1.docx"],
+    historial_perdido: true,
+    trabajo_previo: ["la decisión del juez"],
+    ...extra,
+  });
+
+  it("con el historial perdido avisa, deja los roles de solo lectura y pide confirmar antes de iniciar", async () => {
+    const llamadas = base(perdido(), { "POST /api/casos/c1/run": () => ok({ job_id: "j7" }) });
+    render(<Documentos caso="c1" />);
+
+    expect(await screen.findByText("Este caso perdió su historial de redacción")).toBeTruthy();
+    expect(screen.getByText(/Tiene la decisión del juez de una redacción anterior/)).toBeTruthy();
+    expect(screen.getByText(/antes se guarda una copia del caso en la papelera/)).toBeTruthy();
+    expect(screen.queryByText(/La redacción ya inició/)).toBeNull();
+    expect((screen.getByLabelText("Rol de 001.pdf") as HTMLSelectElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const titulo = await screen.findByRole("heading", { name: "¿Iniciar la redacción de nuevo?" });
+    const dialogo = titulo.closest("dialog") as HTMLElement;
+    expect(within(dialogo).getByText(/Este caso tiene la decisión del juez de una redacción anterior cuyo historial se perdió\. Iniciar la redacción los descarta; antes se guarda una copia/)).toBeTruthy();
+    expect(screen.queryByLabelText("Clave de la API")).toBeNull();
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Descartar e iniciar" }));
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "iniciar", descartar: true }]);
+  });
+
+  it("cancelar el descarte de «Iniciar redacción» no envía nada y la confirmación no se arrastra", async () => {
+    const llamadas = base(perdido(), { "POST /api/casos/c1/run": () => ok({ job_id: "j7" }) });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByText("Este caso perdió su historial de redacción");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Iniciar la redacción de nuevo?" })).closest("dialog") as HTMLElement;
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(dialogo.hasAttribute("open")).toBe(false));
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    expect(await screen.findByRole("heading", { name: "¿Iniciar la redacción de nuevo?" })).toBeTruthy();
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+  });
+
+  it("confirmar el descarte de «Iniciar redacción» conserva la confirmación a través del diálogo de la clave", async () => {
+    let clave = false;
+    const llamadas = base(perdido(), {
+      "GET /api/estado-servidor": () => ok({ ...servidor, api_key: clave }),
+      "POST /api/api-key": () => {
+        clave = true;
+        return ok({ api_key: true });
+      },
+      "POST /api/casos/c1/run": () => ok({ job_id: "j7" }),
+    });
+    estadoServidor.value = { ...servidor, api_key: false };
+    render(<Documentos caso="c1" />);
+
+    await screen.findByText("Este caso perdió su historial de redacción");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Iniciar la redacción de nuevo?" })).closest("dialog") as HTMLElement;
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Descartar e iniciar" }));
+
+    const campo = await screen.findByLabelText("Clave de la API");
+    expect(llamadas.some((l) => l.ruta.endsWith("/run"))).toBe(false);
+    fireEvent.input(campo, { target: { value: "sk-ant-prueba" } });
+    fireEvent.click(within(campo.closest("dialog") as HTMLElement).getByRole("button", { name: "Guardar y continuar" }));
+
+    await waitFor(() => expect(location.hash).toBe("#/segunda/c1/proceso"));
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "iniciar", descartar: true }]);
+  });
+
+  it("si el servidor responde 409 de descarte a «Iniciar redacción» (estado viejo), recarga y pide confirmar", async () => {
+    const llamadas = base(estadoRevision(), {
+      "POST /api/casos/c1/run": () => conflictoDescarte("Este caso tiene el borrador de una redacción anterior cuyo historial se perdió. Iniciar la redacción los descarta; antes se guarda una copia."),
+    });
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar redacción" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Iniciar la redacción de nuevo?" })).closest("dialog") as HTMLElement;
+    expect(within(dialogo).getByText(/Este caso tiene el borrador de una redacción anterior/)).toBeTruthy();
+    expect(screen.queryByText("Ya hay una ejecución en curso para este caso.")).toBeNull();
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "iniciar" }]);
+  });
+
+  it("con un hilo dañado ofrece volver a procesar los documentos", async () => {
+    let jobs = 0;
+    const llamadas = base(
+      {
+        ok: false,
+        estado: "error",
+        salidas: ["trabajo/previo.docx"],
+        resumen: null,
+        error: "El historial de redacción de este caso (hilo.sqlite) está dañado y no se puede leer.",
+        job_activo: null,
+        ingesta: ingesta(DOCS),
+        historial_perdido: true,
+        trabajo_previo: ["el borrador"],
+      },
+      {
+        "POST /api/casos/c1/run": (cuerpo) => {
+          if ((cuerpo as { descartar?: boolean }).descartar) {
+            jobs += 1;
+            return ok({ job_id: "j8" });
+          }
+          return conflictoDescarte();
+        },
+        "GET /api/jobs/j8": () => ok({ id: "j8", caso: "c1", cmd: "nuevo", estado: "terminado", error: null }),
+      },
+    );
+    render(<Documentos caso="c1" />);
+
+    expect(await screen.findByText("Este caso perdió su historial de redacción")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Volver a procesar los documentos" }));
+    const dialogo = (await screen.findByRole("heading", { name: "¿Volver a procesar los documentos?" })).closest("dialog") as HTMLElement;
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "nuevo" }]);
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Descartar y volver a procesar" }));
+    await waitFor(() => expect(jobs).toBe(1));
+    expect(cuerpoDe(llamadas)).toEqual([{ cmd: "nuevo" }, { cmd: "nuevo", descartar: true }]);
+  });
+
+  it("sin historial perdido no muestra el aviso ni el diálogo", async () => {
+    base(estadoRevision());
+    render(<Documentos caso="c1" />);
+
+    await screen.findByLabelText("Rol de 001.pdf");
+    expect(screen.queryByText("Este caso perdió su historial de redacción")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "¿Iniciar la redacción de nuevo?" })).toBeNull();
+    expect((screen.getByLabelText("Rol de 001.pdf") as HTMLSelectElement).disabled).toBe(false);
   });
 
   it("deja la clasificación en solo lectura cuando la redacción ya inició", async () => {

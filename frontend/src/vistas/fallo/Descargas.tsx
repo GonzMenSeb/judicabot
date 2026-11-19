@@ -16,6 +16,7 @@ const ETIQUETA_ESTADO: Record<EstadoCaso["estado"], string> = {
   revision: "Documentos en revisión",
   incompleto: "Documentos incompletos",
   esperando_decision: "Esperando su decisión",
+  corriendo: "Proceso en curso",
   terminado: "Fallo generado",
   error: "Proceso con error",
 };

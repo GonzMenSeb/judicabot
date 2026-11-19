@@ -20,7 +20,7 @@ export interface MetadatosEstado {
 
 export interface EstadoCaso {
   ok?: boolean;
-  estado: Exclude<EstadoCasoApi, "corriendo">;
+  estado: EstadoCasoApi;
   salidas?: string[];
   resumen?: {
     citas?: CitaEstado[];
@@ -29,6 +29,8 @@ export interface EstadoCaso {
   };
   error?: string | null;
   job_activo?: string | null;
+  /** Salidas o decisión de una redacción anterior sin un hilo que las respalde (o con el hilo dañado). */
+  historial_perdido?: boolean;
 }
 
 export interface SalidasRespuesta {

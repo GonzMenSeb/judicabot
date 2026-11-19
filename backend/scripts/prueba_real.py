@@ -1140,7 +1140,8 @@ def _preparar_caso(sesion: Sesion, reiniciar: bool) -> None:
     cs.preparar(carpeta, "anthropic")
     ajustar_config(carpeta)
     verificar_config(cfgmod.cargar(carpeta))
-    nuevo = api.nuevo(carpeta)
+    # Con --reiniciar el hilo pagado ya se confirmó arriba: se descarta (antes se guarda una copia en la papelera).
+    nuevo = api.nuevo(carpeta, descartar=True) if reiniciar else api.nuevo(carpeta)
     if nuevo["estado"] != "revision":
         raise ErrorUso(f"La ingesta del caso sintético no quedó en revisión: {nuevo['estado']} {nuevo['error']}")
     verificar_contenido(carpeta)

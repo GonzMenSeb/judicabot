@@ -29,12 +29,15 @@ import {
   construirRevision,
   dividirMotivos,
   filasJev,
+  guardarCorreccionVista,
   guardarRevisados,
   irA,
+  leerCorreccionVista,
   leerRevisados,
   limitePasos,
   marcasDelIndice,
   redaccionPorNodo,
+  resumirInstruccion,
   seccionesDeCitas,
   tituloDelCaso,
 } from "./datos";
@@ -134,6 +137,8 @@ export default function Borrador({ caso }: PropsVista) {
   const [resolviendo, setResolviendo] = useState(false);
   const [sucio, setSucio] = useState(false);
   const [apagando, setApagando] = useState(false);
+  // La corrección cuyo aviso se cerró en esta pantalla; además queda guardada en el navegador (si este lo permite).
+  const [correccionCerrada, setCorreccionCerrada] = useState<{ caso: string; fecha: string } | null>(null);
   const guardia = useGuardiaSalida(sucio);
   const recarga = useRef<AbortController | null>(null);
   // Vuelve a leer el borrador previo, las ediciones y el estado sin pasar por la pantalla de carga: tras guardar una
@@ -531,6 +536,21 @@ export default function Borrador({ caso }: PropsVista) {
   const modoEdicion = editando && editable;
   const conflictos = editable ? (ediciones?.conflictos ?? []) : [];
   const radicado = metadatos?.cui_2a || metadatos?.cui_1a;
+  // Qué se rehízo con la última corrección: el servidor la guarda en `resumen.decision` y su fecha la identifica para no repetir el aviso.
+  const ultimaDecision = estado?.estado === "esperando_decision" && !enCurso ? resumen?.decision : null;
+  const fechaCorreccion = typeof ultimaDecision?.fecha === "string" && ultimaDecision.fecha !== "" ? ultimaDecision.fecha : null;
+  const correccionRehecha =
+    fechaCorreccion !== null &&
+    (ultimaDecision?.accion === "rehacer_apertura" || ultimaDecision?.accion === "rehacer_consideraciones") &&
+    !(correccionCerrada?.caso === caso && correccionCerrada.fecha === fechaCorreccion) &&
+    leerCorreccionVista(caso) !== fechaCorreccion
+      ? ultimaDecision
+      : null;
+  const entenderCorreccion = () => {
+    if (fechaCorreccion === null) return;
+    guardarCorreccionVista(caso, fechaCorreccion);
+    setCorreccionCerrada({ caso, fecha: fechaCorreccion });
+  };
 
   const cabecera = (
     <>
@@ -630,6 +650,13 @@ export default function Borrador({ caso }: PropsVista) {
           Hay una redacción en curso para este caso. El borrador puede cambiar cuando termine.
         </Aviso>
       )}
+      {correccionRehecha && (
+        <Aviso tipo="info" class="bor-aviso" acciones={<Boton onClick={entenderCorreccion}>Entendido</Boton>}>
+          {correccionRehecha.accion === "rehacer_apertura"
+            ? `Se rehicieron las secciones I a IV según su corrección: «${resumirInstruccion(correccionRehecha.instruccion ?? "")}» y, después, las consideraciones desde cero (sin esta instrucción). El texto fijo de la plantilla no cambia con una corrección.`
+            : `Se rehizo la sección V según su corrección: «${resumirInstruccion(correccionRehecha.instruccion ?? "")}». El resto del borrador, incluido el texto fijo de la plantilla, quedó igual.`}
+        </Aviso>
+      )}
       {errorVisor && (
         <Aviso tipo="error" class="bor-aviso" acciones={<Boton onClick={() => setErrorVisor(false)}>Cerrar</Boton>}>
           No se pudo abrir el visor de evidencia. Revise la conexión y vuelva a intentarlo.
@@ -672,7 +699,7 @@ export default function Borrador({ caso }: PropsVista) {
             </span>
             <label
               class="bor-interruptor"
-              title="Marca el texto fijo que sale de la plantilla. Lo que queda sin marca lo redactó el modelo a partir del expediente."
+              title="Marca el texto de plantilla: el texto fijo del sistema (Competencia, procedibilidad general, transición) y los datos que salen del expediente (encabezado, Asunto). Una corrección no cambia el texto fijo; el Asunto sí se rehace con «Rehacer la apertura». Lo que queda sin marca lo redactó el modelo."
             >
               <input type="checkbox" role="switch" aria-label="Marcar texto de plantilla" checked={plantilla} onChange={(e) => setPlantilla(e.currentTarget.checked)} />
               <span class="bor-pista" aria-hidden="true" />
@@ -880,6 +907,7 @@ export default function Borrador({ caso }: PropsVista) {
         <DialogoCorrecciones
           abierto={corrigiendo}
           caso={caso}
+          proveedor={estado?.proveedor_llm ?? null}
           onCerrar={() => setCorrigiendo(false)}
           onEnviado={(jobId) => {
             casoActual.value = caso;

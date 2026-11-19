@@ -151,6 +151,8 @@ function SinEjecucion({ caso, estado, alNuevoJob, alReintentar }: PropsSin) {
         caso={caso}
         mensaje={estado.error ?? "El proceso quedó a medias."}
         cmd={accion === "decidir" ? "decidir" : null}
+        tope={Boolean(estado.tope_intentos)}
+        proveedor={estado.proveedor_llm ?? null}
         alNuevoJob={alNuevoJob}
         alReintentar={alReintentar}
       />

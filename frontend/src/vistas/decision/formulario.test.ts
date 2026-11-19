@@ -4,6 +4,7 @@ import {
   aClaveInterna,
   aDecision,
   advertenciasLocales,
+  agregarDerecho,
   agregarLibre,
   agregarOrden,
   clavesOrdenadas,
@@ -14,14 +15,16 @@ import {
   fechaLarga,
   formularioInicial,
   hallazgosLocales,
+  leerHallazgos,
   MSG,
   moverClave,
   ordinal,
+  plazoEnviado,
   sanear,
   validar,
 } from "./formulario";
 import { partirNegritas } from "./Resuelve";
-import type { Formulario, PayloadDecision } from "./tipos";
+import type { Formulario, OrdenForm, PayloadDecision } from "./tipos";
 
 const payload: PayloadDecision = {
   reparos: [{ id: "R1", sintesis: "uno" }, { id: "R2", sintesis: "dos" }],
@@ -140,6 +143,69 @@ describe("validar (reglas del formulario legado)", () => {
   });
 });
 
+/** El formulario completo con las órdenes dadas (la primera parte de la automática y las demás de `ordenNueva`). */
+function conOrdenes(...cambios: Partial<OrdenForm>[]): Formulario {
+  const f = completo();
+  const base = f.ordenes[0];
+  if (!base) throw new Error("falta la orden automática");
+  return {
+    ...f,
+    ordenes: cambios.map((c, i) => ({ ...base, id: base.id + i, destinatario: "la EPS X", conducta: "cumpla", ...c })),
+  };
+}
+
+const plazos = (f: Formulario) =>
+  validar(aDecision(f))
+    .filter((h) => /\.plazo\.n$/.test(h.campo))
+    .map((h) => [h.campo, h.mensaje]);
+
+describe("plazo de las órdenes", () => {
+  it("validar exige un plazo entero y en rango solo cuando la orden lo usa", () => {
+    expect(plazos(conOrdenes({ n: "1.5" }))).toEqual([["ordenes.0.plazo.n", MSG.plazoEntero]]);
+    expect(plazos(conOrdenes({ n: "0" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "-5" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "" }))).toEqual([["ordenes.0.plazo.n", MSG.plazo]]);
+    expect(plazos(conOrdenes({ n: "1000000" }))).toEqual([
+      ["ordenes.0.plazo.n", "El plazo de la orden 1 no puede superar 999.999."],
+    ]);
+    expect(plazos(conOrdenes({ n: "48" }, { n: "10000000" }))).toEqual([
+      ["ordenes.1.plazo.n", "El plazo de la orden 2 no puede superar 999.999."],
+    ]);
+    expect(plazos(conOrdenes({ n: "999999" }))).toEqual([]);
+    expect(plazos(conOrdenes({ verbo: "ADVERTIR", n: "0" }))).toEqual([]);
+    expect(plazos(conOrdenes({ verbo: "PREVENIR", n: "0" }))).toEqual([]);
+    expect(plazos(conOrdenes({ n: "48" }, { mismo: true, n: "0" }))).toEqual([]);
+  });
+
+  it("aDecision manda el plazo entero cuando la orden no lo usa", () => {
+    const plazo = (f: Formulario, i = 0) => aDecision(f).ordenes[i]?.plazo.n;
+    expect(plazo(conOrdenes({ verbo: "ADVERTIR", n: "1.5" }))).toBe(1);
+    expect(plazo(conOrdenes({ verbo: "PREVENIR", n: "1.5" }))).toBe(1);
+    // Una ORDENAR con decimales viaja tal cual para que `validar` y el servidor la marquen.
+    expect(plazo(conOrdenes({ n: "1.5" }))).toBe(1.5);
+    expect(plazoEnviado(conOrdenes({ n: "1.5" }).ordenes[0] as OrdenForm, false)).toBe(1.5);
+    const dos = conOrdenes({ n: "48" }, { mismo: true, n: "1.5" });
+    expect(plazo(dos, 0)).toBe(48);
+    expect(plazo(dos, 1)).toBe(1);
+    expect(plazo(conOrdenes({ n: "" }))).toBe(0);
+  });
+});
+
+describe("leerHallazgos", () => {
+  it("devuelve los {campo, mensaje} bien formados de detalle.errores", () => {
+    expect(leerHallazgos({ errores: [{ campo: "fecha_fallo", mensaje: "x" }, 3, { campo: "eje" }] })).toEqual([
+      { campo: "fecha_fallo", mensaje: "x" },
+    ]);
+  });
+
+  it.each([["texto"], [null], [{ errores: [] }], [{ errores: [3] }], [{ mensaje: "x" }], [undefined]])(
+    "devuelve null con %j",
+    (detalle) => {
+      expect(leerHallazgos(detalle)).toBeNull();
+    },
+  );
+});
+
 describe("aDecision (claves del legado)", () => {
   it("arma el cuerpo con las mismas claves que el formulario anterior", () => {
     const d = aDecision(completo());
@@ -164,6 +230,18 @@ describe("aDecision (claves del legado)", () => {
     expect(d.orden_numerales).toEqual([]);
     expect(d.compulsa).toBeNull();
     expect(validar(d)).toEqual([]);
+  });
+
+  it("aDecision recorta el nombre de los derechos y descarta los vacíos", () => {
+    const f = completo();
+    const base = f.derechos[0];
+    if (!base) throw new Error("falta el derecho extraído");
+    const derechos = [
+      { ...base, nombre: " la pensión " },
+      { ...base, id: base.id + 100, nombre: "" },
+      { ...base, id: base.id + 101, nombre: "   " },
+    ];
+    expect(aDecision({ ...f, derechos }).derechos).toEqual([{ derecho: "la pensión", disposicion: "AMPARA" }]);
   });
 
   it("solo envía derechos al amparar o negar", () => {
@@ -311,6 +389,129 @@ describe("utilidades", () => {
     const guardado = { ...inicial(), reparos: [{ id: "R1", disposicion: "DESESTIMA" as const, nota: "n" }] };
     const f = sanear(guardado, payload);
     expect(f?.reparos).toEqual([{ id: "R1", disposicion: "DESESTIMA", nota: "n" }, { id: "R2", disposicion: "ACOGE", nota: "" }]);
+  });
+
+  it("formularioInicial registra los derechos con los que se armó", () => {
+    expect(inicial().derechosBase).toEqual(["salud", "mínimo vital"]);
+    expect(formularioInicial(null, "Juez Demo").derechosBase).toEqual([]);
+  });
+
+  it("sanear reconcilia los derechos con una extracción nueva", () => {
+    const guardado = inicial();
+    guardado.derechos = guardado.derechos.map((d) => (d.nombre === "salud" ? { ...d, disposicion: "NIEGA" as const } : d));
+    const lista = ["salud", "vida", "dignidad humana"];
+    const f = sanear(guardado, { ...payload, derechos_invocados: lista });
+    expect(f?.derechos.map((d) => d.nombre)).toEqual(lista);
+    expect(f?.derechos.map((d) => d.disposicion)).toEqual(["NIEGA", "AMPARA", "AMPARA"]);
+    expect(f?.derechos.every((d) => !d.propio)).toBe(true);
+    expect(f?.derechosBase).toEqual(lista);
+    expect(new Set(f?.derechos.map((d) => d.id)).size).toBe(3);
+    expect(f?.siguienteId).toBe(guardado.siguienteId + 2);
+  });
+
+  it("sanear conserva los derechos que agregó el juez", () => {
+    const guardado = agregarDerecho(inicial(), "debido proceso");
+    const f = sanear(guardado, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(f?.derechos.map((d) => d.nombre)).toEqual(["salud", "vida", "debido proceso"]);
+    expect(f?.derechos.find((d) => d.nombre === "debido proceso")?.propio).toBe(true);
+    expect(f?.derechosBase).toEqual(["salud", "vida"]);
+  });
+
+  it("sanear no duplica un derecho propio que la extracción nueva también trae", () => {
+    const base = agregarDerecho(inicial(), "vida");
+    const propio = base.derechos.find((d) => d.nombre === "vida");
+    const guardado = { ...base, derechos: base.derechos.map((d) => (d.nombre === "vida" ? { ...d, disposicion: "NIEGA" as const } : d)) };
+    const f = sanear(guardado, { ...payload, derechos_invocados: ["salud", "Vida "] });
+    expect(f?.derechos.map((d) => d.nombre)).toEqual(["salud", "vida"]);
+    const vida = f?.derechos.find((d) => d.nombre === "vida");
+    expect(vida?.propio).toBe(false);
+    expect(vida?.id).toBe(propio?.id);
+    expect(vida?.disposicion).toBe("NIEGA");
+  });
+
+  it("sanear sigue alineado tras dos reaperturas seguidas", () => {
+    const g1 = sanear(inicial(), { ...payload, derechos_invocados: ["salud", "vida", "mínimo vital"] });
+    expect(g1?.derechos.map((d) => d.nombre)).toEqual(["salud", "vida", "mínimo vital"]);
+    expect(g1?.derechosBase).toEqual(["salud", "vida", "mínimo vital"]);
+    if (!g1) throw new Error("sanear devolvió null");
+    const g2 = sanear(g1, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(g2?.derechos.map((d) => d.nombre)).toEqual(["salud", "vida"]);
+    expect(g2?.derechosBase).toEqual(["salud", "vida"]);
+  });
+
+  it("sanear conserva la disposición de «salud» tras dos reaperturas seguidas", () => {
+    const guardado = inicial();
+    guardado.derechos = guardado.derechos.map((d) => (d.nombre === "salud" ? { ...d, disposicion: "NIEGA" as const } : d));
+    const g1 = sanear(guardado, { ...payload, derechos_invocados: ["salud", "vida", "mínimo vital"] });
+    if (!g1) throw new Error("sanear devolvió null");
+    const g2 = sanear(g1, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(g2?.derechos.map((d) => [d.nombre, d.disposicion])).toEqual([
+      ["salud", "NIEGA"],
+      ["vida", "AMPARA"],
+    ]);
+  });
+
+  it("sanear conserva el orden de la extracción nueva", () => {
+    const guardado = inicial();
+    guardado.derechos = guardado.derechos.map((d) => (d.nombre === "salud" ? { ...d, disposicion: "NIEGA" as const } : d));
+    const f = sanear(guardado, { ...payload, derechos_invocados: ["vida", "salud"] });
+    expect(f?.derechos.map((d) => [d.nombre, d.disposicion])).toEqual([
+      ["vida", "AMPARA"],
+      ["salud", "NIEGA"],
+    ]);
+    expect(f?.derechosBase).toEqual(["vida", "salud"]);
+  });
+
+  it("sanear tolera una extracción con un derecho repetido", () => {
+    const nuevo = { ...payload, derechos_invocados: ["salud", "salud", "mínimo vital"] };
+    const f = sanear(inicial(), nuevo);
+    expect(f?.derechos.map((d) => d.nombre)).toEqual(["salud", "salud", "mínimo vital"]);
+    expect(f?.derechos.every((d) => !d.propio)).toBe(true);
+    expect(new Set(f?.derechos.map((d) => d.id)).size).toBe(3);
+    expect(f?.derechosBase).toHaveLength(3);
+    expect(sanear(f, nuevo)).toEqual(f);
+  });
+
+  it("sanear no toca los nombres corregidos si la extracción no cambió", () => {
+    const guardado = inicial();
+    guardado.derechos = guardado.derechos.map((d, i) => (i === 0 ? { ...d, nombre: "la salud integral" } : d));
+    const f = sanear(guardado, payload);
+    expect(f?.derechos[0]?.nombre).toBe("la salud integral");
+    expect(f).toEqual(guardado);
+  });
+
+  it("sanear conserva el derecho renombrado cuyo original sigue vigente", () => {
+    const guardado = inicial();
+    guardado.derechos = guardado.derechos.map((d) => (d.nombre === "salud" ? { ...d, nombre: "la salud integral", disposicion: "NIEGA" as const } : d));
+    const f = sanear(guardado, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(f?.derechos.map((d) => [d.nombre, d.disposicion])).toEqual([
+      ["la salud integral", "NIEGA"],
+      ["vida", "AMPARA"],
+    ]);
+  });
+
+  it("sanear no reconcilia sin derechosBase o sin payload", () => {
+    const nuevo = { ...payload, derechos_invocados: ["salud", "vida"] };
+    const viejo: Partial<Formulario> = inicial();
+    delete viejo.derechosBase;
+    expect(sanear(viejo, nuevo)?.derechos).toEqual(inicial().derechos);
+    expect(sanear(inicial(), null)?.derechos).toEqual(inicial().derechos);
+    const raro = { ...inicial(), derechosBase: ["salud", 3] as unknown as string[] };
+    expect(sanear(raro, nuevo)?.derechos).toEqual(inicial().derechos);
+    const noLista = { ...inicial(), derechosBase: "salud" as unknown as string[] };
+    expect(sanear(noLista, nuevo)?.derechos).toEqual(inicial().derechos);
+  });
+
+  it("sanear no reconcilia si los derechos extraídos no se alinean con la base", () => {
+    const guardado = { ...inicial(), derechosBase: ["salud"] };
+    expect(sanear(guardado, { ...payload, derechos_invocados: ["vida"] })?.derechos).toEqual(inicial().derechos);
+  });
+
+  it("sanear es idempotente", () => {
+    const nuevo = { ...payload, derechos_invocados: ["vida", "salud", "dignidad humana"] };
+    const guardado = agregarDerecho(inicial(), "debido proceso");
+    const una = sanear(guardado, nuevo);
+    expect(sanear(una, nuevo)).toEqual(una);
   });
 
   it("sanear completa la causal en borradores anteriores y descarta valores desconocidos", () => {

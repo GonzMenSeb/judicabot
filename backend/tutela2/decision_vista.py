@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import threading
 from collections import OrderedDict
@@ -13,6 +14,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from tutela2 import formulas
 from tutela2.models import (
+    PLAZO_MAXIMO,
     Decision,
     DisposicionDerecho,
     DisposicionReparo,
@@ -22,6 +24,7 @@ from tutela2.models import (
     Plazo,
     colapsar_texto,
     limpiar_control,
+    normalizar_decision,
 )
 
 log = logging.getLogger("tutela2.decision_vista")
@@ -33,7 +36,6 @@ MAX_LISTA = 50
 MAX_REPAROS = 100
 MAX_ORDEN_NUMERALES = 200
 MAX_LITERALES = 26
-PLAZO_MAXIMO = 999_999
 ESPERA_SQLITE_S = 0.5
 CACHE_MAX = 128
 
@@ -252,7 +254,9 @@ def _ordenes(v: Any, h: _Hallazgos) -> list[dict[str, Any]]:
         orden["literales"] = _nombres(
             x.get("literales"), f"{base}.literales", f"Los literales de la orden {n}", h, MAX_LITERALES
         )
-        plazo = _plazo(x.get("plazo"), f"{base}.plazo", n, h)
+        # El plazo solo se exige a quien lo usa; con ``[]`` los errores del plazo sin uso se descartan y ``_plazo`` sigue limpiando.
+        usa_plazo = (verbo or "ORDENAR") == "ORDENAR" and x.get("mismo_termino") is not True
+        plazo = _plazo(x.get("plazo"), f"{base}.plazo", n, h if usa_plazo else [])
         if plazo is not None:
             orden["plazo"] = plazo
         salida.append(orden)
@@ -361,9 +365,14 @@ _CAMPO_POR_ERROR = (
 )
 
 
+_PLAZO_DE_ORDEN = re.compile(r"^El plazo de la orden (\d+)\b")
+
+
 def _campos_del_error(mensaje: str, dec: Decision) -> list[str]:
     if mensaje == MSG_LIBRE_VACIO:
         return [f"numerales_libres.{i}" for i, t in enumerate(dec.numerales_libres) if not t.strip()]
+    if (m := _PLAZO_DE_ORDEN.match(mensaje)):
+        return [f"ordenes.{int(m.group(1)) - 1}.plazo.n"]
     for prefijo, campo in _CAMPO_POR_ERROR:
         if mensaje.startswith(prefijo):
             return [campo]
@@ -393,12 +402,41 @@ def vista_error(mensaje: str) -> dict[str, Any]:
     }
 
 
+def _evaluar(parcial: dict[str, Any]) -> tuple[Decision, _Hallazgos]:
+    hallazgos: _Hallazgos = []
+    dec = Decision.model_validate(_limpiar(parcial, hallazgos))
+    return dec, _faltantes(dec, hallazgos)
+
+
+MSG_SIN_ACCION = "Falta indicar la acción de la decisión: decidir, rehacer_apertura o rehacer_consideraciones."
+MSG_FORMATO = "La decisión no tiene el formato esperado."
+
+
+def faltantes_de(parcial: Any) -> list[dict[str, str]]:
+    """Lo que impide aceptar la decisión: los faltantes de la vista previa más lo que solo el grafo rechazaría."""
+    if not isinstance(parcial, dict):
+        return [{"campo": "decision", "mensaje": "La decisión debe ser un objeto."}]
+    try:
+        _, faltantes = _evaluar(parcial)
+        if parcial.get("accion") not in ACCIONES and not any(c == "accion" for c, _ in faltantes):
+            faltantes.append(("accion", MSG_SIN_ACCION))  # _limpiar asume «decidir» para que la vista funcione a medias
+        if not faltantes:
+            # Lo que verá el grafo: ``api.decidir`` normaliza el cuerpo y ``nodo_decision`` corre ``errores()`` sobre el modelo
+            # sin la limpieza de la vista (que recorta fechas y descarta valores). Aquí se repite exactamente eso.
+            crudo = Decision.model_validate(normalizar_decision(parcial))
+            faltantes = [(c, m) for m in crudo.errores() for c in _campos_del_error(m, crudo)]
+    except Exception:
+        # La ruta de la vista previa (``rutas_decision.vista_decision``) también atrapa todo: una decisión que revienta
+        # la limpieza no es una decisión aplicable, y un 500 con traza no le sirve al juez.
+        log.warning("La decisión no se pudo evaluar", exc_info=True)
+        return [{"campo": "decision", "mensaje": MSG_FORMATO}]
+    return [{"campo": c, "mensaje": m} for c, m in faltantes]
+
+
 def decision_vista(parcial: Any, md: Metadatos, hoy: date | None = None) -> dict[str, Any]:
     if not isinstance(parcial, dict):
         return vista_error("La decisión debe ser un objeto.")
-    hallazgos: _Hallazgos = []
-    dec = Decision.model_validate(_limpiar(parcial, hallazgos))
-    faltantes = _faltantes(dec, hallazgos)
+    dec, faltantes = _evaluar(parcial)
     return {
         "numerales": [
             {"clave": n.clave, "texto": n.texto, "negritas": list(n.negritas)} for n in formulas.numerales(dec, md)

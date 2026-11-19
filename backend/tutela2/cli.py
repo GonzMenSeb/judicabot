@@ -62,6 +62,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--referencia", type=Path, help="Carpeta referencia/ (solo para jev-bench)")
     parser.add_argument("--invertir", action="store_true", help="Repite con las opciones en orden inverso (solo para jev-bench)")
     parser.add_argument("--salida", type=Path, help="Archivo del informe, fuera del repositorio (solo para jev-bench)")
+    parser.add_argument(
+        "--forzar",
+        action="store_true",
+        help="Solo para continuar: reintenta aunque la IA haya fallado varias veces seguidas (puede volver a cobrar el expediente)",
+    )
+    parser.add_argument(
+        "--descartar",
+        action="store_true",
+        help=(
+            "Con nuevo o iniciar: confirma que se descarten el borrador, la decisión y el fallo ya generados "
+            "(antes se guarda una copia del caso en la papelera)"
+        ),
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -81,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
             resultado = api.decidir(args.caso, json.loads(args.decision.read_text(encoding="utf-8")))
         elif args.comando == "revisar":
             resultado = api.revisar(args.caso, _json(args.roles), _json(args.auto))
+        elif args.comando == "continuar":
+            resultado = api.continuar(args.caso, forzar=args.forzar)
+        elif args.comando in ("nuevo", "iniciar"):
+            resultado = getattr(api, args.comando)(args.caso, descartar=args.descartar)
         else:
             resultado = getattr(api, args.comando)(args.caso)
 

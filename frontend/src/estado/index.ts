@@ -11,7 +11,7 @@ export const preferencias = signal<Preferencias>({ modelo: null });
 export const versionCasos = signal(0);
 
 export { sincronizarDataset } from "./dataset";
-export { diaIso, fechaCorta, fechaRelativa, nombreModelo, plural, pluralizar, porcentaje, textoDiasRestantes } from "./formato";
+export { diaIso, enumerar, fechaCorta, fechaRelativa, nombreModelo, plural, pluralizar, porcentaje, textoDiasRestantes } from "./formato";
 export {
   cargarEstadoServidor,
   claveActiva,

@@ -171,11 +171,36 @@ describe("Fallo", () => {
     expect(screen.queryByRole("link", { name: "Descargar fallo" })).toBeNull();
   });
 
+  it("con el proceso corriendo y sin fallo dice que sigue en curso y enlaza al avance", async () => {
+    responder({
+      vista: new ErrorApi(404, "El fallo aún no existe.", "El fallo aún no existe."),
+      salidas: { archivos: [`${P}/001ActaRepartoSegunda.pdf`] },
+      estado: { estado: "corriendo", salidas: [], resumen: {}, job_activo: "j1" },
+    });
+    render(<Fallo caso="caso-1" />);
+    expect(await screen.findByText("El proceso sigue en curso; el fallo se genera al terminar.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ver el avance" }).getAttribute("href")).toBe("#/segunda/caso-1/proceso");
+  });
+
   it("si el fallo existe sin vista previa, ofrece la descarga y lo explica", async () => {
     responder({ vista: new ErrorApi(404, "sin vista", "sin vista") });
     render(<Fallo caso="caso-1" />);
     expect(await screen.findByText("El fallo no tiene vista previa")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Descargar fallo" })).toBeTruthy();
+  });
+
+  it("avisa que el fallo es de una redacción anterior si el caso perdió su historial", async () => {
+    responder({ estado: { ...ESTADO, estado: "revision", historial_perdido: true } });
+    render(<Fallo caso="caso-1" />);
+    expect(await screen.findByText(/Este fallo es de una redacción anterior: el caso perdió su historial de redacción/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Descargar fallo" })).toBeTruthy();
+  });
+
+  it("sin historial perdido no muestra ese aviso", async () => {
+    responder();
+    render(<Fallo caso="caso-1" />);
+    await screen.findByRole("heading", { name: "Vista previa del fallo" });
+    expect(screen.queryByText(/redacción anterior/)).toBeNull();
   });
 
   it("muestra el estado real cuando el caso no está terminado", async () => {

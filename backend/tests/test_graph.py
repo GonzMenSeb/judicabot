@@ -571,7 +571,7 @@ def test_api_nuevo_reinicia_el_hilo(caso):
     api.iniciar(caso)
     api.decidir(caso, DECISION)
     assert (caso / "salidas" / FALLO_DOCX).exists() and (caso / "decision.json").exists()
-    r = api.nuevo(caso)
+    r = api.nuevo(caso, descartar=True)
     assert r["estado"] == "revision"
     assert r["salidas"] == [AUTO]
     assert not (caso / "decision.json").exists() and not (caso / "hilo.sqlite").exists()
@@ -582,7 +582,7 @@ def test_api_nuevo_incompleto_no_deja_salidas_viejas(caso, monkeypatch):
     api.iniciar(caso)
     api.decidir(caso, DECISION)
     monkeypatch.setattr(ingest, "ingerir", lambda d, c: ingesta_sintetica(["impugnacion"]), raising=False)
-    r = api.nuevo(caso)
+    r = api.nuevo(caso, descartar=True)
     assert r["estado"] == "incompleto"
     assert set(r["salidas"]) == {AUTO, "trabajo/requerimiento.docx"}
 
@@ -610,6 +610,36 @@ def test_cli(caso, capsys):
     capsys.readouterr()
     with pytest.raises(SystemExit):
         cli.main(["nuevo"])
+
+
+def test_cli_continuar_forzar(caso, monkeypatch, capsys):
+    recibidos = []
+
+    def espia(carpeta, forzar=False):
+        recibidos.append(forzar)
+        return {"ok": True, "estado": "esperando_decision"}
+
+    monkeypatch.setattr(api, "continuar", espia)
+    assert cli.main(["continuar", "--caso", str(caso), "--forzar"]) == 0
+    assert cli.main(["continuar", "--caso", str(caso)]) == 0
+    capsys.readouterr()
+    assert recibidos == [True, False]
+
+
+def test_cli_nuevo_se_niega_sobre_un_caso_con_trabajo_y_descartar_lo_confirma(caso, capsys):
+    assert cli.main(["nuevo", "--caso", str(caso)]) == 0
+    assert cli.main(["iniciar", "--caso", str(caso)]) == 0
+    capsys.readouterr()
+    assert cli.main(["nuevo", "--caso", str(caso)]) == 1
+    salida = json.loads(capsys.readouterr().out)
+    assert salida["ok"] is False and salida["trabajo_previo"] == ["el borrador"] and "--descartar" in salida["error"]
+    assert (caso / "hilo.sqlite").exists() and not (caso.parent / ".papelera").exists()
+    assert cli.main(["iniciar", "--caso", str(caso), "--descartar"]) == 1
+    assert "ya se inició" in json.loads(capsys.readouterr().out)["error"]
+    assert cli.main(["nuevo", "--caso", str(caso), "--descartar"]) == 0
+    salida = json.loads(capsys.readouterr().out)
+    assert salida["estado"] == "revision" and (caso.parent / ".papelera" / salida["papelera"] / "hilo.sqlite").exists()
+    assert not (caso / "hilo.sqlite").exists()
 
 
 class SDKFalso:
