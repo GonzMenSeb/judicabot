@@ -1036,13 +1036,24 @@ _OBJETO_JUDICIAL = re.compile(
     rf"(?=\s*(?:$|[,.;:!?)»\"]|(?:y|e)\b)|\s+{_COMPLEMENTO_JUDICIAL}))"
 )
 # En infinitivo, negar o declarar improcedente solo cuentan si lo que sigue, directamente, es el amparo mismo: su núcleo
-# («el amparo», «la tutela», «la acción», «la protección», con hasta tres palabras sueltas antes), «las pretensiones de la acción»
-# o «lo solicitado». No basta con que no sea una pretensión accesoria reconocible, como en futuro: «negar, en cambio, el
-# tratamiento integral», «negar las pretensiones adicionales» o «negar la solicitud o la pretensión relativa al transporte» son
-# negaciones parciales que pueden convivir con el amparo. Lo que sigue al objeto lo decide `_cola_entera`.
+# («el amparo», «la tutela», «la acción», «la protección»), «las pretensiones de la acción» o «lo solicitado». No basta con que no
+# sea una pretensión accesoria reconocible, como en futuro: «negar, en cambio, el tratamiento integral», «negar las pretensiones
+# adicionales» o «negar la solicitud o la pretensión relativa al transporte» son negaciones parciales que pueden convivir con el
+# amparo. Lo que sigue al objeto lo decide `_cola_entera`; lo que lo precede, `_ANTES_DEL_AMPARO`.
+# Entre el verbo y el núcleo solo caben palabras de una lista cerrada: artículos, demostrativos, «presente», «citado»…, y los
+# cuantificadores y adverbios de la totalidad («toda», «totalmente», «en su totalidad»). Cualquier otra palabra, y sobre todo un
+# adverbio que restringe («parcialmente», «solo», «únicamente», «tan solo», «exclusivamente»), deja el objeto sin examinar:
+# «negar parcialmente el amparo» o «negar únicamente la tutela» no contradicen AMPARAR. No se reutilizan `_DETERMINANTE` ni
+# `_RELLENO` (los de futuro): dejan pasar cualquier adverbio en «-mente» y hasta tres palabras sueltas.
+_ANTES_DEL_AMPARO = (
+    r"(?:(?:el|la|los|las|su|sus|un|una|este|esta|estos|estas|ese|esa|esos|esas|dich[oa]s?|presentes?|citad[oa]s?|referid[oa]s?"
+    r"|mencionad[oa]s?|aludid[oa]s?|invocad[oa]s?|parte|todo|toda|todos|todas|totalmente|[ií]ntegramente|integralmente|completamente"
+    r"|en\s+su\s+totalidad)\s+)*"
+)
 _EL_AMPARO_MISMO = re.compile(
-    rf"\s+{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones))\b"
-    rf"|{_PRETENSION_GENERICA}\s+(?:de|del)\s+{_AMPARO_COMO_OBJETO}\b"
+    rf"\s+{_ANTES_DEL_AMPARO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones))\b"
+    rf"|{_PRETENSION_GENERICA}\s+(?:de|del)\s+{_ANTES_DEL_AMPARO}(?:amparos?|tutelas?|acci(?:[oó]n|ones)|protecci(?:[oó]n|ones)"
+    r"|accionantes?|actor(?:es|as?)?|demandantes?|peticionari\w+)\b"
     r"|lo\s+(?:solicitado|pedido|pretendido|impetrado|reclamado|demandado)\b)"
 )
 _CLITICO_FINAL = re.compile(r"ar(?:l[aeo]s?)$")

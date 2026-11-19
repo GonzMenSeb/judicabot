@@ -2671,6 +2671,13 @@ def test_coherencia_decision_cualquier_palabra_de_alcance_tras_el_anuncio_lo_dej
         ("AMPARAR", "NEGAR", "negar el amparo, ordenando a la EPS programar la cirugía"),
         ("AMPARAR", "NEGAR", "negar el amparo, toda vez que no se acreditó la vulneración"),
         ("AMPARAR", "NEGAR", "negar la tutela y desvincular a la Secretaría de Salud"),
+        ("AMPARAR", "NEGAR", "negar totalmente el amparo"),
+        ("AMPARAR", "NEGAR", "negar íntegramente la tutela"),
+        ("AMPARAR", "NEGAR", "negar en su totalidad el amparo"),
+        ("AMPARAR", "NEGAR", "negar todas las pretensiones de la acción de tutela"),
+        ("AMPARAR", "NEGAR", "negar todo lo solicitado"),
+        ("AMPARAR", "NEGAR", "negar el citado amparo"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar improcedente totalmente la acción de tutela"),
         ("AMPARAR", "IMPROCEDENTE", "declarar improcedente la acción de tutela por subsidiariedad"),
         ("AMPARAR", "IMPROCEDENTE", "declarar improcedente la acción de tutela por falta de legitimación en la causa por pasiva"),
         ("AMPARAR", "IMPROCEDENTE", "declarar la acción de tutela improcedente y archivar el expediente"),
@@ -2690,12 +2697,59 @@ def test_coherencia_decision_un_anuncio_entero_sigue_bloqueando_tras_su_cola_cer
     assert any(f"anuncia {otro} como la decisión sustitutiva" in m for m in msgs), conclusion
 
 
+# Lo que va ANTES del núcleo también es de una lista cerrada (`_ANTES_DEL_AMPARO`): un adverbio que restringe («parcialmente»,
+# «solo», «únicamente») hace parcial lo que se niega o se declara improcedente, y la lista de adverbios en «-mente» de futuro lo
+# dejaba pasar como si no estuviera (la exención anterior, `_ALCANCE_PARCIAL`, también los excluía por su lado).
+_RESTRICTIVOS = ("parcialmente", "únicamente", "solo", "sólo", "tan solo", "exclusivamente", "en parte", "tan solo en parte")
+
+
+@pytest.mark.parametrize("restrictivo", _RESTRICTIVOS)
+@pytest.mark.parametrize(
+    "anuncio",
+    [
+        "negar {r} el amparo", "negar {r} la tutela", "negar {r} la presente acción de tutela", "negar {r} las pretensiones de la acción",
+        "declarar improcedente {r} la acción de tutela", "declarar improcedente {r} el amparo", "negar {r} lo solicitado",
+    ],
+)
+def test_coherencia_decision_un_restrictivo_antes_del_nucleo_deja_el_anuncio_sin_examinar(anuncio, restrictivo):
+    conclusion = f"Corresponde revocar el fallo y amparar el derecho a la salud, y {anuncio.format(r=restrictivo)}."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == [], conclusion
+
+
+@pytest.mark.parametrize(
+    ("resultado", "sustitutiva", "anuncio"),
+    [
+        # La regla vale bajo cualquier decisión, no solo AMPARAR.
+        ("REVOCAR", "NEGAR", "declarar improcedente la acción {x}"),
+        ("REVOCAR", "NEGAR", "declarar la carencia actual de objeto por daño consumado {x}"),
+        ("REVOCAR", "CARENCIA_DANO_CONSUMADO", "declarar la carencia actual de objeto por daño consumado, y no por hecho superado, {x}"),
+        ("REVOCAR", "CARENCIA_DANO_CONSUMADO", "declarar la carencia actual de objeto por hecho superado {x}, además de daño consumado"),
+        ("CONFIRMAR", "IMPROCEDENTE", "negar el amparo {x}"),
+        ("CONFIRMAR", "IMPROCEDENTE", "declarar la carencia actual de objeto por hecho superado {x}"),
+        ("REVOCAR", "IMPROCEDENTE", "negar la tutela {x}"),
+        ("CONFIRMAR", "NEGAR", "declarar improcedente la acción {x}"),
+        ("REVOCAR", "CARENCIA_SOBREVINIENTE", "negar el amparo {x}"),
+    ],
+)
+@pytest.mark.parametrize("alcance", ["en el suministro de pañales", "del reembolso de los gastos", "con el medicamento", "para la IPS", "a cargo de la EPS"])
+def test_coherencia_decision_una_parte_tras_el_anuncio_no_bloquea_con_cualquier_decision(resultado, sustitutiva, anuncio, alcance):
+    verbo = "confirmar" if resultado == "CONFIRMAR" else "revocar"
+    conclusion = f"Corresponde {verbo} el fallo y {anuncio.format(x=alcance)}."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva))
+    assert not any("anuncia" in m and "no anuncia" not in m for m in msgs), conclusion
+
+
 @pytest.mark.parametrize(
     ("sustitutiva", "conclusion"),
     [
         # Falsos negativos aceptados (documentados en docs/CONTRATO_IMPLEMENTACION.md): el anuncio contradice la decisión, pero lo que le
         # sigue no es el fin, una cola cerrada ni un enlace, y no se puede saber si lo acota. Un falso BLOQUEA detiene el borrador del juez.
         ("AMPARAR", "Corresponde revocar el fallo y negar el amparo de la señora Pérez."),
+        # una palabra antes del núcleo que no es de la lista cerrada (`_ANTES_DEL_AMPARO`): ni un restrictivo ni un artículo
+        ("AMPARAR", "Corresponde revocar el fallo y negar además el amparo."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar también la tutela."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar cualquier amparo."),
+        ("AMPARAR", "Corresponde revocar el fallo y declarar improcedente la presente y citada acción de tutela."),
         ("AMPARAR", "Corresponde revocar el fallo y negar el amparo transitorio."),
         ("AMPARAR", "Corresponde revocar el fallo y negar el amparo, que no se probó."),
         ("AMPARAR", "Corresponde revocar el fallo y negar el amparo en tanto la EPS cumplió."),
