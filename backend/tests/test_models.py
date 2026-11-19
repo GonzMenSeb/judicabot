@@ -7,12 +7,15 @@ from pydantic import ValidationError
 from tutela2.config import Config
 from tutela2.llm import esquema_gemini
 from tutela2.models import (
+    MSG_DERECHOS_AMPARAR,
+    MSG_DERECHOS_NEGAR_AMPARA,
     AbogadoLLM,
     Apoderado,
     ApoderadosLLM,
     Cadena,
     DatosAuto,
     Decision,
+    DisposicionDerecho,
     Doc,
     Estado,
     EvidenciaDoc,
@@ -34,16 +37,64 @@ def _decision(**kw):
     return Decision(accion="decidir", resultado="REVOCAR", sustitutiva="NEGAR", eje="x", **kw)
 
 
+def DD(derecho: str, disposicion: str = "AMPARA") -> DisposicionDerecho:
+    return DisposicionDerecho(derecho=derecho, disposicion=disposicion)
+
+
 def test_orden_numerales_invalido():
     assert any("zzz" in e for e in _decision(orden_numerales=["zzz"]).errores())
 
 
 def test_orden_numerales_valido():
     d = _decision(
-        orden_numerales=["resultado", "notificar", "orden:0"],
+        orden_numerales=["resultado", "sustitutiva", "negacion", "notificar", "orden:0"],
         ordenes=[Orden(destinatario="X", conducta="y")],
     )
     assert d.errores() == []
+
+
+def _amparar(**kw):
+    return Decision(
+        accion="decidir",
+        resultado="REVOCAR",
+        sustitutiva="AMPARAR",
+        eje="x",
+        ordenes=[Orden(destinatario="la EPS", conducta="c")],
+        **kw,
+    )
+
+
+def test_amparar_sin_derechos_amparados_bloquea():
+    assert _amparar(derechos=[DD("salud", "NIEGA")]).errores() == [MSG_DERECHOS_AMPARAR]
+    assert _amparar(derechos=[DD("salud", "NIEGA"), DD("mínimo vital", "SIN_PRONUNCIAMIENTO")]).errores() == [MSG_DERECHOS_AMPARAR]
+    assert _amparar(derechos=[]).errores() == []  # sin derechos el backend toma los invocados, que errores() no conoce
+    assert _amparar(derechos=[DD("salud"), DD("mínimo vital", "NIEGA")]).errores() == []
+
+
+def test_amparar_sin_derechos_amparados_no_bloquea_si_se_confirma_o_se_niega():
+    confirmar = Decision(accion="decidir", resultado="CONFIRMAR", eje="x", derechos=[DD("salud", "NIEGA")])
+    assert confirmar.errores() == []
+    assert _decision(derechos=[DD("salud", "NIEGA")]).errores() == []
+
+
+def test_negar_con_derechos_en_ampara_advierte():
+    mixto = _decision(decidido_por="Juez", derechos=[DD("salud"), DD("mínimo vital", "NIEGA")])
+    assert mixto.advertencias() == [
+        "Con «Negar el amparo» no aparecen en el RESUELVE los derechos en «Ampara»: salud. "
+        "Para amparar unos derechos y negar otros, elija «Amparar» y marque «Niega» en los que se niegan."
+    ]
+    assert mixto.advertencias() == [MSG_DERECHOS_NEGAR_AMPARA.format(lista="salud")]
+    todos = _decision(decidido_por="Juez", derechos=[DD("salud"), DD("mínimo vital")])
+    assert todos.advertencias() == []
+
+
+def test_la_advertencia_de_derechos_va_despues_de_la_de_decidido_por_y_no_aplica_a_otros_casos():
+    mixto = [DD("salud"), DD("mínimo vital", "NIEGA")]
+    avisos = _decision(decidido_por="", derechos=mixto).advertencias()
+    assert len(avisos) == 2 and avisos[0].startswith("Decidido por") and avisos[1] == MSG_DERECHOS_NEGAR_AMPARA.format(lista="salud")
+    assert _amparar(decidido_por="Juez", derechos=mixto).advertencias() == []
+    assert Decision(accion="decidir", resultado="CONFIRMAR", sustitutiva="NEGAR", decidido_por="Juez", derechos=mixto).advertencias() == []
+    assert Decision(accion="rehacer_apertura", instruccion="x", sustitutiva="NEGAR", derechos=mixto).advertencias() == []
 
 
 def test_orden_numerales_indice_fuera_de_rango():

@@ -250,11 +250,20 @@ def _sin_articulo(texto: str) -> str:
     return _ARTICULO_INICIAL.sub("", texto.strip())
 
 
-def _derechos(d: Decision, md: Metadatos, disposicion: str) -> list[str]:
-    elegidos = [x.derecho for x in d.derechos if x.disposicion == disposicion]
-    if elegidos or (disposicion == "AMPARA" and d.derechos):
-        return elegidos
-    return list(md.derechos_invocados)
+def _con(d: Decision, disposicion: str) -> list[str]:
+    return [x.derecho for x in d.derechos if x.disposicion == disposicion]
+
+
+def _derechos(d: Decision, md: Metadatos, disposicion: Literal["AMPARA", "NIEGA"]) -> list[str]:
+    """Los derechos de la decisión con esa disposición. Con derechos en la decisión manda la lista del juez (incluidos los
+    que agregó); solo si la decisión no trae derechos se usan los invocados en los metadatos."""
+    if not d.derechos:
+        return list(md.derechos_invocados)
+    elegidos = _con(d, disposicion)
+    if disposicion == "NIEGA" and not elegidos:
+        # Compatibilidad: una decisión NEGAR que no marcó «Niega» (el modelo pone AMPARA por defecto) niega los derechos con pronunciamiento.
+        return _con(d, "AMPARA")
+    return elegidos
 
 
 def _persona(md: Metadatos) -> tuple[str, str, str]:
@@ -274,6 +283,24 @@ def _resultado(d: Decision, md: Metadatos) -> Numeral:
     return Numeral("resultado", texto, [verbo])
 
 
+def _texto_negar(trat: str, nombre: str, derechos: list[str]) -> str:
+    """El numeral que niega el amparo. Sin derechos con pronunciamiento es una negación general, sin «respecto de…»."""
+    if not derechos:
+        return f"NEGAR el amparo solicitado por {trat}{nombre}, {_MOTIVO}"
+    objeto = "del derecho fundamental" if len(derechos) == 1 else "de los derechos fundamentales"
+    lista = _lista_y([con_articulo(x) for x in derechos])
+    return f"NEGAR el amparo solicitado por {trat}{nombre} respecto {objeto} {lista}, {_MOTIVO}"
+
+
+def _negacion_parcial(d: Decision, md: Metadatos) -> Numeral | None:
+    """El amparo parcial: los derechos marcados «Niega» bajo AMPARAR salen en su propio numeral, tras el de AMPARAR."""
+    negados = _con(d, "NIEGA")
+    if d.sustitutiva != "AMPARAR" or not negados:
+        return None
+    trat, nombre, _ = _persona(md)
+    return Numeral("negacion", _texto_negar(trat, nombre, negados), ["NEGAR"])
+
+
 def _sustitutiva(d: Decision, md: Metadatos) -> Numeral:
     trat, nombre, ident = _persona(md)
     s = d.sustitutiva
@@ -285,11 +312,7 @@ def _sustitutiva(d: Decision, md: Metadatos) -> Numeral:
         texto = texto if texto.endswith(".") else texto + "."
         return Numeral("sustitutiva", texto, ["AMPARAR", nombre])
     if s == "NEGAR":
-        derechos = _derechos(d, md, "NIEGA")
-        objeto = "del derecho fundamental" if len(derechos) == 1 else "de los derechos fundamentales"
-        lista = _lista_y([con_articulo(x) for x in derechos]) if derechos else _falta("derechos")
-        texto = f"NEGAR el amparo solicitado por {trat}{nombre} respecto {objeto} {lista}, {_MOTIVO}"
-        return Numeral("sustitutiva", texto, ["NEGAR"])
+        return Numeral("sustitutiva", _texto_negar(trat, nombre, _derechos(d, md, "NIEGA")), ["NEGAR"])
     if s == "IMPROCEDENTE":
         motivo = CAUSALES[d.causal][0] if d.causal in CAUSALES else _MOTIVO
         texto = f"DECLARAR IMPROCEDENTE la acción de tutela promovida por {trat}{nombre}, {motivo}"
@@ -336,6 +359,8 @@ def _estandar(d: Decision, md: Metadatos) -> dict[str, Numeral]:
     por_clave: dict[str, Numeral] = {"resultado": _resultado(d, md)}
     if d.resultado != "CONFIRMAR":
         por_clave["sustitutiva"] = _sustitutiva(d, md)
+        if (negacion := _negacion_parcial(d, md)) is not None:
+            por_clave["negacion"] = negacion
     for i, o in enumerate(d.ordenes):
         por_clave[f"orden:{i}"] = _orden(i, o)
     if d.prevenir:

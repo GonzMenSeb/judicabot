@@ -148,6 +148,7 @@ Cada función devuelve una lista de mensajes en español; si está vacía, todo 
 - `resuelve(decision, metadatos, cfg) -> list[str]`: lista de numerales con ordinales consecutivos (PRIMERO, SEGUNDO, ...).
   - **Primer numeral, verbo de 2a instancia:** "REVOCAR el fallo proferido el {fecha} por el {a quo}…", "CONFIRMAR…" o "MODIFICAR…".
   - **Sustitutiva:** AMPARAR, NEGAR o DECLARAR IMPROCEDENTE / LA CARENCIA ACTUAL DE OBJETO POR {tipo}. No aplica si el resultado es CONFIRMAR.
+  - **Derechos de la sustitutiva:** AMPARAR nombra los derechos en «Ampara»; NEGAR, los que están en «Niega» (si ninguno, los que están en «Ampara»; si todos están en «Sin pronunciamiento» o no hay ninguno, es una negación general sin «respecto de…»). Con `derechos` vacío en la decisión se usan los `derechos_invocados` de los metadatos. En un amparo parcial (AMPARAR con algún derecho en «Niega») sale, justo después del AMPARAR, un numeral propio (clave `negacion`): «NEGAR el amparo solicitado por … respecto del derecho fundamental a …, por las razones expuestas en este proveído.». «Sin pronunciamiento» no genera texto.
   - **Órdenes:** núcleo fijo "ORDENAR a {destinatario}, a través de su representante legal y/o quien haga sus veces, que, dentro de las {plazo en letras} ({n}) {unidad} siguientes a la notificación de esta providencia, {conducta}."
   - **Opcionales:** PREVENIR, DESVINCULAR, COMPULSAR COPIAS.
   - **Si están activados en `numerales`:** NOTIFICAR («esta providencia a las partes por el medio más expedito, de conformidad con lo dispuesto en el artículo 30 del Decreto 2591 de 1991») y REMITIR («el expediente a la Honorable Corte Constitucional para su eventual revisión», sin citar artículo).
@@ -246,7 +247,7 @@ El cliente LLM sale de `llm.cliente_para(cfg)`, con `cfg` leído de `config.json
 5. **Decisión** (formulario por niveles):
    - `resultado`, `sustitutiva` y `eje`: obligatorios;
    - reparos precargados, con un select de disposición cada uno;
-   - derechos precargados desde `derechos_invocados`;
+   - derechos precargados desde `derechos_invocados`, con un select «Ampara / Niega / Sin pronunciamiento» cada uno (al negar nacen en «Niega»; al amparar se exige al menos uno en «Ampara»);
    - órdenes: solo si se elige AMPARAR (destinatario, conducta, plazo);
    - "otros numerales", plegado: desvincular, prevenir, compulsa y los interruptores de notificar y remitir;
    - botones "Rehacer apertura" y "Rehacer consideraciones", con su instrucción.
