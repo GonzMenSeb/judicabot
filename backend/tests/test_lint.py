@@ -1390,6 +1390,26 @@ def test_coherencia_decision_con_un_enlace_repetido_termina_a_tiempo(repeticione
     _coherencia_a_tiempo("REVOCAR", "AMPARAR", "Corresponde y " + "además " * repeticiones + "x negar el amparo.")
 
 
+
+# Muchas coincidencias en un texto largo: cada «negará» se excusa (pretensión accesoria) o se busca su excusa, y antes cada
+# comprobación recorría el texto desde el principio (tiempo cuadrático: 0,5-3,4 s con 500 repeticiones). Main, que se detiene
+# en la primera negación que bloquea, tarda 4-11 ms en los tres primeros casos y 0,6-0,8 s en los dos últimos; ahora, 20-35 ms.
+@pytest.mark.parametrize(
+    ("resultado", "conclusion", "esperado"),
+    [
+        ("REVOCAR", "Se revocará el fallo y se amparará el derecho. " + "Se negará el tratamiento integral; " * 500, []),
+        ("CONFIRMAR", "Se confirmará el fallo y se negará la solicitud de reembolso; " * 500, None),
+        ("REVOCAR", "No se amparará; " * 500 + "se revocará el fallo y se amparará el derecho; " + "se negará el tratamiento integral; " * 500, []),
+        ("REVOCAR", "Si se amparara, se negará el amparo; " * 500 + "Se revocará el fallo y se amparará el derecho.", []),
+        ("REVOCAR", "De lo contrario se amparará y se negará el tratamiento; " * 500 + "Se revocará el fallo.", None),
+    ],
+)
+def test_coherencia_decision_con_muchas_negaciones_termina_a_tiempo(resultado, conclusion, esperado):
+    lint._hay_concesion.cache_clear()
+    msgs = _coherencia_a_tiempo(resultado, "AMPARAR", conclusion)
+    if esperado is not None:
+        assert msgs == esperado
+
 TEXTO_CITA = (
     "La carencia actual de objeto por hecho superado se configura cuando desaparece la afectación que dio origen "
     "a la acción de tutela y la pretensión queda satisfecha por una conducta voluntaria de la entidad accionada."

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from functools import lru_cache
 from itertools import combinations
 from typing import Iterable
 
@@ -594,11 +595,16 @@ def _niega_pretension_accesoria(texto: str, m: re.Match[str]) -> bool:
     return _PALABRA_SUSTANTIVA.match(texto, m.end()) is not None
 
 
+@lru_cache(maxsize=8)
+def _hay_concesion(texto: str) -> bool:
+    """¿La conclusión anuncia una concesión del amparo que no niega ni condiciona? Se calcula una vez por texto y no una vez
+    por cada «negará», que la recorrería entera tantas veces como negaciones tenga."""
+    return any(not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end()) for g in _CONCESION.finditer(texto))
+
+
 def _negacion_parcial(texto: str, m: re.Match[str], decision: Decision) -> bool:
     # Confirmar un amparo ya es conceder: no hace falta que la conclusión lo vuelva a anunciar.
-    if decision.resultado != "CONFIRMAR" and not any(
-        not _excusada(texto, g.start()) and not _SI_POSTERIOR.match(texto, g.end()) for g in _CONCESION.finditer(texto)
-    ):
+    if decision.resultado != "CONFIRMAR" and not _hay_concesion(texto):
         return False
     if _niega_pretension_accesoria(texto, m):
         return True
@@ -608,13 +614,19 @@ def _negacion_parcial(texto: str, m: re.Match[str], decision: Decision) -> bool:
     return bool(_MARCA_PARCIAL.search(texto[max(ini, m.start() - 80) : min(fin, m.end() + 80)]))
 
 
+# Cada excusa empieza como mucho ~100 caracteres antes de lo que excusa (su palabra clave y «[^.;]{0,80}$», sobre texto con
+# los espacios ya normalizados): se busca solo en esa ventana y no desde el principio por cada coincidencia. Buscar con
+# `pos`/`endpos` no es recortar: «^» sigue siendo el inicio real y «\b» y las búsquedas hacia atrás ven lo anterior.
+_VENTANA_EXCUSA = 200
+
+
 def _excusada(texto: str, inicio: int) -> bool:
-    previo = texto[:inicio]
+    desde = max(0, inicio - _VENTANA_EXCUSA)
     return bool(
-        _NEGADOR_PREVIO.search(previo[-40:])
-        or _HIPOTETICO_PREVIO.search(previo)
-        or _CONDICIONAL_PREVIO.search(previo)
-        or _CONDICIONAL_EXCEPTO.search(previo)
+        _NEGADOR_PREVIO.search(texto[max(0, inicio - 40) : inicio])
+        or _HIPOTETICO_PREVIO.search(texto, desde, inicio)
+        or _CONDICIONAL_PREVIO.search(texto, desde, inicio)
+        or _CONDICIONAL_EXCEPTO.search(texto, desde, inicio)
     )
 
 
