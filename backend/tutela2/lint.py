@@ -79,7 +79,7 @@ _RAIZ_NEGAR = r"neg(?:ar(?:a|an|ia|ian|se|l[aeo]s?)?|o|aron|ando)\b"
 # El tipo de carencia (#89), con sus variantes de número y escritura («hechos superados», «daño ya consumado», «dano», «situación
 # sobrevenida»): nombrar el tipo decidido con otra grafía no es nombrar otro tipo.
 _TIPO_DE_CARENCIA = {
-    "CARENCIA_HECHO_SUPERADO": r"hechos?\s+superados?\b",
+    "CARENCIA_HECHO_SUPERADO": r"hechos?\s+(?:ya\s+)?superados?\b",
     "CARENCIA_DANO_CONSUMADO": r"da[ñn]os?\s+(?:ya\s+)?consumados?\b",
     "CARENCIA_SOBREVINIENTE": r"(?:sobrevinient|sobrevenid)",
 }
@@ -717,7 +717,10 @@ _INFINITIVO_SUSTITUTIVA = {
 #   2. El infinitivo sigue al disparador o va coordinado con otros infinitivos de decisión que lo siguen: entre ellos solo hay
 #      sus complementos, sin puntuación ni palabras que abran otra cláusula (`_CORTA_LA_CADENA`), y los enlaces de `_ENLACE`.
 #   3. El resto de la oración no atribuye nada a nadie (`_ATRIBUCION`: «…, según la EPS», «…, como lo pide la accionada»).
-#   4. «Confirmar» y «revocar» recaen sobre una decisión judicial o no llevan objeto, y no son «confirmar que…».
+#   4. «Confirmar» y «revocar» recaen sobre una decisión judicial o no llevan objeto, y no son «confirmar que…»; el objeto
+#      se reconoce con una forma cerrada (`_OBJETO_JUDICIAL`).
+#   5. «Negar», «declarar improcedente» y «declarar la carencia» son enteros: el amparo mismo y, tras él, solo el fin de la oración
+#      o una cola cerrada y los enlaces de `_cola_entera`. No se buscan las palabras que acotan una parte: no se acaban.
 # Todo lo demás no se examina: es un falso negativo aceptado, porque un falso BLOQUEA detiene el borrador del juez.
 #
 # Las expresiones de abajo son alternativas de frases fijas. Ninguna frase de una lista es otra frase de la misma lista
@@ -863,15 +866,49 @@ _CONDICION = re.compile(
     r"\b(?:si|salvo|excepto|a\s+menos\s+que|siempre\s+(?:que|y\s+cuando)|en\s+caso\s+(?:de|contrario)|en\s+(?:el\s+)?evento"
     r"|cuando|de\s+lo\s+contrario|de\s+no\s+ser\s+as[ií]|so\s+pena)\b"
 )
-# Una sustitutiva acotada a una parte («negar el amparo respecto del tratamiento integral», «declarar improcedente la acción
-# frente a la Superintendencia», «…por hecho superado en cuanto a los pañales») es una decisión parcial que puede convivir con
-# la decidida: en infinitivo no se examina.
-_ALCANCE_PARCIAL = re.compile(
-    r"\b(?:respecto|frente|en\s+cuanto|en\s+relaci[oó]n|con\s+relaci[oó]n|con\s+respecto|contra|salvo|excepto|parcialmente"
-    r"|relativ[ao]s?|referentes?|atinentes?|concernientes?|en\s+materia|sobre"
-    r"|en\s+lo\s+(?:que|relativo|referente|concerniente|tocante|atinente)|por\s+lo\s+que\s+(?:hace|toca|respecta|ata[nñ]e)"
-    r"|dem[aá]s|restantes|solo|s[oó]lo|[uú]nicamente)\b"
+# Lo que puede seguir a un anuncio de negar, de declarar improcedente o de declarar la carencia para que cuente como entero. Estas
+# decisiones pueden ser una parte de otra (se ampara un derecho y se niega otro; es improcedente frente a una entidad y se
+# ampara frente a otra) y las palabras que acotan la parte no tienen fin («respecto de», «en el suministro de», «del reembolso»,
+# «con el medicamento», «como mecanismo transitorio»…): una lista de ellas dejaba pasar la que no traía. Por eso se hace al
+# revés, con una forma cerrada: tras el anuncio solo puede venir el fin de la oración o una cola de la lista cerrada de abajo (que
+# no acota nada) seguida del fin, y, tras el fin o la cola, un enlace con otro infinitivo («y ordenar a la EPS…»), un gerundio de
+# orden («, ordenando a la EPS…») o la razón («, toda vez que…»), que ya no son parte del anuncio. Cualquier otra cosa (un
+# complemento, un adjetivo, un relativo, un «y» con un sustantivo) deja el anuncio sin examinar.
+_PARTE_ACTORA = r"(?:la|el)\s+(?:accionante|actor|actora|demandante|peticionari[oa]|parte\s+(?:accionante|actora|demandante))"
+_COLA_QUE_NO_ACOTA = (
+    r"(?:(?:solicitad|pedid|invocad|impetrad|reclamad|formulad)[ao]s?(?:\s+por\s+" + _PARTE_ACTORA + r")?"
+    r"|por\s+" + _PARTE_ACTORA +
+    r"|por\s+(?:las?\s+)?(?:razones|motivos)\s+(?:ya\s+)?(?:expuest|anotad|indicad|se[nñ]alad)[ao]s"
+    r"(?:\s+en\s+(?:la\s+parte\s+(?:motiva|considerativa)|esta\s+(?:providencia|sentencia)|este\s+proveído|las\s+consideraciones))?"
+    r"|(?:por|conforme\s+(?:a|con)|de\s+acuerdo\s+(?:a|con))\s+lo\s+(?:expuesto|anterior)"
+    r"|en\s+(?:el\s+presente|este)\s+(?:caso|asunto)|en\s+esta\s+(?:instancia|oportunidad)"
+    # los motivos de improcedencia de la acción entera
+    r"|por\s+(?:(?:la\s+)?(?:falta|ausencia)\s+de\s+)?(?:subsidiariedad|inmediatez|temeridad|cosa\s+juzgada"
+    r"|legitimaci[oó]n(?:\s+en\s+la\s+causa)?(?:\s+por\s+(?:activa|pasiva))?)"
+    r"|por\s+no\s+(?:cumplir|superar|satisfacer)\s+el\s+requisito\s+de\s+(?:subsidiariedad|inmediatez))"
 )
+# `[a-z]*`: lo que falta de la palabra si el anuncio acaba en una raíz («sobrevinient|e»). «de tutela» cierra «la acción».
+_COLA_PREVIA = re.compile(rf"[a-zñáéíóúü]*(?:\s+de\s+tutela)?(?:(?:\s*,)?\s+{_COLA_QUE_NO_ACOTA})?")
+_PALABRA_COMO_INFINITIVO = re.compile(r"[a-zñáéíóúü]+(?:ar|er|ir)(?:l[aeo]s?|les?|se)?\b")
+# «…, ordenando a la EPS…» (el prompt permite aludir a las órdenes) y «…, toda vez que no se acreditó…»: el anuncio acaba donde
+# empieza lo que ordena o lo que lo motiva. Los demás nexos («por cuanto», «por lo que», «en tanto», «en cuanto a») pueden acotar
+# («por cuanto respecta a…», «por lo que hace a…», «en tanto pretende el reembolso») y no están.
+_CIERRE_DEL_ANUNCIO = re.compile(
+    r"\s*,?\s+(?:ordenando|disponiendo|exhortando|requiriendo|instando|advirtiendo|previniendo|notificando|comunicando"
+    r"|porque|pues|puesto\s+que|ya\s+que|toda\s+vez\s+que|dado\s+que)\b"
+)
+
+
+def _cola_entera(texto: str, pos: int, fin: int) -> bool:
+    """¿Lo que va de `pos` al fin de la oración es el fin, o un enlace con otro infinitivo, tras una cola que no acota nada?"""
+    previa = _COLA_PREVIA.match(texto, pos, fin)
+    if previa is None:
+        return False
+    if not texto[previa.end() : fin].strip() or _CIERRE_DEL_ANUNCIO.match(texto, previa.end(), fin):
+        return True
+    enlace = _ENLACE.match(texto, previa.end(), fin)
+    verbo = _PALABRA_COMO_INFINITIVO.match(texto, enlace.end(), fin) if enlace else None
+    return verbo is not None and verbo.group() not in _NO_ES_INFINITIVO
 
 
 _FORMULA = {
@@ -971,6 +1008,24 @@ def _infinitivos_anunciados(texto: str) -> list[tuple[int, int]]:
 # «Confirmar» y «revocar» solo son el resultado si recaen sobre una decisión judicial o no llevan objeto («corresponde
 # revocar y amparar…»). «Confirmar la cita» o «revocar la glosa» son actos de otro; si el objeto no se reconoce, o es un
 # clítico sin antecedente a la vista («corresponde confirmarla»), no se examina.
+# Reconocer el objeto es también una forma cerrada: el sustantivo («fallo», «sentencia», «decisión»…) y, justo después, el fin de
+# la oración, una coma o un «y», o uno de los complementos de la lista que lo hacen del a quo o del Despacho («de primera
+# instancia», «del a quo», «proferida por el Juzgado…», «impugnada», «en su integridad»). Cualquier otra cosa tras el sustantivo
+# («la decisión médica de operar», «la decisión anterior de la EPS», «la decisión que ordenó la cirugía») deja la oración sin
+# examinar: «decisión» o «auto» pueden ser de otro, y la lista de lo que no es del Despacho no se acababa.
+_INSTANCIA_JUDICIAL = (
+    r"(?:(?:primera|segunda|[uú]nica|instancia|a\s+quo|sala|juzgado|despacho|corte|tribunal|juez|jueza|tutela|amparo"
+    r"|(?:este|esta|dicho|dicha)\s+(?:despacho|juzgado|sala|corte|tribunal|instancia|judicatura))\b)"
+)
+_ORDINAL = (
+    r"(?:primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|sext[oa]|s[eé]ptim[oa]|octav[oa]|noven[oa]|d[eé]cim[oa]|[uú]nic[oa]|\d+)"
+)
+_COMPLEMENTO_JUDICIAL = (
+    rf"(?:{_ORDINAL}|(?:de|del)\s+(?:(?:la|el)\s+)?{_INSTANCIA_JUDICIAL}"
+    rf"|(?:adoptad|emitid|expedid|tomad|dictad|proferid)[ao]s?\s+por\s+(?:(?:la|el)\s+)?{_INSTANCIA_JUDICIAL}"
+    r"|impugnad[ao]s?|apelad[ao]s?|recurrid[ao]s?|parcialmente|totalmente|[ií]ntegramente|integralmente"
+    r"|en\s+(?:su\s+)?(?:integridad|totalidad)|en\s+lo\s+(?:dem[aá]s|restante)|por\s+(?:las?\s+)?(?:razones|motivos))\b"
+)
 _OBJETO_JUDICIAL = re.compile(
     r"\s*(?:$|[,.;:!?)»\"]|(?:y|e|parcialmente|totalmente|[ií]ntegramente|integralmente|solo|s[oó]lo|[uú]nicamente)\b"
     r"|en\s+(?:su\s+)?(?:integridad|totalidad)\b|en\s+lo\s+(?:dem[aá]s|restante)\b|por\s+(?:las?\s+)?(?:razones|motivos)\b"
@@ -978,16 +1033,13 @@ _OBJETO_JUDICIAL = re.compile(
     r"(?:fallo|sentencia|decisi[oó]n|providencia|auto|determinaci[oó]n|proveído|pronunciamiento|numeral|numerales"
     r"|ordinal|ordinales|par[aá]grafo|literal|decidido|resuelto|dispuesto|impugnad[ao]s?|apelad[ao]s?|recurrid[ao]s?"
     r"|primera|segunda|instancia|a\s+quo|tutela|amparo|mism[ao]|restantes|dem[aá]s)\b"
-    # «la decisión de la EPS», «la sentencia de Sura» o «la decisión adoptada por la EPS» no son del Despacho ni del a quo.
-    r"(?!\s+(?:(?:adoptad|emitid|expedid|tomad|dictad|proferid)[ao]s?\s+por|del?|de\s+(?:la|las|el|los))\s+(?!(?:(?:la|el)\s+)?"
-    r"(?:\d|primera|segunda|[uú]nica|instancia|a\s+quo|sala|juzgado|despacho|corte|tribunal|juez|jueza|tutela|amparo|fecha|este"
-    r"|esta|dicho|dicha)\b)))"
+    rf"(?=\s*(?:$|[,.;:!?)»\"]|(?:y|e)\b)|\s+{_COMPLEMENTO_JUDICIAL}))"
 )
 # En infinitivo, negar o declarar improcedente solo cuentan si lo que sigue, directamente, es el amparo mismo: su núcleo
 # («el amparo», «la tutela», «la acción», «la protección», con hasta tres palabras sueltas antes), «las pretensiones de la acción»
 # o «lo solicitado». No basta con que no sea una pretensión accesoria reconocible, como en futuro: «negar, en cambio, el
 # tratamiento integral», «negar las pretensiones adicionales» o «negar la solicitud o la pretensión relativa al transporte» son
-# negaciones parciales que pueden convivir con el amparo.
+# negaciones parciales que pueden convivir con el amparo. Lo que sigue al objeto lo decide `_cola_entera`.
 _EL_AMPARO_MISMO = re.compile(
     rf"\s+{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones))\b"
     rf"|{_PRETENSION_GENERICA}\s+(?:de|del)\s+{_AMPARO_COMO_OBJETO}\b"
@@ -1006,14 +1058,17 @@ def _infinitivo_cuenta(texto: str, m: re.Match[str], fin: int, otro: str) -> boo
     if otro == "AMPARAR":
         return True
     # Negar, declarar improcedente o declarar la carencia pueden ser una parte de otra decisión (se ampara un derecho y se niega
-    # otro; se niega frente a una entidad y es improcedente frente a otra). Solo cuentan si son enteros: sobre el amparo mismo
-    # (`_EL_AMPARO_MISMO`; no «negar el tratamiento integral» ni «declarar improcedente la solicitud de reembolso») y sin
-    # acotarlos a una parte en lo que queda de la oración. Amparar, en cambio, contradice cualquier otra sustitutiva aunque sea
-    # en parte.
-    objeto_antes = otro == "IMPROCEDENTE" and "acci" in m.group() and _SIN_COMPLEMENTO.match(texto, m.end())
-    if otro in ("NEGAR", "IMPROCEDENTE") and not (objeto_antes or _EL_AMPARO_MISMO.match(texto, m.end())):
-        return False
-    return _ALCANCE_PARCIAL.search(texto, m.end(), fin) is None
+    # otro; se niega frente a una entidad y es improcedente frente a otra). Solo cuentan si son enteros, y eso se reconoce por
+    # una forma cerrada, no por las palabras que acotan (`_cola_entera`): el objeto es el amparo mismo (`_EL_AMPARO_MISMO`; no
+    # «negar el tratamiento integral» ni «declarar improcedente la solicitud de reembolso») y, tras él (y tras el tipo de la
+    # carencia), solo viene el fin de la oración, un enlace con otro infinitivo o una cola que no acota nada. Amparar, en
+    # cambio, contradice cualquier otra sustitutiva aunque sea en parte.
+    if otro in ("NEGAR", "IMPROCEDENTE"):
+        if otro == "IMPROCEDENTE" and "acci" in m.group():  # «declarar la acción (de tutela) improcedente»: el objeto va antes
+            return _cola_entera(texto, m.end(), fin)
+        objeto = _EL_AMPARO_MISMO.match(texto, m.end())
+        return objeto is not None and _cola_entera(texto, objeto.end(), fin)
+    return _cola_entera(texto, m.end(), fin)
 
 
 def _cuenta_como_contradiccion(texto: str, m: re.Match[str], otro: str, decidido: str, decision: Decision) -> bool:

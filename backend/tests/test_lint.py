@@ -2602,6 +2602,205 @@ def test_coherencia_decision_amparar_en_parte_sigue_contradiciendo_negar(conclus
     assert any("anuncia AMPARAR como la decisión sustitutiva" in m for m in msgs), conclusion
 
 
+# --- #89: lo que sigue al anuncio decide si es entero ------------------------------------------------------------------------
+# Negar, declarar improcedente o declarar la carencia solo cuentan en infinitivo si, tras el anuncio, viene el fin de la oración, una
+# cola cerrada que no acota nada o un enlace con otro infinitivo. Con una lista de las palabras que acotan («respecto de», «frente a»,
+# «en cuanto a»…), cada ronda de revisión encontraba una que faltaba («en el suministro de», «del reembolso», «como mecanismo
+# transitorio»…) y el Despacho que ampara y declara parcialmente improcedente o con carencia quedaba bloqueado sin salida: la
+# decisión no tiene dónde expresar una improcedencia o una carencia parciales. Las tablas prueban la regla, no una lista de frases.
+_AMPARO_DEFINITIVO = "Corresponde revocar el fallo y amparar de manera definitiva el derecho a la salud, y "
+
+
+@pytest.mark.parametrize(
+    "anuncio",
+    [
+        "declarar la carencia actual de objeto por hecho superado en el suministro de pañales.",
+        "declarar la carencia actual de objeto por hecho superado del suministro de pañales.",
+        "declarar la carencia actual de objeto por hecho superado de la cirugía.",
+        "declarar la carencia actual de objeto por hecho superado con el suministro del medicamento.",
+        "declarar improcedente la acción para obtener el reembolso de gastos.",
+        "declarar improcedente la acción de tutela por el reembolso de los gastos.",
+        "declarar improcedente la tutela como mecanismo transitorio.",
+        "declarar improcedente la tutela del derecho a la vivienda.",
+    ],
+)
+def test_coherencia_decision_amparo_con_improcedencia_o_carencia_parcial_no_bloquea(anuncio):
+    # Las ocho frases del verdicto de la revisión de #173: main las deja pasar y la versión anterior de la rama las bloqueaba.
+    assert lint.coherencia_decision(_caso(conclusion=_AMPARO_DEFINITIVO + anuncio), _decision("REVOCAR", "AMPARAR")) == []
+
+
+_ANUNCIOS_QUE_PUEDEN_SER_UNA_PARTE = (
+    "declarar la carencia actual de objeto por hecho superado {x}.",
+    "declarar la carencia actual de objeto por situación sobreviniente {x}.",
+    "declarar improcedente la acción {x}.",
+    "declarar improcedente la tutela {x}.",
+    "negar el amparo {x}.",
+    "negar la tutela {x}.",
+)
+_ALCANCES_DE_UNA_PARTE = (
+    "en el suministro de pañales", "del suministro de pañales", "de la cirugía", "con el suministro del medicamento",
+    "para obtener el reembolso de gastos", "por el reembolso de los gastos", "como mecanismo transitorio", "a cargo de la IPS",
+    "tras la entrega del medicamento", "ante la IPS", "de cara a la pretensión económica", "sin perjuicio del transporte",
+    "a la fecha de este fallo", "al derecho de petición", "mediante el pago de la cirugía", "hasta la entrega del medicamento",
+    "desde el 3 de mayo de 2024", "durante el trámite de la impugnación", "entre las partes", "bajo la modalidad de reembolso",
+    "hacia la IPS", "sobre el transporte", "contra la IPS", "respecto del suministro de pañales", "en lo atinente al transporte",
+    "en el pedimento de pago de incapacidades", "en tanto pretende el reembolso", "por cuanto respecta al transporte",
+    "por lo que hace al transporte", "más allá del medicamento", "adicional al tratamiento", "transitorio", "provisional",
+)
+
+
+@pytest.mark.parametrize("alcance", _ALCANCES_DE_UNA_PARTE)
+@pytest.mark.parametrize("anuncio", _ANUNCIOS_QUE_PUEDEN_SER_UNA_PARTE)
+def test_coherencia_decision_cualquier_palabra_de_alcance_tras_el_anuncio_lo_deja_sin_examinar(anuncio, alcance):
+    conclusion = _AMPARO_DEFINITIVO + anuncio.format(x=alcance)
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == [], conclusion
+
+
+@pytest.mark.parametrize(
+    ("sustitutiva", "otro", "anuncio"),
+    [
+        # Fin de la oración, o una cola cerrada que no acota nada y, tras ella o tras el fin, el enlace con otro infinitivo, un gerundio
+        # de orden o la razón: el anuncio es entero y contradice la sustitutiva decidida.
+        ("AMPARAR", "NEGAR", "negar el amparo solicitado"),
+        ("AMPARAR", "NEGAR", "negar lo solicitado por la accionante"),
+        ("AMPARAR", "NEGAR", "negar el amparo, por las razones expuestas en la parte motiva"),
+        ("AMPARAR", "NEGAR", "negar el amparo en el presente caso"),
+        ("AMPARAR", "NEGAR", "negar el amparo, conforme a lo expuesto"),
+        ("AMPARAR", "NEGAR", "negar el amparo y ordenar a la EPS entregar el medicamento"),
+        ("AMPARAR", "NEGAR", "negar el amparo y, en consecuencia, advertir a la EPS que no repita la conducta"),
+        ("AMPARAR", "NEGAR", "negar el amparo, ordenando a la EPS programar la cirugía"),
+        ("AMPARAR", "NEGAR", "negar el amparo, toda vez que no se acreditó la vulneración"),
+        ("AMPARAR", "NEGAR", "negar la tutela y desvincular a la Secretaría de Salud"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar improcedente la acción de tutela por subsidiariedad"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar improcedente la acción de tutela por falta de legitimación en la causa por pasiva"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar la acción de tutela improcedente y archivar el expediente"),
+        ("AMPARAR", "CARENCIA_HECHO_SUPERADO", "declarar la carencia actual de objeto por hecho superado"),
+        ("AMPARAR", "CARENCIA_HECHO_SUPERADO", "declarar la carencia actual de objeto por hecho superado y ordenar a la EPS informar al juzgado"),
+        ("AMPARAR", "CARENCIA_SOBREVINIENTE", "declarar la carencia actual de objeto por situación sobreviniente, ordenando a la EPS informar"),
+        ("AMPARAR", "CARENCIA_DANO_CONSUMADO", "declarar la carencia actual de objeto por daño consumado, ya que el paciente falleció"),
+        ("AMPARAR", "CARENCIA_DANO_CONSUMADO", "declarar la carencia actual de objeto por daño consumado en este caso"),
+        ("CARENCIA_DANO_CONSUMADO", "CARENCIA_HECHO_SUPERADO", "declarar la carencia actual de objeto por hecho superado y ordenar a la EPS informar"),
+        ("CARENCIA_DANO_CONSUMADO", "CARENCIA_HECHO_SUPERADO", "declarar la carencia actual de objeto por hecho superado en el presente caso"),
+        ("CARENCIA_SOBREVINIENTE", "CARENCIA_DANO_CONSUMADO", "declarar la carencia actual de objeto por daño consumado, pues la cirugía ya no es posible"),
+    ],
+)
+def test_coherencia_decision_un_anuncio_entero_sigue_bloqueando_tras_su_cola_cerrada(sustitutiva, otro, anuncio):
+    conclusion = f"Corresponde revocar el fallo y {anuncio}."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", sustitutiva))
+    assert any(f"anuncia {otro} como la decisión sustitutiva" in m for m in msgs), conclusion
+
+
+@pytest.mark.parametrize(
+    ("sustitutiva", "conclusion"),
+    [
+        # Falsos negativos aceptados (documentados en docs/CONTRATO_IMPLEMENTACION.md): el anuncio contradice la decisión, pero lo que le
+        # sigue no es el fin, una cola cerrada ni un enlace, y no se puede saber si lo acota. Un falso BLOQUEA detiene el borrador del juez.
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo de la señora Pérez."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo transitorio."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo, que no se probó."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo en tanto la EPS cumplió."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo por cuanto la entidad cumplió."),
+        ("AMPARAR", "Corresponde revocar el fallo y negar el amparo y el tratamiento integral."),
+        ("AMPARAR", "Corresponde revocar el fallo y declarar improcedente la acción de tutela por la falta de pago."),
+        ("AMPARAR", "Corresponde revocar el fallo y declarar improcedente la acción de tutela para el pago de incapacidades."),
+        ("AMPARAR", "Corresponde revocar el fallo y declarar la carencia actual de objeto por hecho superado en el suministro de pañales."),
+        ("AMPARAR", "Corresponde revocar el fallo y declarar la carencia actual de objeto por hecho superado, por los argumentos expuestos."),
+        ("CARENCIA_DANO_CONSUMADO", "Corresponde revocar el fallo y declarar la carencia actual de objeto por hecho superado de la cirugía."),
+    ],
+)
+def test_coherencia_decision_la_cola_abierta_tras_el_anuncio_es_un_falso_negativo_aceptado(sustitutiva, conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", sustitutiva))
+    assert not any("anuncia" in m and "no anuncia" not in m for m in msgs), conclusion
+
+
+# El objeto de «confirmar» y de «revocar» se reconoce con la misma forma cerrada: el sustantivo y, justo después, el fin, una coma, un
+# «y» o un complemento de la lista que lo hace del a quo o del Despacho. «Decisión» y «auto» pueden ser de otro: lo que va tras ellos y
+# no es de la lista no se examina (los falsos BLOQUEA del verdicto de #173: «la decisión médica de operar», «…que ordenó la cirugía»).
+@pytest.mark.parametrize(
+    "objeto",
+    [
+        "la decisión médica de operar", "la decisión terapéutica del médico tratante", "la decisión anterior de la EPS",
+        "la decisión que ordenó la cirugía", "la decisión del comité científico", "la determinación del médico",
+        "el auto de medidas provisionales", "la providencia que concedió la medida provisional", "la decisión administrativa que negó el servicio",
+        "el pronunciamiento de la Superintendencia", "la sentencia de la EPS", "el fallo administrativo", "el auto que decretó la medida provisional",
+        "la decisión final del médico tratante", "la decisión adoptada por el comité", "la decisión en materia de salud",
+        "la decisión de fecha 3 de mayo de 2023 de la EPS", "la decisión de este comité", "la decisión de dicha entidad",
+    ],
+)
+@pytest.mark.parametrize(
+    ("resultado", "infinitivo", "contrario"), [("REVOCAR", "revocar", "confirmar"), ("CONFIRMAR", "confirmar", "revocar")]
+)
+def test_coherencia_decision_un_objeto_que_no_se_reconoce_como_judicial_no_bloquea(resultado, infinitivo, contrario, objeto):
+    conclusion = f"Corresponde {infinitivo} el fallo, amparar el derecho a la salud y {contrario} {objeto}."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, "AMPARAR")) == []
+
+
+@pytest.mark.parametrize(
+    "objeto",
+    [
+        "la decisión de primera instancia", "la decisión de la primera instancia", "la decisión del a quo", "la decisión de segunda instancia",
+        "la sentencia impugnada", "el fallo recurrido", "la providencia apelada", "el fallo en su integridad", "el fallo en lo demás",
+        "el fallo por las razones expuestas", "el numeral segundo", "el numeral 2", "el fallo del Juzgado Quinto Civil",
+        "la sentencia proferida por el Juzgado Tercero Civil", "la decisión de la Sala", "la decisión de este Despacho",
+        "la decisión de dicha instancia", "el fallo", "el fallo, que negó el amparo,", "la sentencia y negar el amparo", "el fallo parcialmente",
+    ],
+)
+def test_coherencia_decision_un_objeto_judicial_reconocido_sigue_bloqueando(objeto):
+    conclusion = f"Corresponde revocar el fallo y amparar el derecho a la salud, y confirmar {objeto}."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert any("anuncia CONFIRMAR como el resultado" in m for m in msgs), conclusion
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        # Falsos negativos aceptados: tras el sustantivo hay un relativo o un adjetivo que no es de la lista; podría ser de otro.
+        "Corresponde revocar el fallo, amparar el derecho a la salud y confirmar la sentencia que negó el amparo.",
+        "Corresponde revocar el fallo, amparar el derecho a la salud y confirmar la decisión que negó el amparo.",
+        "Corresponde revocar el fallo, amparar el derecho a la salud y confirmar el fallo anterior.",
+        "Corresponde revocar el fallo, amparar el derecho a la salud y confirmar la sentencia de fecha 3 de mayo de 2023.",
+        "Corresponde revocar el fallo, amparar el derecho a la salud y confirmar la sentencia del 3 de mayo de 2023.",
+    ],
+)
+def test_coherencia_decision_un_relativo_tras_el_objeto_judicial_es_un_falso_negativo_aceptado(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR"))
+    assert not any("anuncia" in m and "no anuncia" not in m for m in msgs), conclusion
+
+
+# --- #89: el otro tipo de carencia fuera de la fórmula, o coordinado con el decidido -------------------------------------------------
+# Falsos negativos aceptados, en futuro y en infinitivo. El hueco entre «la carencia» y el tipo es la lista cerrada de la fórmula
+# (`_HUECO_CARENCIA`): ensancharlo con otras palabras («en el presente caso», «como consecuencia de un»…) devolvería el falso BLOQUEA
+# de main en «…por situación sobreviniente, distinta del hecho superado» (el hueco cruzaría hasta el tipo que se contrasta). Y un tipo
+# coordinado con el decidido («por daño consumado y por hecho superado») tampoco se examina: el que se declara es el primero. main
+# bloqueaba estas frases en futuro; aquí no, y no es un descuido sino el precio de no bloquear los contrastes.
+_COLAS_DEL_OTRO_TIPO_NO_EXAMINADAS = (
+    # (decidido, lo que sigue a «la carencia actual de objeto»)
+    ("CARENCIA_HECHO_SUPERADO", "en el presente caso por daño consumado, a diferencia del hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", "en este caso por situación sobreviniente, a diferencia del hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", "jurídico por daño consumado, a diferencia del hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", "del presente proceso por daño consumado, no del hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", ", de manera que se configura un daño consumado, y no un hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", "como consecuencia de un daño consumado, a diferencia del hecho superado"),
+    ("CARENCIA_HECHO_SUPERADO", "por cuanto se configuró un daño consumado, a diferencia del hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado y por hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado, y por hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado y hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado, así como por hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado o por hecho superado"),
+    ("CARENCIA_DANO_CONSUMADO", "por daño consumado y también por hecho superado"),
+    ("CARENCIA_SOBREVINIENTE", "por situación sobreviniente y por daño consumado"),
+    ("CARENCIA_HECHO_SUPERADO", "por hecho superado y por situación sobreviniente"),
+)
+
+
+@pytest.mark.parametrize("verbo", ["Corresponde revocar el fallo y declarar", "Se revocará el fallo y se declarará"])
+@pytest.mark.parametrize(("decidido", "cola"), _COLAS_DEL_OTRO_TIPO_NO_EXAMINADAS)
+def test_coherencia_decision_otro_tipo_tras_palabras_ajenas_a_la_formula_o_coordinado_es_un_falso_negativo_aceptado(verbo, decidido, cola):
+    conclusion = f"{verbo} la carencia actual de objeto {cola}."
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", decidido))
+    assert not any("anuncia" in m and "no anuncia" not in m for m in msgs), conclusion
+
+
 # --- #89: tiempo acotado ----------------------------------------------------------------------------------------------
 # Auditoría de las expresiones que añade la regla del infinitivo y del tipo de carencia. Cada una es una alternativa de frases
 # fijas sin cuantificadores anidados sobre alternativas que se solapen (ninguna frase de una lista es otra seguida de un
@@ -2624,7 +2823,10 @@ _ENTRADAS_ADVERSARIAS_89 = {
     "_HUECO_CARENCIA": (lambda t: lint._INFINITIVO_SUSTITUTIVA["CARENCIA_HECHO_SUPERADO"].match(t), "declarar la carencia" + " actual de," * 300 + " x"),
     "_ATRIBUCION": (lambda t: lint._ATRIBUCION.search(t), "para la " * 300 + "x x x x"),
     "_CONDICION": (lambda t: lint._CONDICION.search(t), "siempre y " * 300 + "x"),
-    "_ALCANCE_PARCIAL": (lambda t: lint._ALCANCE_PARCIAL.search(t), "en lo " * 300 + "x"),
+    "_COLA_PREVIA": (lambda t: lint._cola_entera(t, 0, len(t)), "a" * 10000 + " de tutela" * 300 + ", x"),
+    "_COLA_QUE_NO_ACOTA": (lambda t: lint._cola_entera(t, 0, len(t)), " por las razones ya" * 300 + " x"),
+    "_COLA_Y_ENLACE": (lambda t: lint._cola_entera(t, 0, len(t)), " en este caso" + ", y, en su lugar," * 300 + " x"),
+    "_OBJETO_JUDICIAL_SIN_COMPLEMENTO": (lambda t: lint._OBJETO_JUDICIAL.match(t), " " + "la " * 300 + "decisión médica de operar x"),
     "_OBJETO_JUDICIAL": (lambda t: lint._OBJETO_JUDICIAL.match(t), " " + "el la los dicho " * 300 + "x"),
     "_EL_AMPARO_MISMO": (lambda t: lint._EL_AMPARO_MISMO.match(t), " " + "la totalidad de la citada presente el referido " * 300 + "x."),
     "_EL_AMPARO_MISMO_PRETENSIONES": (lambda t: lint._EL_AMPARO_MISMO.match(t), " las pretensiones de " + "la citada " * 300 + "x."),
