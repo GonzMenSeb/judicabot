@@ -1269,6 +1269,31 @@ def test_coherencia_decision_neg_sigue_sin_coincidir_con_negocio_ni_negligencia(
         assert any("NEGAR" in m for m in msgs), palabra
 
 
+# --- Lo que main deja pasar no bloquea ----------------------------------------------------------------------------------
+# Las frases de la última revisión: un «que» coordinado («…y que procede…») de un tercero o del a quo. Con la regla del
+# infinitivo (#89) su «confirmar»/«negar» se leía como el resultado del Despacho; aquí el infinitivo no se examina, como en
+# main. Quedan como guarda para cuando vuelva esa regla.
+_QUE_COORDINADO_DE_UN_TERCERO = [
+    "La EPS afirma que la tutela es improcedente y que procede confirmar el fallo.",
+    "La EPS sostiene que el caso es nuevo y que corresponde confirmar la sentencia.",
+    "La EPS alega que ya cumplió y que procede confirmar el fallo.",
+    "La EPS alega que la orden es imposible y que hay que confirmar la sentencia de primera instancia.",
+    "La accionada reitera que la tutela es temeraria y que, en consecuencia, procede confirmar el fallo.",
+    "Aunque la EPS afirma que la tutela es improcedente y que procede confirmar el fallo, esa tesis no se acoge.",
+    "Si bien la EPS plantea que el servicio no es urgente y que corresponde confirmar la sentencia, esa tesis no se acoge.",
+    "La EPS alegó que el servicio es suntuario y que procede negar el amparo.",
+    "El juez de instancia consideró que el servicio es suntuario y que procede negar el amparo.",
+    "El a quo negó el amparo porque consideró que la acción es improcedente y que corresponde negar la tutela.",
+    "El juez de primera instancia negó la tutela al estimar que la acción es subsidiaria y que procede negar el amparo.",
+]
+
+
+@pytest.mark.parametrize("frase", _QUE_COORDINADO_DE_UN_TERCERO)
+def test_coherencia_decision_el_que_coordinado_de_un_tercero_no_es_el_resultado_del_despacho(frase):
+    conclusion = f"{frase} Por ello, el Despacho revocará el fallo y amparará el derecho a la salud."
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
+
+
 # --- Tiempo acotado: ninguna expresión regular de la coherencia retrocede de forma catastrófica -----------------------
 # Una expresión con alternativas solapadas bajo un cuantificador («la» y «la totalidad de la» dentro de «(?:…)*») cuesta
 # 2^n pasos cuando el texto no casa, y como `re` retiene el GIL, una sola conclusión así congela el servidor. Cada prueba
