@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import signal
+import threading
+import time
+
 import pytest
 
 from tutela2 import lint
@@ -1263,6 +1267,78 @@ def test_coherencia_decision_neg_sigue_sin_coincidir_con_negocio_ni_negligencia(
     for palabra in ("negocio", "negativo", "negligencia", "negociación"):
         msgs = lint.coherencia_decision(_caso(conclusion=f"Se revocará el fallo por el {palabra}."), _decision("REVOCAR", "NEGAR"))
         assert any("NEGAR" in m for m in msgs), palabra
+
+
+# --- Tiempo acotado: ninguna expresión regular de la coherencia retrocede de forma catastrófica -----------------------
+# Una expresión con alternativas solapadas bajo un cuantificador («la» y «la totalidad de la» dentro de «(?:…)*») cuesta
+# 2^n pasos cuando el texto no casa, y como `re` retiene el GIL, una sola conclusión así congela el servidor. Cada prueba
+# le da a la expresión una entrada larga (300 repeticiones de la unidad que más la hace dudar) que no casa al final, que
+# es su peor caso; con retroceso lineal tarda milisegundos. Un temporizador corta la expresión si se cuelga, para que la
+# prueba falle en vez de colgar la suite.
+
+_LIMITE_S = 0.25
+
+
+class _Colgada(Exception):
+    pass
+
+
+def _segundos(funcion, *args) -> float:
+    """Lo que tarda `funcion(*args)`; si pasa de 10 veces el límite (retroceso catastrófico), la corta y la prueba falla."""
+    con_alarma = hasattr(signal, "setitimer") and threading.current_thread() is threading.main_thread()
+    if con_alarma:
+        def _cortar(*_):
+            raise _Colgada
+
+        anterior = signal.signal(signal.SIGALRM, _cortar)
+        signal.setitimer(signal.ITIMER_REAL, 10 * _LIMITE_S)
+    inicio = time.perf_counter()
+    try:
+        funcion(*args)
+    except _Colgada:
+        pytest.fail(f"no terminó en {10 * _LIMITE_S} s: la expresión regular retrocede de forma catastrófica")
+    finally:
+        if con_alarma:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, anterior)
+    return time.perf_counter() - inicio
+
+
+def _coherencia_a_tiempo(resultado: str, sustitutiva: str, conclusion: str) -> list[str]:
+    caso, decision = _caso(conclusion=conclusion), _decision(resultado, sustitutiva)
+    msgs: list[str] = []
+    segundos = _segundos(lambda: msgs.extend(lint.coherencia_decision(caso, decision)))
+    assert segundos < _LIMITE_S, f"{segundos:.3f} s con {len(conclusion)} caracteres"
+    return msgs
+
+
+@pytest.mark.parametrize(
+    ("expresion", "texto"),
+    [
+        # «la totalidad de la» se podía leer como un determinante o como «la totalidad de» + «la»: 2^300 lecturas.
+        ("_ES_EL_AMPARO", " " + "la totalidad de la " * 300 + "x."),
+        ("_PALABRA_SUSTANTIVA", " " + "la totalidad de " * 300 + "."),
+        ("_ES_EL_AMPARO", " " + "totalmente todas las esas dichas sus " * 300 + "x."),
+        ("_PALABRA_SUSTANTIVA", " " + "el la su un " * 300 + "."),
+    ],
+)
+def test_el_determinante_de_lo_que_se_niega_no_retrocede_de_forma_catastrofica(expresion, texto):
+    segundos = _segundos(getattr(lint, expresion).match, texto)
+    assert segundos < _LIMITE_S, f"{expresion}: {segundos:.3f} s"
+
+
+@pytest.mark.parametrize("repeticiones", [24, 300])
+def test_coherencia_decision_con_un_determinante_repetido_termina_a_tiempo(repeticiones):
+    # Entrada de la revisión: con N=24 tardaba 19,5 s y con N=300 no terminaba; en main, 2 ms.
+    conclusion = "Se revocará el fallo y se amparará el derecho. Se negará " + "la totalidad de la " * repeticiones + "x."
+    _coherencia_a_tiempo("REVOCAR", "AMPARAR", conclusion)
+
+
+@pytest.mark.parametrize("repeticiones", [24, 40, 300])
+def test_coherencia_decision_con_un_enlace_repetido_termina_a_tiempo(repeticiones):
+    # Entrada de la revisión contra `_ENLACE_FINAL` («\s*,?\s*» bajo «(?:…)*$»), que era de la regla del infinitivo (#89) y se
+    # fue con ella: con N=24 tardaba 9,9 s y con N=40 no terminaba. Queda como guarda para cuando vuelva esa regla.
+    _coherencia_a_tiempo("REVOCAR", "AMPARAR", "Corresponde y " + "además " * repeticiones + "x negar el amparo.")
 
 
 TEXTO_CITA = (

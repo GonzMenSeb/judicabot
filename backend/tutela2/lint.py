@@ -569,9 +569,11 @@ _CONCESION = re.compile(
 )
 # Qué se niega. Si es el amparo mismo, la negación contradice AMPARAR; si es una pretensión accesoria («el tratamiento
 # integral», «la exoneración de copagos»), es una negación parcial legítima.
+# Cada determinante se lee de una sola forma: «la totalidad de» no absorbe el artículo que sigue (lo toma la iteración
+# siguiente). Si lo absorbiera, «la totalidad de la» admitiría dos lecturas y un texto que no casa costaría 2^n pasos.
 _DETERMINANTE = (
     r"(?:(?:[a-zñ]+mente|el|la|los|las|su|sus|un|una|todas?|todos?|tales|dichas?|estas?|estos?|esas?|esos?"
-    r"|la\s+totalidad\s+de(?:\s+(?:el|la|los|las))?)\s+)*"
+    r"|la\s+totalidad\s+de)\s+)*"
 )
 _PRETENSION_GENERICA = r"(?:pretensi[oó]n(?:es)?|s[uú]plicas?|solicitud(?:es)?|petici[oó]n(?:es)?|pedimentos?|reclamaci[oó]n(?:es)?|demanda)"
 _AMPARO_COMO_OBJETO = r"(?:la\s+|el\s+)?(?:amparo|tutela|acci[oó]n|protecci[oó]n|accionante|actor|actora|demandante|peticionari\w+)"
