@@ -1207,6 +1207,19 @@ def test_coherencia_decision_negar_una_pretension_accesoria_no_contradice_ampara
         "Se revocará el fallo, se amparará el derecho y se negará su pretensión.",
         "Se revocará el fallo, se amparará el derecho y se negarán todas las pretensiones.",
         "Se revocará el fallo, se amparará el derecho y se negará integralmente el amparo.",
+        # el adverbio con tilde no es una «palabra sustantiva» que excuse: se niega el amparo mismo
+        "Se revocará el fallo, se amparará el derecho y se negará íntegramente el amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará únicamente la tutela.",
+        "Se revocará el fallo, se amparará el derecho y se negará específicamente el amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará jurídicamente la tutela.",
+        # lo mismo con un demostrativo en singular o con un adverbio que no acaba en «-mente»
+        "Se revocará el fallo, se amparará el derecho y se negará este amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará ese amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará dicho amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará también el amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará además la tutela.",
+        "Se revocará el fallo, se amparará el derecho y se negará asimismo el amparo.",
+        "Se revocará el fallo, se amparará el derecho y se negará entonces el amparo.",
         "La Sala revocará el fallo, no amparará el derecho invocado y negará el tratamiento integral.",
     ],
 )
@@ -1220,6 +1233,35 @@ def test_coherencia_decision_confirmar_amparo_y_negar_el_amparo_bloquea():
         _caso(conclusion="Se confirmará el fallo y se negará el amparo."), _decision("CONFIRMAR", "AMPARAR")
     )
     assert any("anuncia NEGAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se confirmará el fallo y se negará íntegramente el amparo.",
+        "Se confirmará el fallo y se negará únicamente la tutela.",
+        "Se confirmará el fallo y se negará este amparo.",
+        "Se confirmará el fallo y se negará también el amparo.",
+    ],
+)
+def test_coherencia_decision_confirmar_amparo_y_negar_el_amparo_con_adverbio_o_demostrativo_bloquea(conclusion):
+    msgs = lint.coherencia_decision(_caso(conclusion=conclusion), _decision("CONFIRMAR", "AMPARAR"))
+    assert any("anuncia NEGAR" in m for m in msgs)
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "Se revocará el fallo, se amparará el derecho y se negará íntegramente el tratamiento integral.",
+        "Se revocará el fallo, se amparará el derecho y se negará únicamente el transporte.",
+        "Se revocará el fallo, se amparará el derecho y se negará también el tratamiento integral.",
+        "Se revocará el fallo, se amparará el derecho y se negará además la exoneración de copagos.",
+        "Se revocará el fallo, se amparará el derecho y se negará este tratamiento.",
+        "Se revocará el fallo, se amparará el derecho y se negará dicho transporte.",
+    ],
+)
+def test_coherencia_decision_el_adverbio_o_demostrativo_no_vuelve_bloqueante_una_pretension_accesoria(conclusion):
+    assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision("REVOCAR", "AMPARAR")) == []
 
 
 def test_coherencia_decision_derecho_marcado_niega_admite_negar_el_amparo_de_ese_derecho():
@@ -1365,6 +1407,9 @@ _ENTRADAS_ADVERSARIAS = {
     "_ES_EL_AMPARO": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "las " * 300 + "pretensiones de la de la de la x"),
     # un adverbio en «-mente» larguísimo: «[a-zñ]+mente» retrocede letra a letra una sola vez
     "_DETERMINANTE": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "mente" * 300 + " x."),
+    # lo mismo con letras con tilde, que ahora entran en el adverbio, y con la lista de palabras de relleno
+    "_DETERMINANTE_CON_TILDE": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "ímente" * 300 + " x."),
+    "_DETERMINANTE_ADVERBIOS": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "íntegramente también este dicho " * 300 + "x."),
 }
 
 
