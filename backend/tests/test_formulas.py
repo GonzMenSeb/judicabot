@@ -41,6 +41,10 @@ def dec(**kw) -> Decision:
     return Decision(**base)
 
 
+def DD(derecho: str, disposicion: str = "AMPARA") -> DisposicionDerecho:
+    return DisposicionDerecho(derecho=derecho, disposicion=disposicion)
+
+
 def test_juzgado_formas_y_falta():
     m = md()
     assert f.juzgado(m, "cuerpo") == "Juzgado Dieciocho Penal Municipal con Función de Control de Garantías de Medellín"
@@ -355,6 +359,89 @@ def test_negar_plural_y_singular():
     )
     d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[DisposicionDerecho(derecho="petición", disposicion="NIEGA")])
     assert "respecto del derecho fundamental a la petición," in por_clave(f.numerales(d, md()))["sustitutiva"].texto
+
+
+def test_amparo_parcial_agrega_numeral_de_negacion():
+    d = dec(derechos=[DD("mínimo vital"), DD("vida digna", "NIEGA")])
+    ns = f.numerales(d, md())
+    assert [n.clave for n in ns] == ["resultado", "sustitutiva", "negacion", "orden:0", "notificar", "remitir"]
+    n = por_clave(ns)
+    assert n["sustitutiva"].texto == (
+        "AMPARAR el derecho fundamental al mínimo vital de la señora ANA EJEMPLO, identificada con cédula de ciudadanía 1.111.111."
+    )
+    assert n["negacion"].texto == (
+        "NEGAR el amparo solicitado por la señora ANA EJEMPLO respecto del derecho fundamental a la vida digna, "
+        "por las razones expuestas en este proveído."
+    )
+    assert n["negacion"].negritas == ["NEGAR"]
+
+
+def test_amparo_parcial_con_varios_derechos_negados_va_en_un_numeral():
+    d = dec(derechos=[DD("salud"), DD("mínimo vital", "NIEGA"), DD("vida digna", "NIEGA")])
+    t = por_clave(f.numerales(d, md()))["negacion"].texto
+    assert t == (
+        "NEGAR el amparo solicitado por la señora ANA EJEMPLO respecto de los derechos fundamentales al mínimo vital "
+        "y a la vida digna, por las razones expuestas en este proveído."
+    )
+
+
+def test_amparar_sin_derecho_amparado_deja_el_marcador():
+    d = dec(derechos=[DD("mínimo vital", "NIEGA"), DD("vida digna", "SIN_PRONUNCIAMIENTO")])
+    ns = por_clave(f.numerales(d, md()))
+    assert "⟦FALTA: derechos⟧" in ns["sustitutiva"].texto
+    assert ns["negacion"].texto.startswith("NEGAR el amparo solicitado por la señora ANA EJEMPLO respecto del derecho fundamental al mínimo vital,")
+
+
+def test_el_numeral_de_negacion_se_puede_reordenar():
+    d = dec(derechos=[DD("mínimo vital"), DD("vida digna", "NIEGA")], orden_numerales=["negacion", "resultado"])
+    assert [n.clave for n in f.numerales(d, md())][:3] == ["negacion", "resultado", "sustitutiva"]
+
+
+def test_sin_pronunciamiento_no_genera_numeral():
+    d = dec(derechos=[DD("mínimo vital"), DD("vida digna", "SIN_PRONUNCIAMIENTO")])
+    assert "negacion" not in por_clave(f.numerales(d, md()))
+
+
+def test_la_negacion_parcial_solo_acompana_al_amparar():
+    for sustitutiva in ("NEGAR", "IMPROCEDENTE"):
+        d = dec(sustitutiva=sustitutiva, ordenes=[], derechos=[DD("mínimo vital"), DD("vida digna", "NIEGA")])
+        assert "negacion" not in por_clave(f.numerales(d, md()))
+    d = dec(resultado="CONFIRMAR", derechos=[DD("mínimo vital"), DD("vida digna", "NIEGA")])
+    assert "negacion" not in por_clave(f.numerales(d, md()))
+
+
+def test_negar_usa_los_derechos_de_la_decision_y_los_agregados():
+    d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[DD("mínimo vital"), DD("vida digna"), DD("debido proceso")])
+    assert por_clave(f.numerales(d, md()))["sustitutiva"].texto == (
+        "NEGAR el amparo solicitado por la señora ANA EJEMPLO respecto de los derechos fundamentales al mínimo vital, "
+        "a la vida digna y al debido proceso, por las razones expuestas en este proveído."
+    )
+
+
+def test_negar_sin_derechos_con_pronunciamiento_omite_respecto():
+    d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[DD("mínimo vital", "SIN_PRONUNCIAMIENTO"), DD("vida digna", "SIN_PRONUNCIAMIENTO")])
+    assert por_clave(f.numerales(d, md()))["sustitutiva"].texto == (
+        "NEGAR el amparo solicitado por la señora ANA EJEMPLO, por las razones expuestas en este proveído."
+    )
+
+
+def test_negar_mixto_solo_niega_los_marcados():
+    d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[DD("mínimo vital", "NIEGA"), DD("vida digna", "AMPARA")])
+    t = por_clave(f.numerales(d, md()))["sustitutiva"].texto
+    assert "respecto del derecho fundamental al mínimo vital," in t and "vida digna" not in t
+
+
+def test_negar_sin_ningun_derecho_es_negacion_general():
+    d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[])
+    t = por_clave(f.numerales(d, md(derechos_invocados=[])))["sustitutiva"].texto
+    assert t == "NEGAR el amparo solicitado por la señora ANA EJEMPLO, por las razones expuestas en este proveído."
+    assert "⟦FALTA" not in t
+
+
+def test_negar_sin_derechos_en_la_decision_usa_invocados():
+    d = dec(sustitutiva="NEGAR", ordenes=[], derechos=[])
+    t = por_clave(f.numerales(d, md()))["sustitutiva"].texto
+    assert "respecto de los derechos fundamentales al mínimo vital y a la vida digna," in t
 
 
 def test_improcedente_y_carencia():

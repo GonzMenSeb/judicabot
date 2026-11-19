@@ -358,6 +358,8 @@ _CAMPO_POR_ERROR = (
     ("Falta la decisión sustitutiva", "sustitutiva"),
     ("Falta el eje", "eje"),
     ("Si se ampara", "ordenes"),
+    ("Al amparar, deje", "derechos"),
+    ("Con «Negar el amparo»", "derechos"),
     ("Clave de numeral inválida", "orden_numerales"),
     ("fecha_fallo", "fecha_fallo"),
     ("fecha_oficio", "fecha_oficio"),

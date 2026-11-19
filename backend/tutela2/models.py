@@ -534,7 +534,7 @@ class DatosAuto(_SinControl):
         return v
 
 
-CLAVES_NUMERAL = ("resultado", "sustitutiva", "prevenir", "desvincular", "compulsa", "notificar", "remitir")
+CLAVES_NUMERAL = ("resultado", "sustitutiva", "negacion", "prevenir", "desvincular", "compulsa", "notificar", "remitir")
 
 
 def _iso_valida(v: str) -> bool:
@@ -557,6 +557,11 @@ _SIN_TILDES = str.maketrans("áéíóúü", "aeiouu")
 DECIDIDO_POR_PLACEHOLDERS = frozenset({"john doe", "prueba", "caso sintetico"})
 MSG_DECIDIDO_POR_VACIO = "Decidido por está vacío: en la declaración de uso de IA constará «no consta»."
 MSG_DECIDIDO_POR_PLACEHOLDER = "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide."
+MSG_DERECHOS_AMPARAR = "Al amparar, deje al menos un derecho en «Ampara» (si no hay ninguno, agréguelo en «Otro derecho»)."
+MSG_DERECHOS_NEGAR_AMPARA = (
+    "Con «Negar el amparo» no aparecen en el RESUELVE los derechos en «Ampara»: {lista}. "
+    "Para amparar unos derechos y negar otros, elija «Amparar» y marque «Niega» en los que se niegan."
+)
 
 
 def colapsar_texto(v: Any) -> Any:
@@ -646,12 +651,17 @@ class Decision(_SinControl):
     def advertencias(self) -> list[str]:
         if self.accion != "decidir":
             return []
+        avisos: list[str] = []
         nombre = self.decidido_por.strip()
         if not nombre:
-            return [MSG_DECIDIDO_POR_VACIO]
-        if _SEPARADORES.sub(" ", nombre.lower().translate(_SIN_TILDES)).strip() in DECIDIDO_POR_PLACEHOLDERS:
-            return [MSG_DECIDIDO_POR_PLACEHOLDER]
-        return []
+            avisos.append(MSG_DECIDIDO_POR_VACIO)
+        elif _SEPARADORES.sub(" ", nombre.lower().translate(_SIN_TILDES)).strip() in DECIDIDO_POR_PLACEHOLDERS:
+            avisos.append(MSG_DECIDIDO_POR_PLACEHOLDER)
+        if self.sustitutiva == "NEGAR" and self.resultado != "CONFIRMAR":
+            amparados = [x.derecho for x in self.derechos if x.disposicion == "AMPARA"]
+            if amparados and any(x.disposicion == "NIEGA" for x in self.derechos):
+                avisos.append(MSG_DERECHOS_NEGAR_AMPARA.format(lista=", ".join(amparados)))
+        return avisos
 
     def _clave_valida(self, k: str) -> bool:
         if k in CLAVES_NUMERAL:
@@ -675,6 +685,14 @@ class Decision(_SinControl):
                 e.append("Falta el eje: 2 a 5 líneas con el porqué de la decisión.")
             if self.sustitutiva == "AMPARAR" and not self.ordenes:
                 e.append("Si se ampara, hay que indicar al menos una orden.")
+            if (
+                self.sustitutiva == "AMPARAR"
+                and self.resultado != "CONFIRMAR"
+                and self.derechos
+                and not any(x.disposicion == "AMPARA" for x in self.derechos)
+            ):
+                # Sin derechos en la decisión el RESUELVE usa los invocados de los metadatos, que aquí no se conocen.
+                e.append(MSG_DERECHOS_AMPARAR)
             for i, o in enumerate(self.ordenes, 1):
                 if o.verbo != "ORDENAR" or o.mismo_termino:
                     continue  # PREVENIR y ADVERTIR no usan plazo; con «mismo término» rige el de la orden anterior

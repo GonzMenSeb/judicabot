@@ -68,6 +68,7 @@ export const MSG = {
   carencia: "Falta indicar el tipo de carencia actual de objeto.",
   eje: "Falta el eje: 2 a 5 líneas con el porqué de la decisión.",
   sinOrdenes: "Si se ampara, hay que indicar al menos una orden.",
+  derechosAmparar: "Al amparar, deje al menos un derecho en «Ampara» (si no hay ninguno, agréguelo en «Otro derecho»).",
   ordenIncompleta: "Cada orden necesita destinatario y conducta.",
   plazo: "El plazo de cada orden debe ser mayor que cero.",
   plazoEntero: "El plazo de cada orden debe ser un número entero.",
@@ -134,9 +135,12 @@ export function ordenNueva(id: number): OrdenForm {
   };
 }
 
-export function derechoExtraido(id: number, nombre: string): DerechoForm {
-  return { id, nombre, disposicion: "AMPARA", propio: false };
+export function derechoExtraido(id: number, nombre: string, disposicion: DisposicionDerecho = "AMPARA"): DerechoForm {
+  return { id, nombre, disposicion, propio: false };
 }
+
+/** La disposición con la que nace un derecho nuevo: bajo «Negar el amparo» se niega; en cualquier otro caso se ampara. */
+const disposicionInicial = (f: Formulario): DisposicionDerecho => (sustitutivaEfectiva(f) === "NEGAR" ? "NIEGA" : "AMPARA");
 
 export function formularioInicial(payload: PayloadDecision | null, juez: string): Formulario {
   const extraidos = payload?.derechos_invocados ?? [];
@@ -180,8 +184,17 @@ const ordenEnBlanco = (o: OrdenForm) => !o.destinatario.trim() && !o.conducta.tr
 
 export const admiteOrdenes = (f: Formulario): boolean => sustitutivaEfectiva(f) !== "";
 
+/** Al negar, los derechos pasan a «Niega»; al volver a amparar sin ninguno en «Ampara», regresan a «Ampara» (un amparo parcial armado
+ *  se conserva). Los «Sin pronunciamiento» no se tocan. */
+function derechosAl(derechos: DerechoForm[], s: SustitutivaForm): DerechoForm[] {
+  const cambiar = (de: DisposicionDerecho, a: DisposicionDerecho) => derechos.map((d) => (d.disposicion === de ? { ...d, disposicion: a } : d));
+  if (s === "NEGAR") return cambiar("AMPARA", "NIEGA");
+  if (s === "AMPARAR" && !derechos.some((d) => d.disposicion === "AMPARA")) return cambiar("NIEGA", "AMPARA");
+  return derechos;
+}
+
 export function elegirSustitutiva(f: Formulario, s: SustitutivaForm): Formulario {
-  const siguiente: Formulario = { ...f, sustitutiva: s, causal: s === "IMPROCEDENTE" ? f.causal : "" };
+  const siguiente: Formulario = { ...f, sustitutiva: s, causal: s === "IMPROCEDENTE" ? f.causal : "", derechos: derechosAl(f.derechos, s) };
   if (s === "AMPARAR" && f.ordenes.length === 0) {
     return { ...siguiente, ordenes: [ordenNueva(f.siguienteId)], siguienteId: f.siguienteId + 1 };
   }
@@ -202,13 +215,14 @@ export function agregarLibre(f: Formulario): Formulario {
 export function agregarDerecho(f: Formulario, nombre: string): Formulario {
   const limpio = nombre.trim();
   if (!limpio) return f;
-  const derechos = [...f.derechos, { id: f.siguienteId, nombre: limpio, disposicion: "AMPARA" as const, propio: true }];
+  const derechos = [...f.derechos, { id: f.siguienteId, nombre: limpio, disposicion: disposicionInicial(f), propio: true }];
   return { ...f, derechos, siguienteId: f.siguienteId + 1 };
 }
 
 export function clavesVigentes(f: Formulario): string[] {
   const k = ["resultado"];
   if (f.resultado && f.resultado !== "CONFIRMAR") k.push("sustitutiva");
+  if (sustitutivaEfectiva(f) === "AMPARAR" && f.derechos.some((d) => d.disposicion === "NIEGA")) k.push("negacion");
   if (admiteOrdenes(f)) f.ordenes.forEach((o) => k.push(`orden#${o.id}`));
   if (lineas(f.prevenir).length) k.push("prevenir");
   if (lineas(f.desvincular).length) k.push("desvincular");
@@ -308,6 +322,7 @@ export function validar(d: DecisionCuerpo): Hallazgo[] {
   if (!d.sustitutiva && d.resultado !== "CONFIRMAR") e.push({ campo: "sustitutiva", mensaje: MSG.sustitutiva });
   if (!d.eje) e.push({ campo: "eje", mensaje: MSG.eje });
   if (d.sustitutiva === "AMPARAR" && !d.ordenes.length) e.push({ campo: "ordenes", mensaje: MSG.sinOrdenes });
+  if (d.sustitutiva === "AMPARAR" && !d.derechos.some((x) => x.disposicion === "AMPARA")) e.push({ campo: "derechos", mensaje: MSG.derechosAmparar });
   d.ordenes.forEach((o, i) => {
     if (!o.destinatario) e.push({ campo: `ordenes.${i}.destinatario`, mensaje: MSG.ordenIncompleta });
     if (!o.conducta) e.push({ campo: `ordenes.${i}.conducta`, mensaje: MSG.ordenIncompleta });
@@ -369,6 +384,7 @@ export function resumenCorto(h: Hallazgo): string {
   if (campo === "sustitutiva") return mensaje === MSG.carencia ? "el tipo de carencia" : "la decisión sustitutiva";
   if (campo === "eje") return "el porqué";
   if (campo === "ordenes") return "al menos una orden";
+  if (campo === "derechos") return "al menos un derecho en «Ampara»";
   if (/^ordenes\.\d+\.(destinatario|conducta)$/.test(campo)) return "destinatario y conducta en cada orden";
   if (/^ordenes\.\d+\.plazo/.test(campo)) return "el plazo de cada orden";
   if (campo === "compulsa.respecto_de") return "respecto de quién se compulsa";
@@ -386,6 +402,10 @@ export function idDeCampo(f: Formulario, campo: string): string | null {
   if (libre) {
     const l = f.libres[Number(libre[1])];
     return l ? `dec-libre-${l.id}` : null;
+  }
+  if (campo === "derechos") {
+    const primero = f.derechos[0];
+    return primero ? `dec-derecho-${primero.id}-disposicion` : "dec-derecho-nuevo";
   }
   const simples: Record<string, string> = {
     resultado: "dec-resultado",
@@ -446,7 +466,7 @@ export function reconciliarDerechos(f: Formulario, payload: PayloadDecision | nu
     const i = propios.findIndex((d) => normal(d.nombre) === clave);
     const [igual] = i >= 0 ? propios.splice(i, 1) : [];
     if (igual) return { ...igual, propio: false }; // el juez ya lo había agregado: no se duplica
-    return derechoExtraido(id++, nombre);
+    return derechoExtraido(id++, nombre, disposicionInicial(f));
   });
   return { derechos: [...derechos, ...propios], derechosBase: [...nuevos], siguienteId: id };
 }

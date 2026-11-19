@@ -193,7 +193,7 @@ export function Reparos({ f, cambiar, payload }: PropsSeccion & { payload: Paylo
   );
 }
 
-export function Derechos({ f, cambiar }: PropsSeccion) {
+export function Derechos({ f, cambiar, err }: PropsSeccion) {
   const [nuevo, setNuevo] = useState("");
   const sust = sustitutivaEfectiva(f);
   const agregar = () => {
@@ -201,7 +201,12 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
     setNuevo("");
   };
   return (
-    <Seccion id="dec-derechos" titulo="Derechos invocados" sub="Se piden solo al amparar o negar." oculta={sust !== "AMPARAR" && sust !== "NEGAR"}>
+    <Seccion
+      id="dec-derechos"
+      titulo="Derechos invocados"
+      sub="Se piden solo al amparar o negar. Para un amparo parcial elija «Amparar» y marque «Niega» en los derechos que no se amparan: saldrán en un numeral de negación."
+      oculta={sust !== "AMPARAR" && sust !== "NEGAR"}
+    >
       {f.derechos.length === 0 && <p class="dec-vacio">No se recibieron derechos extraídos.</p>}
       {f.derechos.map((d, i) => (
         <div class="dec-reparo dec-derecho" key={d.id}>
@@ -217,6 +222,7 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
             />
           </div>
           <select
+            id={`dec-derecho-${d.id}-disposicion`}
             aria-label={`Disposición del derecho ${d.nombre}`}
             value={d.disposicion}
             onChange={(e) => cambiar((x) => ({ ...x, derechos: x.derechos.map((y) => (y.id === d.id ? { ...y, disposicion: e.currentTarget.value as typeof d.disposicion } : y)) }))}
@@ -234,8 +240,14 @@ export function Derechos({ f, cambiar }: PropsSeccion) {
           )}
         </div>
       ))}
+      {err("derechos") && (
+        <small class="dec-error" role="alert">
+          {err("derechos")}
+        </small>
+      )}
       <div class="dec-agregar">
         <input
+          id="dec-derecho-nuevo"
           type="text"
           placeholder="Otro derecho"
           aria-label="Otro derecho"
