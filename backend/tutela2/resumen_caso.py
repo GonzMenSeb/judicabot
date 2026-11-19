@@ -17,9 +17,10 @@ etapa (0-4), a partir de estado:
   corriendo (según cmd del job)     -> nuevo 0; iniciar 1; continuar la etapa cacheada;
                                        decidir 1 si decision.json trae accion rehacer_*, si no 3
 
-siguiente_paso: texto fijo por estado (SIGUIENTE_PASO).
+siguiente_paso: texto fijo por estado (SIGUIENTE_PASO). Si api.estado marca historial_perdido (salidas o decisión sin
+un hilo que las respalde, o un hilo dañado) es siempre "Revisar el historial perdido", con cualquier estado.
 
-n_alertas: len(alertas) si es lista (ingesta) o la suma de los largos si es dict (grafo).
+n_alertas: len(alertas) si es lista (ingesta) o la suma de los largos si es dict (grafo); +1 con historial_perdido.
 radicado: cui_2a o, si falta, cui_1a de los metadatos. nombre: contenido de <caso>/.nombre o, si no
 existe, el id. actualizado: la mayor mtime de los archivos de la firma, en ISO 8601 UTC.
 
@@ -82,6 +83,7 @@ SIGUIENTE_PASO = {
     "corriendo": "Ver el avance",
 }
 SIGUIENTE_PASO_REANUDAR = "Continuar la ejecución"
+SIGUIENTE_PASO_HISTORIAL_PERDIDO = "Revisar el historial perdido"
 ETAPA_POR_ESTADO = {"sin_iniciar": 0, "incompleto": 0, "revision": 0, "esperando_decision": 2, "terminado": 4}
 CLAVES = frozenset(
     {
@@ -150,6 +152,9 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
     else:
         etapa, siguiente = ETAPA_POR_ESTADO[estado], SIGUIENTE_PASO[estado]
     sin_datos = estado == "error" and not resumen
+    n_alertas = _n_alertas(resumen.get("alertas"))
+    if respuesta.get("historial_perdido"):
+        siguiente, n_alertas = SIGUIENTE_PASO_HISTORIAL_PERDIDO, n_alertas + 1
     return {
         "radicado": meta.get("cui_2a") or meta.get("cui_1a") or None,
         "accionante": meta.get("accionante") or None,
@@ -158,7 +163,7 @@ def campos_desde_estado(respuesta: dict[str, Any] | None) -> dict[str, Any]:
         "estado": estado,
         "etapa": etapa,
         "siguiente_paso": siguiente,
-        "n_alertas": _n_alertas(resumen.get("alertas")),
+        "n_alertas": n_alertas,
         "proceso": PROCESO,
         "segunda": None if sin_datos else resumen_segunda.datos(estado, resumen),
     }

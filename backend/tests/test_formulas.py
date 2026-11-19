@@ -230,10 +230,59 @@ def test_encabezado_decision_etiqueta_y_falta():
         ("al trabajo", "al trabajo"),
         ("a la salud", "a la salud"),
         ("a los alimentos", "a los alimentos"),
+        ("libre desarrollo de la personalidad", "al libre desarrollo de la personalidad"),
+        ("pensión de sobrevivientes", "a la pensión de sobrevivientes"),
+        ("mesada pensional", "a la mesada pensional"),
+        ("buena fe", "a la buena fe"),
+        ("participación", "a la participación"),
+        ("tutela judicial efectiva", "a la tutela judicial efectiva"),
+        ("maternidad", "a la maternidad"),
+        ("consulta previa", "a la consulta previa"),
+        ("niñez", "a la niñez"),
+        ("salud", "a la salud"),
+        ("imagen", "a la imagen"),
+        ("agua potable", "al agua potable"),
+        ("buen nombre", "al buen nombre"),
+        ("trabajo", "al trabajo"),
+        ("doble instancia", "a la doble instancia"),
+        ("opinión", "a la opinión"),
+        ("reunión", "a la reunión"),
+        ("especial protección", "a la especial protección"),
     ],
 )
 def test_con_articulo(entrada, esperado):
     assert f.con_articulo(entrada) == esperado
+
+
+@pytest.mark.parametrize(
+    "entrada,esperado",
+    [
+        # Órganos de la compulsa (#109).
+        ("Consejo Seccional de la Judicatura de Antioquia", "m"),
+        ("Comisión Seccional de Disciplina Judicial de Antioquia", "f"),
+        ("Fiscalía General de la Nación", "f"),
+        ("Juzgado Primero Penal del Circuito", "m"),
+        ("Tribunal Superior de Medellín", "m"),
+        ("Ministerio Público", "m"),
+        ("Corte Suprema de Justicia", "f"),
+        ("Comité de Convivencia Laboral", "m"),
+        ("Instituto Colombiano de Bienestar Familiar", "m"),
+        ("Procuraduría General de la Nación", "f"),
+        # Adjetivos invariables antepuestos: el género lo da la palabra siguiente.
+        ("libre desarrollo de la personalidad", "m"),
+        ("libre expresión", "f"),
+        ("igual trato", "m"),
+        ("doble instancia", "f"),
+        # Excepciones de las listas.
+        ("agua potable", "m"),
+        ("hábeas data", "m"),
+        ("salud", "f"),
+        ("buena fe", "f"),
+        ("", "m"),
+    ],
+)
+def test_genero(entrada, esperado):
+    assert f.genero(entrada) == esperado
 
 
 @pytest.mark.parametrize(
@@ -282,6 +331,15 @@ def test_amparar_singular_y_tratamiento_masculino():
     m = md(accionante_tratamiento="el señor", accionante_identificacion=None)
     t = por_clave(f.numerales(d, m))["sustitutiva"].texto
     assert t == "AMPARAR el derecho fundamental a la petición del señor ANA EJEMPLO."
+
+
+def test_amparar_concuerda_el_articulo_de_cada_derecho():
+    d = dec(derechos=[DisposicionDerecho(derecho="pensión de sobrevivientes"), DisposicionDerecho(derecho="libre desarrollo de la personalidad")])
+    t = por_clave(f.numerales(d, md()))["sustitutiva"].texto
+    assert t == (
+        "AMPARAR los derechos fundamentales a la pensión de sobrevivientes y al libre desarrollo de la personalidad "
+        "de la señora ANA EJEMPLO, identificada con cédula de ciudadanía 1.111.111."
+    )
 
 
 def test_amparar_sin_derechos_usa_invocados():
@@ -432,6 +490,42 @@ def test_cierre_otras_determinaciones():
         "copias de lo actuado ante la Comisión Seccional de Disciplina Judicial de Antioquia para que, dentro del "
         "marco de sus competencias, evalúe las situaciones descritas respecto del Juzgado Veintidós."
     )
+
+
+COMPULSA_CONSEJO = Compulsa(organo="Consejo Seccional de la Judicatura de Antioquia", respecto_de="el doctor Juan Pérez")
+
+
+def test_compulsa_concuerda_el_articulo_del_organo():
+    n = por_clave(f.numerales(dec(compulsa=COMPULSA_CONSEJO), md()))
+    assert n["compulsa"].texto == (
+        "COMPULSAR COPIAS ante el Consejo Seccional de la Judicatura de Antioquia para que, de estimarlo pertinente, "
+        "adelante las actuaciones a que haya lugar respecto del doctor Juan Pérez, conforme a lo indicado en el "
+        "acápite de otras determinaciones de este proveído."
+    )
+
+
+def test_cierre_otras_determinaciones_con_organo_masculino():
+    assert "de lo actuado ante el Consejo Seccional de la Judicatura de Antioquia para que" in f.cierre_otras_determinaciones(COMPULSA_CONSEJO)
+
+
+@pytest.mark.parametrize(
+    "organo,esperado",
+    [
+        ("la Fiscalía General de la Nación", "ante la Fiscalía General de la Nación para que"),
+        ("El Tribunal Superior de Medellín", "ante el Tribunal Superior de Medellín para que"),
+        ("los Juzgados de Ejecución de Penas", "ante los Juzgados de Ejecución de Penas para que"),
+    ],
+)
+def test_compulsa_respeta_el_articulo_escrito(organo, esperado):
+    c = Compulsa(organo=organo, respecto_de="el doctor Juan Pérez")
+    assert esperado in por_clave(f.numerales(dec(compulsa=c), md()))["compulsa"].texto
+    assert esperado in f.cierre_otras_determinaciones(c)
+
+
+def test_compulsa_organo_vacio_marca_falta():
+    c = Compulsa(organo="  ", respecto_de="X")
+    assert "ante ⟦FALTA: órgano de la compulsa⟧ para que" in por_clave(f.numerales(dec(compulsa=c), md()))["compulsa"].texto
+    assert "ante ⟦FALTA: órgano de la compulsa⟧ para que" in f.cierre_otras_determinaciones(c)
 
 
 def test_prevenir_y_desvincular_repiten_preposicion():

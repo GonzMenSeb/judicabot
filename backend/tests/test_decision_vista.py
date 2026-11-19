@@ -844,3 +844,128 @@ def test_la_cache_evita_reabrir_el_hilo_en_llamadas_repetidas(sintetico, monkeyp
     for _ in range(5):
         cliente.post(URL.format("sintetico"), json=decision)
     assert len(llamadas) == 1
+
+
+# --- Compuerta de la decisión (#52) y rango del plazo (#126) ---
+
+ORDEN_BASE = {"destinatario": "la EPS", "conducta": "autorice"}
+UNA_ORDEN = [{**ORDEN_BASE, "plazo": {"n": 48, "unidad": "horas"}}]
+MSG_PLAZO_ENTERO = "El plazo de cada orden debe ser un número entero."
+MSG_PLAZO_MAXIMO = "El plazo de la orden 1 no puede superar 999.999."
+
+
+@pytest.mark.parametrize(
+    "ordenes",
+    [
+        [{**ORDEN_BASE, "verbo": "PREVENIR", "plazo": {"n": 0, "unidad": "horas"}}],
+        [{**ORDEN_BASE, "verbo": "ADVERTIR", "plazo": {"n": 0, "unidad": "horas"}}],
+        [{**ORDEN_BASE, "plazo": {"n": 48, "unidad": "horas"}}, {**ORDEN_BASE, "mismo_termino": True, "plazo": {"n": 0}}],
+    ],
+)
+def test_vista_no_exige_plazo_si_no_se_usa(ordenes):
+    assert _vista(ordenes=ordenes)["faltantes"] == []
+
+
+@pytest.mark.parametrize(
+    "n, mensaje",
+    [(0, decision_vista.MSG_PLAZO), (1_000_000, MSG_PLAZO_MAXIMO)],
+)
+def test_vista_sigue_exigiendo_plazo_al_ordenar(n, mensaje):
+    ordenes = [{**ORDEN_BASE, "verbo": "ORDENAR", "plazo": {"n": n, "unidad": "horas"}}]
+    assert _vista(ordenes=ordenes)["faltantes"] == [{"campo": "ordenes.0.plazo.n", "mensaje": mensaje}]
+
+
+def test_campos_del_error_mapea_el_plazo_de_cada_orden():
+    dec = Decision.model_validate({"accion": "decidir", "resultado": "REVOCAR", "sustitutiva": "AMPARAR", "eje": "x"})
+    mensaje = "El plazo de la orden 2 no puede superar 999.999."
+    assert decision_vista._campos_del_error(mensaje, dec) == ["ordenes.1.plazo.n"]
+    assert decision_vista._campos_del_error("El plazo de la orden 10 debe ser mayor que cero.", dec) == ["ordenes.9.plazo.n"]
+
+
+def _con(**cambios) -> dict:
+    return {**BASE, "ordenes": UNA_ORDEN, **cambios}
+
+
+def _con_plazo(n, verbo="ORDENAR") -> dict:
+    return _con(ordenes=[{**ORDEN_BASE, "verbo": verbo, "plazo": {"n": n, "unidad": "horas"}}])
+
+
+# Para los errores de fecha se fija solo el campo (``None`` = cualquier mensaje): #53 reescribe esos textos.
+FALTANTES_DE = [
+    pytest.param(DECISION, [], id="valida"),
+    pytest.param(_con(fecha_fallo="20266-11-17"), [("fecha_fallo", None)], id="fecha-de-seis-digitos"),
+    pytest.param(_con(fecha_fallo=" 2026-11-17"), [("fecha_fallo", None)], id="fecha-con-espacio-que-la-vista-recorta"),
+    pytest.param(_con(fecha_fallo=""), [("fecha_fallo", None)], id="fecha-vacia-que-la-vista-omite"),
+    pytest.param(_con_plazo(1.5), [("ordenes.0.plazo.n", MSG_PLAZO_ENTERO)], id="plazo-decimal"),
+    pytest.param(_con_plazo(10_000_000), [("ordenes.0.plazo.n", MSG_PLAZO_MAXIMO)], id="plazo-enorme"),
+    pytest.param(_con_plazo(-5), [("ordenes.0.plazo.n", decision_vista.MSG_PLAZO)], id="plazo-negativo"),
+    pytest.param(
+        {k: v for k, v in BASE.items() if k != "accion"},
+        [("accion", "Falta indicar la acción de la decisión: decidir, rehacer_apertura o rehacer_consideraciones.")],
+        id="sin-accion",
+    ),
+    pytest.param(_con(accion="inventada"), [("accion", None)], id="accion-inventada"),
+    pytest.param({"accion": "rehacer_apertura"}, [("instruccion", None)], id="rehacer-sin-instruccion"),
+    pytest.param([], [("decision", "La decisión debe ser un objeto.")], id="no-es-objeto"),
+    pytest.param(
+        _con_plazo(1.5, "PREVENIR"),
+        [("decision", "La decisión no tiene el formato esperado.")],
+        id="decimal-en-un-plazo-que-no-se-usa",
+    ),
+]
+
+
+@pytest.mark.parametrize("entrada, esperado", FALTANTES_DE)
+def test_faltantes_de(entrada, esperado):
+    obtenido = decision_vista.faltantes_de(entrada)
+    assert [f["campo"] for f in obtenido] == [campo for campo, _ in esperado]
+    for f, (_, mensaje) in zip(obtenido, esperado):
+        assert f["mensaje"] and (mensaje is None or f["mensaje"] == mensaje)
+
+
+def test_faltantes_de_no_revienta_con_una_decision_que_rompe_la_limpieza(monkeypatch):
+    def romper(parcial, hallazgos):
+        raise RuntimeError("limpieza rota")
+
+    monkeypatch.setattr(decision_vista, "_limpiar", romper)
+    assert decision_vista.faltantes_de(DECISION) == [
+        {"campo": "decision", "mensaje": "La decisión no tiene el formato esperado."}
+    ]
+
+
+def test_faltantes_de_acepta_el_cuerpo_que_manda_la_interfaz():
+    """Guarda para que ninguna regla nueva rechace lo que el formulario envía (los e2e 04 y 07 esperan 200 en /run)."""
+    formulario = {
+        "accion": "decidir",
+        "resultado": "REVOCAR",
+        "sustitutiva": "AMPARAR",
+        "causal": None,
+        "eje": "Procede el amparo.",
+        "por_reparo": [{"reparo_id": "R1", "disposicion": "ACOGE", "nota": ""}],
+        "derechos": [{"derecho": "salud", "disposicion": "AMPARA"}],
+        "ordenes": [
+            {
+                "mismo_termino": False,
+                "verbo": "ORDENAR",
+                "destinatario": "la EPS X",
+                "via_representante": True,
+                "conducta": "autorice el medicamento",
+                "plazo": {"n": 48, "unidad": "horas_habiles"},
+                "condicion": "",
+            }
+        ],
+        "desvincular": [],
+        "prevenir": [],
+        "compulsa": None,
+        "numerales": {"notificar": True, "remitir_corte": True},
+        "decidido_por": "Oficial Mayor",
+        "generar_formato": False,
+        "fecha_fallo": None,
+        "fecha_oficio": None,
+        "etiqueta_encabezado": "",
+        "numerales_libres": [],
+        "orden_numerales": [],
+    }
+    assert decision_vista.faltantes_de(formulario) == []
+    assert decision_vista.faltantes_de(_generador().DECISION_POR_DEFECTO) == []
+    assert decision_vista.faltantes_de({"accion": "rehacer_apertura", "instruccion": "Más breve."}) == []

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cargarEstadoServidor, cerrarToast, claveActiva, claveDe, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, proveedorDelCaso, proveedorSinClave, toasts } from "./index";
+import { cargarEstadoServidor, cerrarToast, claveActiva, claveDe, enumerar, errorEstadoServidor, estadoServidor, fechaRelativa, mostrarToast, nombreModelo, plural, pluralizar, porcentaje, proveedorDelCaso, proveedorSinClave, toasts } from "./index";
 
 describe("fechaRelativa", () => {
   const ahora = Date.parse("2026-11-03T12:00:00Z");
@@ -24,6 +24,20 @@ describe("fechaRelativa", () => {
   it("tolera futuro e inválidos", () => {
     expect(fechaRelativa(new Date(ahora + 60000).toISOString(), ahora)).toBe("ahora mismo");
     expect(fechaRelativa("nada", ahora)).toBe("");
+  });
+});
+
+describe("enumerar", () => {
+  it("une con comas y «y»", () => {
+    expect(enumerar([])).toBe("");
+    expect(enumerar(["a"])).toBe("a");
+    expect(enumerar(["a", "b"])).toBe("a y b");
+    expect(enumerar(["a", "b", "c"])).toBe("a, b y c");
+  });
+
+  it("con límite resume el resto", () => {
+    expect(enumerar(["a", "b", "c", "d"], 4)).toBe("a, b, c y d");
+    expect(enumerar(["a", "b", "c", "d", "e", "f"], 4)).toBe("a, b, c, d y 2 más");
   });
 });
 

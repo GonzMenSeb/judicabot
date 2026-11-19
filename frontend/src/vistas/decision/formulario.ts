@@ -1,6 +1,7 @@
 import type {
   Causal,
   DecisionCuerpo,
+  DerechoForm,
   DisposicionDerecho,
   DisposicionReparo,
   Formulario,
@@ -69,11 +70,16 @@ export const MSG = {
   sinOrdenes: "Si se ampara, hay que indicar al menos una orden.",
   ordenIncompleta: "Cada orden necesita destinatario y conducta.",
   plazo: "El plazo de cada orden debe ser mayor que cero.",
+  plazoEntero: "El plazo de cada orden debe ser un número entero.",
   libreVacio: "Hay un numeral libre vacío.",
   compulsa: "La compulsa de copias necesita indicar respecto de quién.",
   decididoPorVacio: "Decidido por está vacío: en la declaración de uso de IA constará «no consta».",
   decididoPorPlaceholder: "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide.",
 } as const;
+
+/** El servidor no escribe en letras un plazo de 1.000.000 o más (`PLAZO_MAXIMO` en `models.py`). */
+export const PLAZO_MAXIMO = 999_999;
+export const msgPlazoMaximo = (orden: number) => `El plazo de la orden ${orden} no puede superar 999.999.`;
 
 const DECIDIDO_POR_PLACEHOLDERS = new Set(["john doe", "prueba", "caso sintetico"]);
 const TILDES: Record<string, string> = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u" };
@@ -128,13 +134,13 @@ export function ordenNueva(id: number): OrdenForm {
   };
 }
 
+export function derechoExtraido(id: number, nombre: string): DerechoForm {
+  return { id, nombre, disposicion: "AMPARA", propio: false };
+}
+
 export function formularioInicial(payload: PayloadDecision | null, juez: string): Formulario {
-  const derechos = (payload?.derechos_invocados ?? []).map((nombre, i) => ({
-    id: i + 1,
-    nombre,
-    disposicion: "AMPARA" as const,
-    propio: false,
-  }));
+  const extraidos = payload?.derechos_invocados ?? [];
+  const derechos = extraidos.map((nombre, i) => derechoExtraido(i + 1, nombre));
   return {
     resultado: "",
     sustitutiva: "",
@@ -143,6 +149,7 @@ export function formularioInicial(payload: PayloadDecision | null, juez: string)
     decididoPor: esPlaceholderDecididoPor(juez) ? "" : juez,
     reparos: (payload?.reparos ?? []).map((r) => ({ id: r.id, disposicion: "ACOGE", nota: "" })),
     derechos,
+    derechosBase: [...extraidos],
     ordenes: [],
     desvincular: "",
     prevenir: "",
@@ -248,6 +255,13 @@ export function moverClave(f: Formulario, interna: string, destino: string | num
   return { ...f, orden: nuevas, reordenado: true };
 }
 
+/** El plazo que viaja. Si la orden no lo usa (PREVENIR, ADVERTIR o «mismo término») va entero: el servidor no lo valida
+ *  en ese caso, pero el modelo rechazaría un decimal («La decisión no tiene el formato esperado.»). */
+export function plazoEnviado(o: OrdenForm, mismo: boolean): number {
+  const n = Number(o.n) || 0;
+  return o.verbo === "ORDENAR" && !mismo ? n : Math.trunc(n);
+}
+
 export function aDecision(f: Formulario): DecisionCuerpo {
   const sustitutiva = sustitutivaEfectiva(f);
   const aplicanDerechos = sustitutiva === "AMPARAR" || sustitutiva === "NEGAR";
@@ -260,7 +274,7 @@ export function aDecision(f: Formulario): DecisionCuerpo {
     causal: sustitutiva === "IMPROCEDENTE" && f.causal ? f.causal : null,
     eje: limpiarTexto(f.eje),
     por_reparo: f.reparos.map((r) => ({ reparo_id: r.id, disposicion: r.disposicion, nota: limpiarTexto(r.nota) })),
-    derechos: aplicanDerechos ? f.derechos.map((d) => ({ derecho: d.nombre, disposicion: d.disposicion })) : [],
+    derechos: aplicanDerechos ? f.derechos.filter((d) => d.nombre.trim()).map((d) => ({ derecho: d.nombre.trim(), disposicion: d.disposicion })) : [],
     ordenes: admiteOrdenes(f)
       ? f.ordenes.map((o) => ({
           mismo_termino: o.mismo,
@@ -268,7 +282,7 @@ export function aDecision(f: Formulario): DecisionCuerpo {
           destinatario: o.destinatario.trim(),
           via_representante: o.via,
           conducta: limpiarTexto(o.conducta),
-          plazo: { n: Number(o.n) || 0, unidad: o.unidad },
+          plazo: { n: plazoEnviado(o, o.mismo), unidad: o.unidad },
           condicion: o.condicion.trim(),
         }))
       : [],
@@ -297,7 +311,12 @@ export function validar(d: DecisionCuerpo): Hallazgo[] {
   d.ordenes.forEach((o, i) => {
     if (!o.destinatario) e.push({ campo: `ordenes.${i}.destinatario`, mensaje: MSG.ordenIncompleta });
     if (!o.conducta) e.push({ campo: `ordenes.${i}.conducta`, mensaje: MSG.ordenIncompleta });
-    if (!(o.plazo.n > 0)) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazo });
+    if (o.verbo === "ORDENAR" && !o.mismo_termino) {
+      const n = o.plazo.n;
+      if (!Number.isInteger(n)) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazoEntero });
+      else if (n <= 0) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: MSG.plazo });
+      else if (n > PLAZO_MAXIMO) e.push({ campo: `ordenes.${i}.plazo.n`, mensaje: msgPlazoMaximo(i + 1) });
+    }
   });
   d.numerales_libres.forEach((t, i) => {
     if (!t) e.push({ campo: `numerales_libres.${i}`, mensaje: MSG.libreVacio });
@@ -319,6 +338,18 @@ export function advertenciasLocales(f: Formulario): Hallazgo[] {
   if (!nombre) return [{ campo: "decidido_por", mensaje: MSG.decididoPorVacio }];
   if (esPlaceholderDecididoPor(nombre)) return [{ campo: "decidido_por", mensaje: MSG.decididoPorPlaceholder }];
   return [];
+}
+
+/** Los `{campo, mensaje}` de un 422 de la compuerta (`detail.errores`); `null` si el detalle no los trae. */
+export function leerHallazgos(detalle: unknown): Hallazgo[] | null {
+  if (typeof detalle !== "object" || detalle === null || !("errores" in detalle) || !Array.isArray(detalle.errores)) return null;
+  const hallazgos: Hallazgo[] = [];
+  for (const e of detalle.errores as unknown[]) {
+    if (typeof e !== "object" || e === null) continue;
+    if (!("campo" in e) || typeof e.campo !== "string" || !("mensaje" in e) || typeof e.mensaje !== "string") continue;
+    hallazgos.push({ campo: e.campo, mensaje: e.mensaje });
+  }
+  return hallazgos.length ? hallazgos : null;
 }
 
 export function combinar(locales: Hallazgo[], servidor: Hallazgo[]): Hallazgo[] {
@@ -382,5 +413,40 @@ export function sanear(crudo: unknown, payload: PayloadDecision | null): Formula
     (r) => f.reparos.find((x) => x.id === r.id) ?? { id: r.id, disposicion: "ACOGE" as const, nota: "" },
   );
   const causal = CAUSALES.some(([c]) => c === f.causal) ? f.causal : "";
-  return { ...f, causal, reparos };
+  return { ...f, causal, reparos, ...reconciliarDerechos(f, payload) };
+}
+
+const normal = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Si la extracción de derechos cambió respecto de la que usó el borrador (`derechosBase`), rearma el bloque de
+ * derechos extraídos en el orden de la extracción nueva. Conserva la disposición y el nombre corregido de los que
+ * siguen vigentes y deja al final los que agregó el juez. Los extraídos del formulario quedan siempre alineados
+ * posición a posición con `derechosBase`.
+ */
+export function reconciliarDerechos(f: Formulario, payload: PayloadDecision | null): Partial<Formulario> {
+  const base = f.derechosBase;
+  if (!payload || !Array.isArray(base) || !base.every((b) => typeof b === "string")) return {};
+  const nuevos = payload.derechos_invocados ?? [];
+  if (base.length === nuevos.length && base.every((b, i) => normal(b) === normal(nuevos[i] ?? ""))) return {};
+  const extraidos = f.derechos.filter((d) => !d.propio);
+  if (extraidos.length !== base.length) return {}; // no se puede alinear con la base: se deja como está
+  // El k-ésimo derecho extraído guardado nació de base[k] (aunque el juez le haya cambiado el nombre).
+  const guardados = new Map<string, DerechoForm[]>();
+  extraidos.forEach((d, k) => {
+    const clave = normal(base[k] ?? "");
+    guardados.set(clave, [...(guardados.get(clave) ?? []), d]);
+  });
+  const propios = f.derechos.filter((d) => d.propio);
+  let id = f.siguienteId;
+  const derechos = nuevos.map((nombre): DerechoForm => {
+    const clave = normal(nombre);
+    const guardado = guardados.get(clave)?.shift();
+    if (guardado) return guardado; // sigue vigente: conserva disposición y nombre corregido
+    const i = propios.findIndex((d) => normal(d.nombre) === clave);
+    const [igual] = i >= 0 ? propios.splice(i, 1) : [];
+    if (igual) return { ...igual, propio: false }; // el juez ya lo había agregado: no se duplica
+    return derechoExtraido(id++, nombre);
+  });
+  return { derechos: [...derechos, ...propios], derechosBase: [...nuevos], siguienteId: id };
 }

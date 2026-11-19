@@ -157,6 +157,60 @@ describe("Decisión: render con datos", () => {
     expect(await screen.findByText(/La decisión ya fue enviada/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Ver el fallo" }).getAttribute("href")).toBe(`#/segunda/${CASO}/fallo`);
   });
+
+  const MEDIAS = "El proceso quedó a medias en apertura. Use continuar para reanudarlo.";
+
+  function verEnCurso() {
+    expect(screen.getByText(/Hay una ejecución en curso para este caso\./)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ir al proceso" }).getAttribute("href")).toBe(`#/segunda/${CASO}/proceso`);
+    expect(screen.queryByText(/La decisión ya está guardada/)).toBeNull();
+    expect(screen.queryByText(/La decisión ya fue enviada/)).toBeNull();
+    expect(screen.queryByText(/quedó a medias/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ver el fallo" })).toBeNull();
+  }
+
+  it("durante una ejecución dice que está en curso aunque el estado diga error", async () => {
+    servidor({ estado: { ok: false, estado: "error", error: MEDIAS, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("durante una ejecución dice que está en curso aunque el estado diga terminado", async () => {
+    servidor({ estado: { ok: true, estado: "terminado", error: null, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("con estado corriendo dice que está en curso", async () => {
+    servidor({ estado: { ok: true, estado: "corriendo", error: null, payload: null, salidas: [], resumen: {}, job_activo: "j1" } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    verEnCurso();
+  });
+
+  it("con el historial perdido dice que no hay decisión pendiente y lleva a Documentos", async () => {
+    servidor({ estado: { ok: true, estado: "revision", payload: null, salidas: [], resumen: {}, error: null, historial_perdido: true, trabajo_previo: ["la decisión del juez"] } });
+    render(<Decision caso={CASO} />);
+    expect(await screen.findByText(/Este caso perdió su historial de redacción: no hay una decisión pendiente/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ir a documentos" }).getAttribute("href")).toBe(`#/segunda/${CASO}/documentos`);
+    expect(screen.queryByText(/Genere primero el borrador previo/)).toBeNull();
+  });
+
+  it("una ejecución en curso manda sobre el historial perdido", async () => {
+    servidor({ estado: { ok: true, estado: "revision", payload: null, salidas: [], resumen: {}, error: null, job_activo: "j1", historial_perdido: true } });
+    render(<Decision caso={CASO} />);
+    await screen.findByText(/Hay una ejecución en curso para este caso\./);
+    expect(screen.queryByText(/perdió su historial/)).toBeNull();
+  });
+
+  it("sin ejecución en curso el error del estado sigue explicándose", async () => {
+    servidor({ estado: { ok: false, estado: "error", error: MEDIAS, payload: null, salidas: [], resumen: {}, job_activo: null } });
+    render(<Decision caso={CASO} />);
+    expect(await screen.findByText(/La decisión ya está guardada/)).toBeTruthy();
+    expect(screen.getByText(/quedó a medias en apertura/)).toBeTruthy();
+  });
 });
 
 describe("Decisión: resumen del caso", () => {
@@ -503,6 +557,69 @@ describe("Decisión: interacción principal", () => {
     expect((screen.getByLabelText("Por qué, en pocas líneas") as HTMLTextAreaElement).value).toBe("Texto que no debe perderse");
     expect((screen.getByRole("radio", { name: "Modificar" }) as HTMLInputElement).checked).toBe(true);
   });
+
+  it("se puede corregir el nombre de un derecho extraído", async () => {
+    const llamadas = servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Nombre del derecho 1", "la salud integral");
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+    expect(screen.getByLabelText("Disposición del derecho la salud integral")).toBeTruthy();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    await waitFor(() => expect(location.hash).toBe(`#/segunda/${CASO}/proceso`));
+    const run = llamadas.find((l) => l.url.endsWith("/run"));
+    expect(run?.cuerpo.decision.derechos).toEqual([{ derecho: "la salud integral", disposicion: "AMPARA" }]);
+  });
+
+  it("explica en pantalla cómo forzar el artículo del derecho y del órgano", async () => {
+    servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    const ayuda = document.getElementById("dec-derecho-nuevo-ayuda");
+    expect(ayuda?.textContent).toContain("«la pensión de sobrevivientes»");
+    expect(screen.getByLabelText("Otro derecho").getAttribute("aria-describedby")).toBe("dec-derecho-nuevo-ayuda");
+    fireEvent.click(screen.getByLabelText(/Compulsar copias/));
+    expect(document.getElementById("dec-compulsa-organo-ayuda")?.textContent).toContain("«el Consejo Seccional de la Judicatura…»");
+    expect(screen.getByLabelText("Órgano").getAttribute("aria-describedby")).toBe("dec-compulsa-organo-ayuda");
+  });
+
+  it("al rehacer la apertura el borrador guardado reconcilia los derechos con el payload nuevo", async () => {
+    const estadoCon = (derechos: string[]) => ({
+      ok: true,
+      estado: "esperando_decision",
+      payload: { ...payload, derechos_invocados: derechos },
+      salidas: [],
+      resumen: {},
+      error: null,
+      job_activo: null,
+      proveedor_llm: "fake",
+    });
+    servidor({ estado: estadoCon(["salud", "mínimo vital"]) });
+    const primera = await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    fireEvent.change(screen.getByLabelText("Disposición del derecho salud"), { target: { value: "NIEGA" } });
+    primera.unmount();
+
+    const llamadas = servidor({ estado: estadoCon(["salud", "vida", "dignidad humana"]) });
+    await montar();
+    expect(screen.getByLabelText("Disposición del derecho vida")).toBeTruthy();
+    expect(screen.getByLabelText("Disposición del derecho dignidad humana")).toBeTruthy();
+    expect(screen.queryByLabelText("Disposición del derecho mínimo vital")).toBeNull();
+    expect((screen.getByLabelText("Disposición del derecho salud") as HTMLSelectElement).value).toBe("NIEGA");
+    await waitFor(() =>
+      expect(ultimaVista(llamadas)?.derechos).toEqual([
+        { derecho: "salud", disposicion: "NIEGA" },
+        { derecho: "vida", disposicion: "AMPARA" },
+        { derecho: "dignidad humana", disposicion: "AMPARA" },
+      ]),
+    );
+  });
 });
 
 const ultimaVista = (llamadas: Llamada[]) => vistas(llamadas).at(-1)?.cuerpo;
@@ -739,5 +856,92 @@ describe("Decisión: vista previa fallida", () => {
     const dialogo = await abrirDialogo();
     expect(dialogo.getByText("No se pudo calcular el encabezado ni la fecha efectiva.")).toBeTruthy();
     expect(dialogo.queryByText(/Encabezado:/)).toBeNull();
+  });
+});
+
+describe("Decisión: la compuerta del servidor y la vista previa tardía", () => {
+  const RECHAZADA = "Su decisión no se aplicó: corrija los campos marcados y vuelva a enviarla.";
+
+  async function llenar() {
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+  }
+
+  it("un 422 de la compuerta muestra los motivos en el formulario, no navega y desaparece al corregir", async () => {
+    const mensaje = "Falta el eje: 2 a 5 líneas con el porqué de la decisión.";
+    servidor({
+      run: () => json({ detail: { mensaje: `Su decisión no se aplicó: ${mensaje}`, errores: [{ campo: "eje", mensaje }] } }, 422),
+    });
+    await montar();
+    await llenar();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    const aviso = (await screen.findByText("No se pudo enviar la decisión")).closest("[role=alert]") as HTMLElement;
+    expect(aviso.textContent).toContain(RECHAZADA);
+    expect(location.hash).toBe("");
+    expect(document.getElementById("dec-eje-error")?.textContent).toContain("Falta el eje");
+    expect(estadoBarra()).toBe("Para enviar falta: el porqué.");
+    expect(screen.queryByRole("link", { name: "Ver el proceso" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
+
+    escribir("Por qué, en pocas líneas", "El a quo omitió la orden médica y la urgencia.");
+    await waitFor(() => expect(document.getElementById("dec-eje-error")).toBeNull());
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+  });
+
+  it("un 422 sin errores por campo sigue mostrando el texto del servidor", async () => {
+    servidor({ run: () => json({ detail: "Falta la decisión." }, 422) });
+    await montar();
+    await llenar();
+    const dialogo = await abrirDialogo();
+    fireEvent.click(dialogo.getByRole("button", { name: "Enviar decisión" }));
+    expect(await screen.findByText("Falta la decisión.")).toBeTruthy();
+    expect(screen.queryByText(RECHAZADA)).toBeNull();
+  });
+
+  it("si la vista previa llega con faltantes con el diálogo abierto, el diálogo se cierra y no se envía", async () => {
+    let entregar: (r: DecisionVistaRespuesta) => void = () => {};
+    let ultimo: any = null;
+    const llamadas = servidor({
+      vista: (c) => {
+        ultimo = c;
+        return new Promise<Response>((ok) => {
+          entregar = (r) => ok(json(r));
+        });
+      },
+    });
+    await montar();
+    await llenar();
+    await waitFor(() => expect(ultimaVista(llamadas)?.ordenes?.[0]?.conducta).toBe("autorice el medicamento"));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    expect(await screen.findByRole("heading", { name: "¿Enviar la decisión?" })).toBeTruthy();
+    expect(screen.getByText("Calculando el encabezado y la fecha…")).toBeTruthy();
+
+    const motivo = "fecha_fallo no es una fecha ISO válida: '20266-11-17'.";
+    entregar({ ...numeralesDe(ultimo), faltantes: [{ campo: "fecha_fallo", mensaje: motivo }], errores: [motivo] });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull());
+    expect((await screen.findAllByText(motivo)).length).toBeGreaterThan(0);
+    expect(screen.getByText("Revise la decisión antes de enviarla")).toBeTruthy();
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
+  });
+
+  it("con la vista previa caída y un plazo de 10000000 no abre el diálogo", async () => {
+    const llamadas = servidor({ vista: () => json({ detail: "Servidor caído" }, 500) });
+    await montar();
+    await llenar();
+    escribir("Plazo", "10000000");
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    const error = await waitFor(() => {
+      const el = document.querySelector('[id^="dec-orden-"][id$="-plazo-error"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(error.textContent).toBe("El plazo de la orden 1 no puede superar 999.999.");
+    expect(screen.queryByRole("heading", { name: "¿Enviar la decisión?" })).toBeNull();
+    expect(estadoBarra()).toContain("Para enviar falta: el plazo de cada orden");
+    expect(llamadas.some((l) => l.url.endsWith("/run"))).toBe(false);
   });
 });

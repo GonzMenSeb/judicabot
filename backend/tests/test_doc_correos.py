@@ -132,6 +132,15 @@ def test_compulsa(tmp_path):
     assert "⟦FALTA: link del expediente⟧" in t
 
 
+def test_compulsa_con_organo_masculino(tmp_path):
+    organo = "Consejo Seccional de la Judicatura de Antioquia"
+    dec = Decision(accion="decidir", compulsa=Compulsa(respecto_de="el Juzgado Ficticio", organo=organo))
+    ruta = correos.render_compulsa(md(), dec, Config(), "003Fallo.pdf", tmp_path / "c.docx")
+    t = textos(Document(ruta))
+    assert any(x.startswith(f"TERCERO: COMPULSAR COPIAS ante el {organo}") for x in t)
+    assert organo in t
+
+
 def _para(texto):
     return correos.destinatarios_propuestos(Ingesta(documentos=[doc("a/1.pdf", "notificacion", texto)]))
 

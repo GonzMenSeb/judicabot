@@ -159,6 +159,8 @@ def _llamar(
                     "exitos": sum(1 for b in state.get("bitacora") or [] if b.get("nodo") == nodo),
                     "proveedor": cfg.llm.proveedor,
                     "modelo_pedido": cfg.modelo_para(nodo),
+                    "max_tokens": cfg.llm.max_tokens,
+                    "sin_coste": bool(getattr(e, "sin_coste", False)),
                     "prompt_id": prompt_id,
                     "sha256_entrada": _sha(user),
                     "tipo_error": type(e).__name__,

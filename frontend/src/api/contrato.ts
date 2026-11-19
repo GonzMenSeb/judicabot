@@ -354,6 +354,21 @@ export interface RunCuerpo {
   cmd: "nuevo" | "iniciar" | "decidir" | "continuar";
   decision?: Record<string, unknown>;
   forzar?: boolean;
+  /** Confirma que nuevo/iniciar descarten el trabajo ya generado; el servidor guarda antes una copia en la papelera. */
+  descartar?: boolean;
+}
+
+/** `detail` del 409 de POST /run cuando nuevo/iniciar descartarían trabajo y falta `descartar`. */
+export interface DetalleDescarte {
+  codigo: "trabajo_previo";
+  mensaje: string;
+  trabajo: string[];
+}
+
+export function esDetalleDescarte(detalle: unknown): detalle is DetalleDescarte {
+  if (typeof detalle !== "object" || detalle === null) return false;
+  const { codigo, mensaje, trabajo } = detalle as Record<string, unknown>;
+  return codigo === "trabajo_previo" && typeof mensaje === "string" && Array.isArray(trabajo) && trabajo.every((t) => typeof t === "string");
 }
 
 export interface JobInicio {

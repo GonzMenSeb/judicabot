@@ -471,6 +471,9 @@ class DisposicionDerecho(BaseModel):
     disposicion: Literal["AMPARA", "NIEGA", "SIN_PRONUNCIAMIENTO"] = "AMPARA"
 
 
+PLAZO_MAXIMO = 999_999  # ``letras.numero_a_letras`` no escribe 1.000.000 ni más
+
+
 class Plazo(BaseModel):
     n: int = 48
     unidad: Literal["horas_habiles", "dias_habiles", "horas", "dias"] = "horas_habiles"
@@ -672,6 +675,13 @@ class Decision(_SinControl):
                 e.append("Falta el eje: 2 a 5 líneas con el porqué de la decisión.")
             if self.sustitutiva == "AMPARAR" and not self.ordenes:
                 e.append("Si se ampara, hay que indicar al menos una orden.")
+            for i, o in enumerate(self.ordenes, 1):
+                if o.verbo != "ORDENAR" or o.mismo_termino:
+                    continue  # PREVENIR y ADVERTIR no usan plazo; con «mismo término» rige el de la orden anterior
+                if o.plazo.n < 1:
+                    e.append(f"El plazo de la orden {i} debe ser mayor que cero.")
+                elif o.plazo.n > PLAZO_MAXIMO:
+                    e.append(f"El plazo de la orden {i} no puede superar {PLAZO_MAXIMO:,}.".replace(",", "."))
         for k in self.orden_numerales:
             if not self._clave_valida(k):
                 e.append(f"Clave de numeral inválida en el orden: {k!r}.")

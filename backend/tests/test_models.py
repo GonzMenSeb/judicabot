@@ -24,6 +24,7 @@ from tutela2.models import (
     Orden,
     ParteLLM,
     ParteSinApoderado,
+    Plazo,
     Poder,
     PoderLLM,
 )
@@ -270,3 +271,42 @@ def test_las_listas_por_defecto_del_modelo_no_se_comparten():
     a, b = ApoderadosLLM.model_validate({"partes": None}), ApoderadosLLM()
     a.partes.append(ParteLLM(nombre="X"))
     assert b.partes == [] and ApoderadosLLM().partes == []
+
+
+def _con_ordenes(*ordenes):
+    return Decision(accion="decidir", resultado="REVOCAR", sustitutiva="AMPARAR", eje="x", ordenes=list(ordenes))
+
+
+def _orden(n, **kw):
+    return Orden(destinatario="la EPS X", conducta="cumpla", plazo=Plazo(n=n), **kw)
+
+
+@pytest.mark.parametrize(
+    "n, esperado",
+    [
+        (0, ["El plazo de la orden 1 debe ser mayor que cero."]),
+        (-5, ["El plazo de la orden 1 debe ser mayor que cero."]),
+        (1_000_000, ["El plazo de la orden 1 no puede superar 999.999."]),
+        (10_000_000, ["El plazo de la orden 1 no puede superar 999.999."]),
+        (1, []),
+        (999_999, []),
+    ],
+)
+def test_errores_rechaza_plazo_fuera_de_rango(n, esperado):
+    assert _con_ordenes(_orden(n)).errores() == esperado
+
+
+def test_errores_numera_la_orden_con_plazo_malo():
+    assert _con_ordenes(_orden(48), _orden(0)).errores() == ["El plazo de la orden 2 debe ser mayor que cero."]
+
+
+@pytest.mark.parametrize(
+    "ordenes",
+    [
+        [Orden(verbo="ADVERTIR", destinatario="la EPS X", conducta="cumpla", plazo=Plazo(n=0))],
+        [Orden(verbo="PREVENIR", destinatario="la EPS X", conducta="cumpla", plazo=Plazo(n=10_000_000))],
+        [_orden(48), _orden(0, mismo_termino=True)],
+    ],
+)
+def test_errores_ignora_el_plazo_que_no_se_usa(ordenes):
+    assert _con_ordenes(*ordenes).errores() == []

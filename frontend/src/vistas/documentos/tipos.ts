@@ -64,7 +64,7 @@ export interface ResumenIngesta {
   auto: DatosAuto;
 }
 
-export type EstadoApi = "sin_iniciar" | "revision" | "incompleto" | "esperando_decision" | "terminado" | "error";
+export type EstadoApi = "sin_iniciar" | "revision" | "incompleto" | "esperando_decision" | "corriendo" | "terminado" | "error";
 
 export interface EstadoCaso {
   ok: boolean;
@@ -75,6 +75,9 @@ export interface EstadoCaso {
   job_activo?: string | null;
   ingesta?: ResumenIngesta;
   proveedor_llm?: ProveedorCaso | null;
+  /** Salidas o decisión de una redacción anterior sin un hilo que las respalde (o con el hilo dañado). */
+  historial_perdido?: boolean;
+  trabajo_previo?: string[];
 }
 
 export interface RevisionCuerpo {
@@ -89,6 +92,8 @@ export interface JobEstado {
   cmd: "nuevo" | "iniciar" | "decidir" | "continuar" | "identificar";
   estado: "corriendo" | "terminado" | "error";
   error: string | null;
+  /** Respuesta de la API al terminar; `papelera` es la entrada donde se guardó la copia de lo descartado. */
+  resultado?: { papelera?: string } | null;
 }
 
 export interface SalidaPrevia {

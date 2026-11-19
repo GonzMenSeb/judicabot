@@ -1610,6 +1610,12 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Descartar
+             * @description Confirma que nuevo/iniciar descarten el borrador, la decisión y el fallo ya generados (antes se guarda una copia en la papelera).
+             * @default false
+             */
+            descartar: boolean;
+            /**
              * Forzar
              * @default false
              */
@@ -2782,6 +2788,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JobInicio"];
                 };
+            };
+            /** @description Ya hay una ejecución en curso, o el caso ya tiene trabajo y falta `descartar`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

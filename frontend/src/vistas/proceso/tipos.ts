@@ -1,10 +1,12 @@
-import type { EstadoCasoApi } from "../../api/contrato";
+import type { EstadoCasoApi, ProveedorCaso } from "../../api/contrato";
 
 export interface EstadoCaso {
   estado: EstadoCasoApi;
   error: string | null;
   job_activo: string | null;
   resumen?: { decision?: { accion?: string } | null } | null;
+  tope_intentos?: boolean;
+  proveedor_llm?: ProveedorCaso | null;
 }
 
 export interface InfoJob {

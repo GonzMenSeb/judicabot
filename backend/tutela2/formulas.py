@@ -64,11 +64,14 @@ _CARENCIA = {
     "CARENCIA_DANO_CONSUMADO": "DAÑO CONSUMADO",
     "CARENCIA_SOBREVINIENTE": "SITUACIÓN SOBREVINIENTE",
 }
-_FEMENINOS = frozenset(
-    "vida salud dignidad igualdad educacion vivienda libertad intimidad honra peticion integridad "
-    "informacion seguridad estabilidad unidad familia defensa proteccion personalidad imagen "
-    "propiedad alimentacion identidad nacionalidad libre".split()
-)
+# «-ión» y no solo «-ción/-sión»: también «opinión», «reunión», «unión», «religión».
+_TERMINACIONES_FEMENINAS = ("a", "ion", "dad", "tad", "tud", "umbre")
+# Femeninos que no terminan así.
+_FEMENINOS = frozenset("salud fe paz imagen muerte corte ninez vejez mujer madre".split())
+# Terminan en -a pero llevan artículo masculino («al agua», «al día»).
+_MASCULINOS = frozenset("agua dia mapa sistema programa idioma clima tema problema planeta".split())
+# Adjetivos invariables antepuestos: el género lo da la palabra siguiente («libre expresión», «doble instancia»).
+_INVARIABLES = frozenset({"libre", "doble", "igual", "especial"})
 _ARTICULO_INICIAL = re.compile(r"^(el|la|los|las)\s+", re.IGNORECASE)
 
 
@@ -174,6 +177,21 @@ def filas_encabezado(md: Metadatos, decision: Decision | None) -> list[tuple[str
     return filas
 
 
+def genero(texto: str) -> Literal["f", "m"]:
+    """Género gramatical del sustantivo con el que empieza `texto`, por su terminación.
+
+    Es una heurística, no un diccionario: los plurales («cesantías») y los irregulares («mano», «moral») siguen
+    necesitando que el usuario escriba el artículo.
+    """
+    palabras = _sin_tildes(texto).split()
+    while len(palabras) > 1 and palabras[0] in _INVARIABLES:
+        palabras.pop(0)
+    primera = palabras[0] if palabras else ""
+    if primera in _MASCULINOS:
+        return "m"
+    return "f" if primera in _FEMENINOS or primera.endswith(_TERMINACIONES_FEMENINAS) else "m"
+
+
 def con_articulo(derecho: str) -> str:
     texto = derecho.strip()
     bajo = texto.lower()
@@ -183,8 +201,17 @@ def con_articulo(derecho: str) -> str:
         return contraer("a", texto)
     if bajo.startswith(("la ", "los ", "las ")):
         return f"a {texto}"
-    primera = _sin_tildes(texto.split()[0]) if texto else ""
-    return f"a la {texto}" if primera in _FEMENINOS else f"al {texto}"
+    return f"a la {texto}" if genero(texto) == "f" else f"al {texto}"
+
+
+def con_articulo_definido(texto: str) -> str:
+    """Antepone «el» o «la» al órgano (p. ej. «ante {…}»); respeta el artículo que ya traiga el texto."""
+    texto = texto.strip()
+    if not texto:
+        return _falta("órgano de la compulsa")
+    if m := _ARTICULO_INICIAL.match(texto):
+        return m.group(1).lower() + texto[len(m.group(1)) :]
+    return f"{'la' if genero(texto) == 'f' else 'el'} {texto}"
 
 
 def contraer(prep: Literal["a", "de"], texto: str) -> str:
@@ -326,7 +353,7 @@ def _estandar(d: Decision, md: Metadatos) -> dict[str, Numeral]:
         por_clave["desvincular"] = Numeral("desvincular", texto, ["DESVINCULAR"])
     if d.compulsa:
         texto = (
-            f"COMPULSAR COPIAS ante la {d.compulsa.organo} para que, de estimarlo pertinente, adelante las "
+            f"COMPULSAR COPIAS ante {con_articulo_definido(d.compulsa.organo)} para que, de estimarlo pertinente, adelante las "
             f"actuaciones a que haya lugar respecto {contraer('de', d.compulsa.respecto_de)}, conforme a lo "
             "indicado en el acápite de otras determinaciones de este proveído."
         )
@@ -357,6 +384,6 @@ def numerales(decision: Decision, md: Metadatos) -> list[Numeral]:
 def cierre_otras_determinaciones(c: Compulsa) -> str:
     return (
         "Por lo anterior, en cumplimiento del deber legal que le asiste a este funcionario, se dispondrá a "
-        f"compulsar copias de lo actuado ante la {c.organo} para que, dentro del marco de sus competencias, "
+        f"compulsar copias de lo actuado ante {con_articulo_definido(c.organo)} para que, dentro del marco de sus competencias, "
         f"evalúe las situaciones descritas respecto {contraer('de', c.respecto_de)}."
     )

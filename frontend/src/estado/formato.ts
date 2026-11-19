@@ -51,6 +51,12 @@ export function plural(n: number, singular: string, pluralForma?: string): strin
   return `${n} ${pluralizar(n, singular, pluralForma)}`;
 }
 
+/** "a", "a y b", "a, b y c"; con `max` y más elementos: "a, b, c, d y 2 más". */
+export function enumerar(items: readonly string[], max?: number): string {
+  const lista = max !== undefined && items.length > max ? [...items.slice(0, max), `${items.length - max} más`] : items;
+  return lista.length < 2 ? lista.join("") : `${lista.slice(0, -1).join(", ")} y ${lista[lista.length - 1]}`;
+}
+
 /**
  * Los días que faltan para un término, en su unidad, con el mismo texto en la lista y en Documentos: "Faltan 3 días
  * hábiles", "Falta 1 día calendario", "Vence hoy" o "Venció hace 2 días hábiles". n es dias_restantes (0 = vence hoy).
