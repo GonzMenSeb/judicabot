@@ -654,8 +654,12 @@ _COLUMNAS = re.compile(r"(?<![,\s])\s{3,}|\t|\s\|\s")
 _ROTULO_DE_LUGAR = r"(?i:(?:(?:lugar|ciudad)\s+y\s+)?fecha\s*:\s*)?"
 _ANTES_DE_LA_FECHA = r"(?:(?:a|el)\s+)?(?:[^\W\d_]{3,10}\.?,?\s*)?"  # «a», día de la semana (con o sin coma)
 # «Medellín, », «Bogotá D.C., », «Santiago de Cali, », «San Pedro de los Milagros, », «Medellín (Antioquia), »,
-# «Medellín, Antioquia, », «Medellín, Antioquia. », «Medellín, martes, », «Medellín, a »
-_CIUDAD_Y_COMA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}(?:\s*,\s*|(?<=\.)\s+){_ANTES_DE_LA_FECHA}$")
+# «Medellín, Antioquia, », «Medellín, Antioquia. », «Medellín, martes, », «Medellín, a ». El punto en vez de la coma solo vale
+# tras un segundo lugar separado por coma («Medellín, Antioquia. »): un punto sin coma («Informe secretarial. », «Rad. »,
+# «Ref. », «Constancia. », «Bogotá D.C. ») no separa un lugar de la fecha y es lo que tiene un rótulo, no un encabezado.
+_CIUDAD_Y_COMA = re.compile(
+    rf"^\s*{_ROTULO_DE_LUGAR}(?:{_LUGARES}\s*,\s*|{_LUGAR}\s*,\s*{_LUGAR}(?<=\.)\s+){_ANTES_DE_LA_FECHA}$"
+)
 _CIUDAD_SOLA = re.compile(rf"^\s*{_ROTULO_DE_LUGAR}{_LUGARES}\s*$")  # «Medellín » (sin coma)
 # «medellín, » (minúscula), «Medellín; », «Medellín – »: tiene forma de lugar y separador pero no se lee como encabezado
 _LUGAR_CON_SEPARADOR = re.compile(
@@ -722,7 +726,11 @@ def _fecha_encabezado(texto: str) -> str | None:
     en el renglón. Esa señal es más débil que una «Ciudad, fecha» legible, que manda: un renglón «Ciudad, fecha» citado
     antes del primer renglón de cuerpo gana a un encabezado de este tipo. Una sola palabra y los dos puntos («Medellín: …»,
     «Admitida: …») es una señal aún más débil, porque tiene la forma de otra fecha con su rótulo: solo cuenta si va antes de
-    la fecha sola o «Fecha:» que se leería («Fecha: 28 de …» ⏎ «Admitida: 15 de …» se lee; al revés no se lee ninguna)."""
+    la fecha sola o «Fecha:» que se leería («Fecha: 28 de …» ⏎ «Admitida: 15 de …» se lee; al revés no se lee ninguna).
+    Un punto en vez de la coma solo vale tras un departamento separado por coma («Medellín, Antioquia. 28 de …»): «Informe
+    secretarial. 15 de …», «Rad. 15/06/2026», «Ref.», «Bogotá D.C. 28 de …» no son una «Ciudad, fecha». Tienen forma de lugar
+    sin coma: antes de una «Ciudad, fecha», o junto a una fecha sola o «Fecha:», dejan la fecha vacía con aviso (nunca la
+    suya); tras una «Ciudad, fecha» no la desplazan."""
     return _leer_encabezado(unicodedata.normalize("NFC", texto)[:6000])[0]
 
 

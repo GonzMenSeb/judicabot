@@ -928,6 +928,8 @@ ENCABEZADOS_ILEGIBLES = [
     "medellín, 28 de septiembre de 2026",
     "Medellín; 28 de septiembre de 2026",
     "Medellín – 28 de septiembre de 2026",
+    "Bogotá D.C. 28 de septiembre de 2026",  # un punto sin coma no separa el lugar de la fecha
+    "Medellín. 28 de septiembre de 2026",
     "28.IX.2026",
     "Fecha: 28/09/26",
     "Medellín, 28 IX 2026",
@@ -1385,6 +1387,96 @@ def test_otra_fecha_con_su_rotulo_no_vuelve_ilegible_un_encabezado_con_fecha_sol
 def test_otra_fecha_con_su_rotulo_no_desplaza_un_encabezado_con_ciudad(linea):
     texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + linea + "\nMedellín, 28 de septiembre de 2026" + CUERPO_CON_FECHAS
     assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+# «<Palabra(s)>. <fecha>» no es un «Ciudad, fecha»: un punto sin coma no separa un lugar de la fecha. Solo se lee con un
+# departamento o región tras una coma («Medellín, Antioquia. 28 de …»). Una línea de informe, constancia o referencia
+# («Informe secretarial. 15 de junio de …», «Rad. 15/06/2026», «Ref.», «Fdo.») jamás sustituye a un encabezado que main leía.
+COLA_DEL_FALLO = "Radicado: 05001408800920260012300\nHECHOS\nPrimero. El 20 de agosto de 2026 la accionante pidió.\n"
+
+
+def test_informe_secretarial_con_punto_y_fecha_antes_del_encabezado_no_lo_sustituye():
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nINFORME SECRETARIAL. 15 de junio de 2026. Al Despacho del señor Juez la acción de tutela.\n"
+        "Medellín, 28 de septiembre de 2026\nSENTENCIA\n" + COLA_DEL_FALLO
+    )
+    assert ingest._leer_encabezado(texto) == (None, True)  # main leía 2026-09-28: vacío y aviso, nunca el informe
+
+
+def test_constancia_secretarial_con_punto_y_fecha_tras_el_encabezado_con_fecha_no_lo_sustituye():
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nFecha: 28 de septiembre de 2026\n"
+        "Constancia Secretarial. 15 de junio de 2026. Se deja constancia del reparto.\n" + COLA_DEL_FALLO
+    )
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_rad_con_punto_y_fecha_tras_una_fecha_sola_no_la_sustituye():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n28 de septiembre de 2026\nRad. 15/06/2026\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+ROTULOS_CON_PUNTO = [
+    "Informe Secretarial", "INFORME SECRETARIAL", "Constancia Secretarial", "Constancia", "Rad", "Ref", "Exp", "Fdo", "Of",
+    "Notif", "Vto", "Reparto", "Fecha Reparto", "Fecha de Reparto", "Admitida", "Radicado", "Sentencia", "Providencia",
+]
+FECHAS_CON_PUNTO = [
+    "15 de junio de 2026",
+    "15 de junio de 2026. Al Despacho del señor Juez la acción de tutela.",
+    "15/06/2026",
+    "junio 15 de 2026",
+    "quince (15) de junio de dos mil veintiséis (2026)",
+]
+ENCABEZADOS_CON_OTRA_FECHA_CON_PUNTO = [
+    "Medellín, 28 de septiembre de 2026",
+    "Medellín, Antioquia, 28 de septiembre de 2026",
+    "Fecha: 28 de septiembre de 2026",
+    "Fecha de la providencia: 28 de septiembre de 2026",
+    "28 de septiembre de 2026",
+]
+
+
+@pytest.mark.parametrize("fecha", FECHAS_CON_PUNTO)
+@pytest.mark.parametrize("rotulo", ROTULOS_CON_PUNTO)
+def test_palabra_con_punto_y_otra_fecha_nunca_sustituye_al_encabezado(rotulo, fecha):
+    mal = []
+    for encabezado in ENCABEZADOS_CON_OTRA_FECHA_CON_PUNTO:
+        for antes in (False, True):
+            linea = [f"{rotulo}. {fecha}", encabezado] if antes else [encabezado, f"{rotulo}. {fecha}"]
+            texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(linea) + "\n" + COLA_DEL_FALLO
+            leido = ingest._fecha_encabezado(texto)
+            if leido not in (None, "2026-09-28"):
+                mal.append((antes, encabezado, leido))
+    assert not mal, mal
+
+
+@pytest.mark.parametrize("fecha", FECHAS_CON_PUNTO)
+@pytest.mark.parametrize("rotulo", ROTULOS_CON_PUNTO)
+def test_palabra_con_punto_y_otra_fecha_tras_un_encabezado_con_ciudad_no_lo_desplaza(rotulo, fecha):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28 de septiembre de 2026\n" + f"{rotulo}. {fecha}\n" + COLA_DEL_FALLO
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+@pytest.mark.parametrize(
+    "encabezado,iso",
+    [
+        ("Medellín, Antioquia. 28 de septiembre de 2026", "2026-09-28"),
+        ("Bogotá, Cundinamarca. 28 de septiembre de 2026", "2026-09-28"),
+        ("Santiago de Cali, Valle del Cauca. 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia. a 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia. martes 29 de septiembre de 2026", "2026-09-29"),
+        ("Lugar y fecha: Medellín, Antioquia. 29 de septiembre de 2026", "2026-09-29"),
+    ],
+)
+def test_ciudad_con_departamento_tras_una_coma_y_un_punto_se_sigue_leyendo(encabezado, iso):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (iso, False)
+
+
+@pytest.mark.parametrize("encabezado", ["Bogotá D.C. 28 de septiembre de 2026", "Medellín. 28 de septiembre de 2026", "Medellín - Antioquia. 28 de septiembre de 2026"])
+def test_lugar_con_punto_y_sin_coma_no_se_lee_como_encabezado(encabezado):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (None, True)
 
 
 def test_encabezado_ilegible_con_titulo_tras_un_oficio_no_da_la_fecha_del_oficio():
