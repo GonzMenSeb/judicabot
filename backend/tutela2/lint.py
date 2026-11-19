@@ -868,6 +868,7 @@ _CONDICION = re.compile(
 # la decidida: en infinitivo no se examina.
 _ALCANCE_PARCIAL = re.compile(
     r"\b(?:respecto|frente|en\s+cuanto|en\s+relaci[oó]n|con\s+relaci[oó]n|con\s+respecto|contra|salvo|excepto|parcialmente"
+    r"|relativ[ao]s?|referentes?|atinentes?|concernientes?|en\s+materia|sobre"
     r"|en\s+lo\s+(?:que|relativo|referente|concerniente|tocante|atinente)|por\s+lo\s+que\s+(?:hace|toca|respecta|ata[nñ]e)"
     r"|dem[aá]s|restantes|solo|s[oó]lo|[uú]nicamente)\b"
 )
@@ -982,6 +983,16 @@ _OBJETO_JUDICIAL = re.compile(
     r"(?:\d|primera|segunda|[uú]nica|instancia|a\s+quo|sala|juzgado|despacho|corte|tribunal|juez|jueza|tutela|amparo|fecha|este"
     r"|esta|dicho|dicha)\b)))"
 )
+# En infinitivo, negar o declarar improcedente solo cuentan si lo que sigue, directamente, es el amparo mismo: su núcleo
+# («el amparo», «la tutela», «la acción», «la protección», con hasta tres palabras sueltas antes), «las pretensiones de la acción»
+# o «lo solicitado». No basta con que no sea una pretensión accesoria reconocible, como en futuro: «negar, en cambio, el
+# tratamiento integral», «negar las pretensiones adicionales» o «negar la solicitud o la pretensión relativa al transporte» son
+# negaciones parciales que pueden convivir con el amparo.
+_EL_AMPARO_MISMO = re.compile(
+    rf"\s+{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones))\b"
+    rf"|{_PRETENSION_GENERICA}\s+(?:de|del)\s+{_AMPARO_COMO_OBJETO}\b"
+    r"|lo\s+(?:solicitado|pedido|pretendido|impetrado|reclamado|demandado)\b)"
+)
 _CLITICO_FINAL = re.compile(r"ar(?:l[aeo]s?)$")
 _VERBO_DE_COMPROBACION = re.compile(r"\s*,?\s*(?:adem[aá]s\s*,?\s*)?que\b")
 
@@ -996,9 +1007,11 @@ def _infinitivo_cuenta(texto: str, m: re.Match[str], fin: int, otro: str) -> boo
         return True
     # Negar, declarar improcedente o declarar la carencia pueden ser una parte de otra decisión (se ampara un derecho y se niega
     # otro; se niega frente a una entidad y es improcedente frente a otra). Solo cuentan si son enteros: sobre el amparo mismo
-    # (no «negar el tratamiento integral» ni «declarar improcedente la solicitud de reembolso») y sin acotarlos a una parte en lo
-    # que queda de la oración. Amparar, en cambio, contradice cualquier otra sustitutiva aunque sea en parte.
-    if otro in ("NEGAR", "IMPROCEDENTE") and _niega_pretension_accesoria(texto, m):
+    # (`_EL_AMPARO_MISMO`; no «negar el tratamiento integral» ni «declarar improcedente la solicitud de reembolso») y sin
+    # acotarlos a una parte en lo que queda de la oración. Amparar, en cambio, contradice cualquier otra sustitutiva aunque sea
+    # en parte.
+    objeto_antes = otro == "IMPROCEDENTE" and "acci" in m.group() and _SIN_COMPLEMENTO.match(texto, m.end())
+    if otro in ("NEGAR", "IMPROCEDENTE") and not (objeto_antes or _EL_AMPARO_MISMO.match(texto, m.end())):
         return False
     return _ALCANCE_PARCIAL.search(texto, m.end(), fin) is None
 

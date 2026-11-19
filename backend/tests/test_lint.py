@@ -2556,10 +2556,37 @@ def test_coherencia_decision_el_tipo_equivocado_con_la_formula_del_prompt_o_cerc
         ("REVOCAR", "AMPARAR", "Corresponde revocar el fallo, amparar el derecho a la salud y negar el amparo en cuanto al tratamiento integral."),
         ("REVOCAR", "NEGAR", "Corresponde revocar el fallo, negar el amparo y declarar improcedente la medida provisional."),
         ("REVOCAR", "IMPROCEDENTE", "Corresponde revocar el fallo, declarar improcedente la acción y negar la medida provisional."),
+        # Lo negado no sigue directamente o no es el amparo mismo (no bloqueante de la segunda ronda de revisión de #166).
+        *(("REVOCAR", "AMPARAR", f"Corresponde revocar el fallo, amparar el derecho a la salud y negar{cola}.") for cola in (
+            ", en cambio, el tratamiento integral", ", por el contrario, el tratamiento integral", ", además, el transporte",
+            " las pretensiones adicionales", " las pretensiones accesorias", " las pretensiones subsidiarias", " las pretensiones económicas",
+            " la solicitud o la pretensión relativa al transporte", " parcialmente las pretensiones", " el derecho al mínimo vital",
+            " el amparo sobre el tratamiento integral",
+        )),
     ],
 )
 def test_coherencia_decision_una_sustitutiva_parcial_en_infinitivo_no_bloquea(resultado, sustitutiva, conclusion):
     assert lint.coherencia_decision(_caso(conclusion=conclusion), _decision(resultado, sustitutiva)) == []
+
+
+@pytest.mark.parametrize(
+    ("sustitutiva", "otro", "anuncio"),
+    [
+        # Negar o declarar improcedente el amparo mismo, con su núcleo directamente después, sí contradicen.
+        ("AMPARAR", "NEGAR", "negar el amparo solicitado por la accionante"),
+        ("AMPARAR", "NEGAR", "negar las pretensiones de la acción de tutela"),
+        ("AMPARAR", "NEGAR", "negar la presente acción"),
+        ("AMPARAR", "NEGAR", "negar lo solicitado"),
+        ("AMPARAR", "NEGAR", "negar las pretensiones de la accionante"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar improcedente la acción de tutela"),
+        ("AMPARAR", "IMPROCEDENTE", "declarar la acción de tutela improcedente"),
+        ("NEGAR", "IMPROCEDENTE", "declarar improcedente el amparo"),
+        ("IMPROCEDENTE", "NEGAR", "negar la tutela"),
+    ],
+)
+def test_coherencia_decision_negar_o_declarar_improcedente_el_amparo_mismo_en_infinitivo_bloquea(sustitutiva, otro, anuncio):
+    msgs = lint.coherencia_decision(_caso(conclusion=f"Corresponde revocar el fallo y {anuncio}."), _decision("REVOCAR", sustitutiva))
+    assert any(f"anuncia {otro} como la decisión sustitutiva" in m for m in msgs), anuncio
 
 
 @pytest.mark.parametrize(
@@ -2599,6 +2626,8 @@ _ENTRADAS_ADVERSARIAS_89 = {
     "_CONDICION": (lambda t: lint._CONDICION.search(t), "siempre y " * 300 + "x"),
     "_ALCANCE_PARCIAL": (lambda t: lint._ALCANCE_PARCIAL.search(t), "en lo " * 300 + "x"),
     "_OBJETO_JUDICIAL": (lambda t: lint._OBJETO_JUDICIAL.match(t), " " + "el la los dicho " * 300 + "x"),
+    "_EL_AMPARO_MISMO": (lambda t: lint._EL_AMPARO_MISMO.match(t), " " + "la totalidad de la citada presente el referido " * 300 + "x."),
+    "_EL_AMPARO_MISMO_PRETENSIONES": (lambda t: lint._EL_AMPARO_MISMO.match(t), " las pretensiones de " + "la citada " * 300 + "x."),
     "_FIN_DE_ORACION": (lambda t: lint._FIN_DE_ORACION.search(t), "s.a. " * 300 + "x"),
     "_CORTA_LA_CADENA": (lambda t: lint._CORTA_LA_CADENA.fullmatch(t), "a" * 10000 + "x"),
     "_PALABRA_DEL_COMPLEMENTO": (lambda t: lint._PALABRA_DEL_COMPLEMENTO.match(t), " " * 10000 + ","),
