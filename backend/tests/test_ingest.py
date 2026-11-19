@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import types
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -710,6 +711,814 @@ OFICIO_Y_SENTENCIA = (
 def test_fecha_del_fallo_ignora_el_oficio_de_notificacion():
     assert ingest._fecha_encabezado(OFICIO_Y_SENTENCIA) == "2027-08-20"
     assert ingest._fecha_encabezado("Medellín, 3 de marzo de 2027\nTexto.") == "2027-03-03"
+
+
+def oficio_largo(relleno: int, con_numeral: bool = False, encabezado: str = "Medellín, veinte (20) de agosto de dos mil veintisiete (2027)") -> str:
+    """Oficio de notificación de `relleno` caracteres (con el espaciado de pdftotext -layout) y luego la sentencia."""
+    lineas = ["Asunto:" + " " * 60 + "Notificación del fallo de tutela, radicado " + CUI] * (relleno // 110)
+    if con_numeral:
+        lineas.insert(2, "1. Copia del fallo de tutela.")
+    return (
+        "Medellín, veintiuno (21) de agosto de dos mil veintisiete (2027)\n\nOficio No. 986\n"
+        + "\n".join(lineas)
+        + "\nLes adjunto el fallo de tutela.\nAtentamente,\nSecretaría\n\f"
+        + f"JUZGADO TREINTA Y TRES PENAL MUNICIPAL DE MEDELLÍN\n{encabezado}\nRadicado {CUI}\n"
+        "Acción de tutela. ANTECEDENTES. CONSIDERACIONES. Competencia. RESUELVE: PRIMERO. Niega.\n"
+    )
+
+
+@pytest.mark.parametrize("con_numeral", [False, True])
+@pytest.mark.parametrize("relleno", [200, 1600, 3000])
+def test_fecha_del_fallo_tras_un_oficio_largo_no_es_la_del_oficio(relleno, con_numeral):
+    assert ingest._fecha_encabezado(oficio_largo(relleno, con_numeral)) == "2027-08-20"
+
+
+@pytest.mark.parametrize("relleno", [200, 1600, 3000])
+def test_fecha_ilegible_tras_un_oficio_largo_queda_vacia_y_no_es_la_del_oficio(relleno):
+    assert ingest._fecha_encabezado(oficio_largo(relleno, encabezado="Medellín, 20.VIII.2027")) is None
+
+
+CUERPO_CON_FECHAS = (
+    "\nRadicado: 05001408800920270012300\nHECHOS\nPrimero. La accionante sufrió una lesión y su médico tratante\n"
+    "tratante, circunstancia que fue puesta en conocimiento del empleador el 20 de agosto de 2027.\n"
+    "Según la accionante, el 15 de junio de 2027 se presentó la solicitud.\n20 de agosto de 2027 la accionante pidió.\n"
+)
+
+
+@pytest.mark.parametrize(
+    "texto,iso",
+    [
+        ("Medellín, septiembre 28 de 2026", "2026-09-28"),
+        ("28 de Septiembre del año 2026", "2026-09-28"),
+        ("28 de sep de 2026", "2026-09-28"),
+        ("28-sep-2026", "2026-09-28"),
+        ("28 septiembre 2026", "2026-09-28"),
+        ("veintiocho de septiembre de 2026", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("veintiocho de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("dos (2) de octubre de dos mil veintiséis", "2026-10-02"),
+        ("treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
+        ("1º de octubre de 2026", "2026-10-01"),
+        ("a los veintiocho (28) días del mes de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("a los 28 días del mes de septiembre de 2026", "2026-09-28"),
+        ("septiembre veintiocho (28) de dos mil veintiséis (2026)", "2026-09-28"),
+        ("31 de febrero de dos mil veintisiete", None),
+        ("Decreto 2591 de 1991 y ley 100 de 1993", None),
+        ("la sentencia T-760 de 2008", None),
+    ],
+)
+def test_fechas_en_formatos_con_mes_en_letras(texto, iso):
+    halladas = fechas_en(texto)
+    assert (halladas[0][1] if halladas else None) == iso
+
+
+@pytest.mark.parametrize(
+    "encabezado,iso",
+    [
+        ("Medellín, veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, septiembre 28 de 2026", "2026-09-28"),
+        ("Medellín, 28 de Septiembre del año 2026", "2026-09-28"),
+        ("Medellín, 28 de sep de 2026", "2026-09-28"),
+        ("Medellín, 28-sep-2026", "2026-09-28"),
+        ("Medellín, 28 septiembre 2026", "2026-09-28"),
+        ("Medellín, veintiocho de septiembre de 2026", "2026-09-28"),
+        ("Medellín, 28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("Medellín, dos (2) de octubre de dos mil veintiséis", "2026-10-02"),
+        ("Medellín, veintiocho de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("Medellín, 1º de octubre de 2026", "2026-10-01"),
+        ("Medellín, treinta y uno (31) de octubre de dos mil veintiséis (2026)", "2026-10-31"),
+        ("Medellín, a los veintiocho (28) días del mes de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, septiembre veintiocho (28) de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín D.C., 28 de septiembre de 2026", "2026-09-28"),
+        ("Bogotá D.C., 28 de septiembre de 2026", "2026-09-28"),
+        ("Santiago de Cali, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín (Antioquia), 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín - Antioquia, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, lun. 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, martes 6 de octubre de 2026", "2026-10-06"),
+        ("MEDELLÍN, septiembre 28 de 2026", "2026-09-28"),
+        ("Medellín, 28/09/2026", "2026-09-28"),
+        ("Medellín, 2026-09-28", "2026-09-28"),
+        ("Medellín,   28 de septiembre de 2026", "2026-09-28"),  # sangrado de pdftotext -layout tras la coma
+        ("Medellín," + " " * 40 + "veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, lunes veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, miércoles siete (7) de octubre de dos mil veintiséis (2026)", "2026-10-07"),
+        ("Medellín, a veintiocho (28) de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("Medellín, martes, 6 de octubre de 2026", "2026-10-06"),
+        ("Medellín, a 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín,   a 28 de septiembre de 2026", "2026-09-28"),  # sangrado de pdftotext -layout y luego «a»
+        ("Medellín,    a veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        ("Medellín, Antioquia. 28 de septiembre de 2026", "2026-09-28"),
+        ("San Pedro de los Milagros, 28 de septiembre de 2026", "2026-09-28"),
+        ("veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),  # tras «SENTENCIA» en otro renglón
+        ("Sentencia No. 12\nMedellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Radicado 05001408800920270012300\nMedellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, 28 de septiembre de 2026            Radicado 05001408800920270012300", "2026-09-28"),
+        ("Fecha: 28 de septiembre de 2026", "2026-09-28"),
+        ("Fecha: 2026-09-28", "2026-09-28"),
+        ("Fecha del fallo: 28 de septiembre de 2026", "2026-09-28"),
+        ("Fecha de la providencia: 28 de septiembre de 2026", "2026-09-28"),
+        ("28 de septiembre de 2026", "2026-09-28"),
+        # encabezado ilegible: None, nunca la fecha de un hecho del cuerpo
+        ("Medellín, Sept. 28/26", None),
+        ("Medellín, 28.IX.2026", None),
+        ("Medellín 28 de septiembre de 2026", None),
+        ("Medellín, 31 de abril de 2026", None),
+    ],
+)
+def test_fecha_del_encabezado_no_se_sustituye_por_una_fecha_del_cuerpo(encabezado, iso):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == iso
+
+
+def test_fecha_del_fallo_ilegible_queda_vacia_y_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    ilegible = FALLO.replace(
+        "Medellín, doce (12) de marzo de dos mil veintisiete (2027)",
+        "Medellín, 12.III.2027\nSegún la accionante, el 15 de febrero de 2027 radicó la solicitud.",
+    )
+    escribir(tmp_path, P1 + "004Fallo.txt", ilegible)
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.fallo_a_quo is None
+    assert any(
+        "No se pudo leer la fecha del fallo de primera instancia en el encabezado de «004Fallo.txt»; saldrá como "
+        "⟦FALTA: fecha⟧ en el fallo y ⟦FALTA: fecha de la providencia⟧ en el formato de calidad" in a
+        for a in ing.alertas
+    )
+
+
+def test_fecha_del_fallo_en_letras_sin_cifras_se_lee_y_no_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    en_letras = FALLO.replace(
+        "Medellín, doce (12) de marzo de dos mil veintisiete (2027)", "Medellín, doce de marzo de dos mil veintisiete"
+    )
+    escribir(tmp_path, P1 + "004Fallo.txt", en_letras)
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.fallo_a_quo == "2027-03-12"
+    assert not any("No se pudo leer la fecha" in a for a in ing.alertas)
+
+
+def test_fecha_de_admision_ilegible_avisa(tmp_path):
+    caso_sintetico(tmp_path)
+    escribir(tmp_path, P1 + "003Admite.txt", ADMISORIO.replace("veintitrés (23) de febrero de dos mil veintisiete (2027)", "23.II.2027"))
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.admision is None
+    assert any("No se pudo leer la fecha del auto admisorio en el encabezado de «003Admite.txt»" in a for a in ing.alertas)
+
+
+def test_caso_sintetico_conserva_las_fechas_y_no_trae_alertas_de_fecha(tmp_path):
+    caso_sintetico(tmp_path)
+    ing = ingerir(tmp_path, Config())
+    fechas = ing.metadatos.fechas
+    assert (fechas.admision, fechas.fallo_a_quo, fechas.concesion_impugnacion) == ("2027-02-23", "2027-03-12", "2027-03-27")
+    assert not any("No se pudo leer la fecha" in a for a in ing.alertas)
+
+
+@pytest.mark.parametrize(
+    "encabezado", ["Medellín, septiembre 28 de 2026", "Fecha: 28 de septiembre de 2026"]
+)
+def test_fecha_del_encabezado_con_saltos_de_linea_de_windows(encabezado):  # pdfium devuelve \r\n
+    texto = ("JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS).replace("\n", "\r\n")
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_fecha_del_encabezado_en_columna_junto_al_membrete():  # pdftotext -layout
+    texto = "REPÚBLICA DE COLOMBIA\nJUZGADO NOVENO PENAL MUNICIPAL            Medellín, septiembre 28 de 2026\nSENTENCIA\n" + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_fecha_del_encabezado_en_columna_partida_en_dos_renglones():  # pdftotext -layout parte la fecha de la columna
+    texto = (
+        "REPÚBLICA DE COLOMBIA\nJUZGADO NOVENO PENAL MUNICIPAL            Medellín, 28 de\nseptiembre de 2026\nSENTENCIA\n"
+        + CUERPO_CON_FECHAS
+    )
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_fecha_al_final_de_un_renglon_justificado_del_cuerpo_no_es_encabezado():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28.IX.2027\nPrimero. La accionante radicó la solicitud ante la entidad   el   20 de agosto de 2027.\n"
+    assert ingest._fecha_encabezado(texto) is None
+
+
+def test_fecha_del_encabezado_con_tildes_descompuestas():  # NFD: «i» + acento combinante
+    texto = unicodedata.normalize("NFD", "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, miércoles 7 de octubre de 2026" + CUERPO_CON_FECHAS)
+    assert ingest._fecha_encabezado(texto) == "2026-10-07"
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "JUZGADO NOVENO PENAL MUNICIPAL\nINFORME SECRETARIAL\nA despacho del señor Juez la presente acción de tutela, recibida el\n"
+        "15 de junio de 2026.\n\nMedellín, 16 de junio de 2026\nRadicado 05001\nSE ADMITE la acción.\n",
+        "JUZGADO NOVENO PENAL MUNICIPAL\nFecha de radicación: 15 de junio de 2026\nMedellín, 16 de junio de 2026\nRadicado 05001\n",
+        "JUZGADO NOVENO PENAL MUNICIPAL\nFECHA: 15/06/2026\nSentencia No. 12\nMedellín, 16 de junio de 2026\nRadicado 05001\n",
+        "JUZGADO NOVENO PENAL MUNICIPAL\nFecha de reparto: 15 de junio de 2026\nSENTENCIA\n15 de junio de 2026\nMedellín, 16 de junio de 2026\n",
+    ],
+)
+def test_una_fecha_anterior_al_encabezado_con_ciudad_no_lo_desplaza(texto):
+    assert ingest._fecha_encabezado(texto) == "2026-06-16"
+
+
+ENCABEZADOS_ILEGIBLES = [
+    "Medellín, 28.IX.2026",
+    "Medellín 28 de septiembre de 2026",
+    "Medellín, Sept. 28/26",
+    "medellín, 28 de septiembre de 2026",
+    "Medellín; 28 de septiembre de 2026",
+    "Medellín – 28 de septiembre de 2026",
+    "Bogotá D.C. 28 de septiembre de 2026",  # un punto sin coma no separa el lugar de la fecha
+    "Medellín. 28 de septiembre de 2026",
+    "28.IX.2026",
+    "Fecha: 28/09/26",
+    "Medellín, 28 IX 2026",
+    "Medellín, 28/9/26",
+    "Medellín,   Sept. 28/26",  # con sangrado tras la coma
+]
+CUERPOS_CON_FECHAS = [
+    "Primero. La entidad respondió mediante oficio del\n20 de agosto de 2026,\nSegundo. Otra cosa.\n",
+    "Primero. La accionante radicó la solicitud el\n15 de junio de 2026.\nSegundo. Otra cosa.\n",
+    "Primero. La accionante presentó la petición así:\nMedellín, 15 de junio de 2026\nSeñores EPS SURA\n",
+    "Primero. Bogotá, 3 de mayo de 2026: la accionante radicó la solicitud.\n",
+    "Primero. Posteriormente, 15 de junio de 2026 ocurrió el hecho.\n",
+    "Primero. La accionante afirma lo siguiente.\nFecha de radicación: 15 de junio de 2026\n",
+    "Primero. La accionante afirma lo siguiente.\nFecha de reparto: 15 de junio de 2026\n",
+    "Primero. La accionante afirma lo siguiente.\nFecha: 15/06/2026\n",
+    "Primero. La accionante afirma lo siguiente.\n15 de junio de 2026\n",
+]
+
+
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_ILEGIBLES)
+@pytest.mark.parametrize("cuerpo", CUERPOS_CON_FECHAS)
+@pytest.mark.parametrize("seccion", ["", "Radicado 05001408800920270012300\nHECHOS\n"])
+def test_encabezado_ilegible_no_se_sustituye_por_una_fecha_del_cuerpo(encabezado, cuerpo, seccion):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + seccion + cuerpo
+    assert ingest._fecha_encabezado(texto) is None
+
+
+@pytest.mark.parametrize("cuerpo", CUERPOS_CON_FECHAS)
+def test_rotulo_de_fecha_antes_de_un_encabezado_ilegible_no_vale(cuerpo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nFecha: 15/06/2026\nSENTENCIA\nMedellín, 28.IX.2026\n" + cuerpo
+    assert ingest._fecha_encabezado(texto) is None
+
+
+def test_fecha_en_el_cuerpo_tras_hechos_no_es_encabezado_aunque_no_haya_otra():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nRadicado 05001\nHECHOS\nMedellín, 15 de junio de 2026\nSeñores EPS SURA\n"
+    assert ingest._fecha_encabezado(texto) is None
+
+
+def test_fecha_del_encabezado_lejos_del_inicio_no_se_lee():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\n" + "Texto de relleno sin cifras. " * 120 + "\nMedellín, 15 de junio de 2026\n"
+    assert ingest._fecha_encabezado(texto) is None
+
+
+# Un membrete, una dirección o un teléfono antes del encabezado (en un DOCX, los encabezados y pies de sección van
+# primero en el texto) no son un encabezado ilegible: el que sigue se lee.
+LINEAS_ANTES_DEL_ENCABEZADO = [
+    "Palacio de Justicia, Piso 3",
+    "Edificio José Félix de Restrepo, Carrera 52 No. 42-43",
+    "Edificio José Félix de Restrepo, Piso 5 Oficina 502",
+    "Sede Medellín, Carrera 52 No. 42-43",
+    "Centro Administrativo, Oficina 12",
+    "Centro Administrativo La Alpujarra, Piso 3",
+    "Complejo Judicial, Torre 2",
+    "Sala Penal, Despacho 4",
+    "Tutela, 1ª instancia",
+    "Auto Interlocutorio, 12 de 2026",
+    "Tel. (4) 23-25-55",
+    "Carrera 52 No. 42-43, Piso 12",
+    "Teléfono 4 385-55-55",
+    "Calle 44 No. 52-165, Medellín",
+]
+
+
+@pytest.mark.parametrize("linea", LINEAS_ANTES_DEL_ENCABEZADO)
+@pytest.mark.parametrize(
+    "fecha", ["Medellín, veintiocho (28) de septiembre de dos mil veintiséis (2026)", "Medellín, 28 de septiembre de 2026"]
+)
+def test_membrete_o_direccion_antes_del_encabezado_no_lo_vuelve_ilegible(linea, fecha):
+    texto = f"JUZGADO NOVENO PENAL MUNICIPAL\n{linea}\nSENTENCIA\n{fecha}" + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+# Un encabezado legible que solo menciona un oficio (a menos de VENTANA_OFICIO caracteres) no se confunde con el
+# de un oficio de notificación: la fecha es la suya, nunca una fecha del cuerpo que viene después.
+ENCABEZADO_QUE_MENCIONA_UN_OFICIO = (
+    "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28 de septiembre de 2026\n"
+    "Radicado: 05001408800920260012300\nAccionante: Juan Pérez\n"
+)
+
+
+@pytest.mark.parametrize(
+    "oficio",
+    [
+        "Mediante oficio No. 1234 la entidad respondió.\n",
+        "Se adjunta el fallo de primera instancia.\n",
+        "Con oficio 55 se notificó.\n",
+    ],
+)
+@pytest.mark.parametrize(
+    "cuerpo",
+    [
+        "La accionante radicó la solicitud ante la entidad el\n15 de junio de 2026.\n",  # fecha de un renglón partido
+        "Se radicó la solicitud el\n15/06/2026\n",
+        "El término vence así:\n15 de junio de 2026\n",  # fecha sola
+        "Fecha: 15 de junio de 2026\n",
+    ],
+)
+@pytest.mark.parametrize("seccion", ["HECHOS\nPrimero. x\n", "ANTECEDENTES\nPrimero. x\n"])
+def test_encabezado_que_menciona_un_oficio_conserva_su_fecha(oficio, cuerpo, seccion):
+    texto = ENCABEZADO_QUE_MENCIONA_UN_OFICIO + oficio + cuerpo + seccion
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+def test_renglon_de_cuerpo_con_forma_de_encabezado_junto_a_un_oficio_nunca_da_la_fecha_del_cuerpo():
+    # «Posteriormente, <fecha> ocurrió…» tiene forma de «Ciudad, fecha» ilegible: puede dejar la fecha vacía (con
+    # aviso), pero nunca devolver la del cuerpo.
+    for orden in (0, 1):
+        pie = ["Mediante oficio No. 1234 la entidad respondió.\n", "Posteriormente, 15 de junio de 2026 ocurrió el hecho.\n"]
+        texto = ENCABEZADO_QUE_MENCIONA_UN_OFICIO + "".join(pie[::-1] if orden else pie) + "HECHOS\nPrimero. x\n"
+        assert ingest._fecha_encabezado(texto) in ("2026-09-28", None)
+
+
+@pytest.mark.parametrize("oficio", ["Mediante oficio No. 1234 la entidad respondió.\n", "Se adjunta el fallo de primera instancia.\n"])
+def test_ciudad_y_fecha_citadas_en_el_cuerpo_no_reemplazan_un_encabezado_que_menciona_un_oficio(oficio):
+    texto = (
+        ENCABEZADO_QUE_MENCIONA_UN_OFICIO
+        + oficio
+        + "HECHOS\nPrimero. La accionante presentó la petición así:\nMedellín, 15 de junio de 2026\nSeñores EPS SURA\n"
+    )
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+# Numerales que `str.isdigit()` da por cifras pero `int()` no lee (¹ ² ③ ⑩…) y marcas ordinales pegadas a una cifra
+# («026ª», «261º»): el lector de fechas no debe lanzar nunca, porque una excepción aborta la ingesta entera del caso
+# (main no lanzaba: solo leía \d). El numeral rompe el día o el año, así que main no leía ninguna de estas.
+SIN_FECHA_POR_NUMERAL = [
+    "el 15{c} de mayo de 2026",
+    "texto {c} de septiembre de 2026",
+    "Medellín, 28 de septiembre de {c}",
+    "Medellín, 28 de septiembre de {c}{c}{c}{c}",
+    "28 de septiembre de 20{c}6",
+    "28{c} de septiembre de 2026",
+    "{c} de mayo de 2026",
+    "mayo {c} de 2026",
+    "mayo 2{c} de 2026",
+    "sep {c} de 2026",
+    "28 de sep de {c}",
+    "veintiocho ({c}) de septiembre de 2026",
+    "veintiocho de septiembre de {c} mil veintiséis",
+]
+# main sí las leía: el numeral está fuera de la fecha (llamada a pie de página, marca ordinal tras el año)
+CON_FECHA_PESE_AL_NUMERAL = [
+    "28 de septiembre de 2026{c}",
+    "28 de septiembre de 2026{c} y más texto",
+    "{c} 28 de septiembre de 2026",
+]
+MARCAS_PEGADAS_A_UNA_CIFRA = [  # ninguna es una fecha: el día de 3 cifras o el año de 3 cifras con marca
+    "28 de sep de 026ª",
+    "sep 261º",
+    "mar091º",
+    "28 de septiembre de 026ª",
+    "28 de septiembre de 261º",
+    "28 de septiembre de 1.23º",
+    "261º de septiembre de 2026",
+    "septiembre 261º de 2026",
+    "091º de marzo de 2026",
+    "1.234º de septiembre de 2026",
+    "28 de septiembre de 0º",
+    "28 de septiembre de 20º26",
+]
+
+
+def _numerales_que_no_son_cifras() -> list[str]:
+    return [c for c in map(chr, range(sys.maxunicode + 1)) if c.isnumeric() and not c.isdecimal()]
+
+
+def test_fechas_en_no_lanza_con_numerales_que_no_son_cifras_y_lee_lo_mismo_que_main():
+    mal = []
+    for c in _numerales_que_no_son_cifras():
+        for plantilla in SIN_FECHA_POR_NUMERAL:
+            for texto in (plantilla.format(c=c), plantilla.format(c=c + c)):
+                try:
+                    halladas = fechas_en(texto)
+                except Exception as e:  # noqa: BLE001
+                    mal.append((texto, repr(e)))
+                else:
+                    if halladas:
+                        mal.append((texto, halladas))
+        for plantilla in CON_FECHA_PESE_AL_NUMERAL:
+            texto = plantilla.format(c=c)
+            try:
+                halladas = [iso for _, iso in fechas_en(texto)]
+            except Exception as e:  # noqa: BLE001
+                mal.append((texto, repr(e)))
+            else:
+                if halladas != ["2026-09-28"]:
+                    mal.append((texto, halladas))
+    assert not mal, f"{len(mal)} casos, p. ej. {mal[:5]}"
+
+
+@pytest.mark.parametrize("texto", MARCAS_PEGADAS_A_UNA_CIFRA)
+def test_fechas_en_no_lanza_con_marcas_ordinales_pegadas_a_una_cifra(texto):
+    assert fechas_en(texto) == []
+
+
+@pytest.mark.parametrize(
+    "texto,iso",
+    [
+        ("28 de septiembre de 2026º", "2026-09-28"),  # main lee el año y deja la marca
+        ("28 de septiembre de 2.026ª", "2026-09-28"),
+        ("28º de septiembre de 2026", "2026-09-28"),
+        ("1° de octubre de 2026", "2026-10-01"),
+    ],
+)
+def test_fechas_en_lee_una_marca_ordinal_tras_el_dia_o_el_anio(texto, iso):
+    assert [i for _, i in fechas_en(texto)] == [iso]
+
+
+@pytest.mark.parametrize(
+    "texto,iso",
+    [
+        ("28 de septiembre de dos mil (2026)", "2026-09-28"),  # main lee el año entre paréntesis
+        ("veintiocho (28) de septiembre de dos mil veintiséls (2026)", "2026-09-28"),  # OCR en la palabra del año
+        ("(28) de septiembre del año dos mil veintiséls (2.026)", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséls (2026) y más texto", "2026-09-28"),
+        # sin el año en cifras, «dos mil» solo es lo que queda de un año ilegible: nunca el 2000
+        ("28 de septiembre de dos mil veintis3is", None),
+        ("veintiocho (28) de septiembre de dos mil veintiséls", None),
+        ("28 de septiembre de dos mil", None),
+        ("28 de septiembre de mil novecientos", None),
+        ("28 de septiembre de dos mil veinte y seis", None),  # «veinte y seis» no se lee: no vale «dos mil veinte»
+        ("28 de septiembre de dos mil veinte y seis (2026)", "2026-09-28"),
+        ("28 de septiembre de dos mil veintiséis", "2026-09-28"),
+        ("28 de septiembre de dos mil diez", "2010-09-28"),
+    ],
+)
+def test_fechas_en_el_anio_entre_parentesis_manda_y_dos_mil_solo_no_es_un_anio(texto, iso):
+    halladas = fechas_en(texto)
+    assert (halladas[0][1] if halladas else None) == iso
+
+
+def test_fecha_del_encabezado_con_la_palabra_del_anio_ilegible_vale_por_su_parentesis():
+    cabecera = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n"
+    assert ingest._fecha_encabezado(cabecera + "Medellín, veintiocho (28) de septiembre de dos mil veintiséls (2026)" + CUERPO_CON_FECHAS) == "2026-09-28"
+    assert ingest._fecha_encabezado(cabecera + "Medellín, veintiocho de septiembre de dos mil veintis3is" + CUERPO_CON_FECHAS) is None
+
+
+def test_fechas_en_con_cifras_de_otros_alfabetos_lee_lo_mismo_que_main():
+    # \d y int() de main aceptan las cifras decimales de cualquier alfabeto: «２８ de septiembre de ２０２６»
+    for texto in ("２８ de septiembre de ２０２６", "٢٨ de septiembre de ٢٠٢٦", "२८ de septiembre de २०२६"):
+        assert [i for _, i in fechas_en(texto)] == ["2026-09-28"]
+    assert [i for _, i in fechas_en("２８/０９/２０２６")] == ["2026-09-28"]
+
+
+@pytest.mark.parametrize(
+    "encabezado",
+    [
+        "Medellín, 28 de septiembre de ²⁰²⁶",
+        "Medellín, 28 de septiembre de 026ª",
+        "Medellín, 15¹ de septiembre de 2026",
+        "Medellín, 28 de septiembre de 2026¹.5",
+        "Expediente digital recibido el 15¹ de febrero de 2027.",
+        "Expediente digital recibido el 15 de febrero de ②⓪②⑦.",
+    ],
+)
+def test_fecha_del_encabezado_no_lanza_con_numerales_que_no_son_cifras(encabezado):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) in (None, "2026-09-28")  # nunca una excepción ni una fecha del cuerpo
+    legible = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28 de septiembre de 2026\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(legible) == "2026-09-28"
+
+
+def test_fecha_del_encabezado_no_lanza_con_ningun_numeral_que_no_es_cifra():
+    mal = []
+    for c in _numerales_que_no_son_cifras():
+        for encabezado in (
+            f"Medellín, 28 de septiembre de {c}{c}{c}{c}",
+            f"Medellín, 15{c} de septiembre de 2026",
+            f"Expediente recibido el 15{c} de febrero de 2026.\nMedellín, 28 de septiembre de 2026",
+        ):
+            texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + CUERPO_CON_FECHAS
+            try:
+                fecha = ingest._fecha_encabezado(texto)
+            except Exception as e:  # noqa: BLE001
+                mal.append((encabezado, repr(e)))
+            else:
+                if fecha not in (None, "2026-09-28"):
+                    mal.append((encabezado, fecha))
+    assert not mal, f"{len(mal)} casos, p. ej. {mal[:5]}"
+
+
+def test_un_numeral_raro_en_el_encabezado_del_fallo_no_aborta_la_ingesta(tmp_path):
+    caso_sintetico(tmp_path)
+    con_marca = FALLO.replace(
+        "Medellín, doce (12) de marzo", "Expediente digital recibido el 15¹ de febrero de 2027.\nMedellín, doce (12) de marzo"
+    )
+    assert con_marca != FALLO
+    escribir(tmp_path, P1 + "004Fallo.txt", con_marca)
+    ing = ingerir(tmp_path, Config())  # antes: ValueError: invalid literal for int() with base 10: '¹'
+    assert ing.metadatos.fechas.fallo_a_quo == "2027-03-12"
+    assert not any("No se pudo leer la fecha" in a for a in ing.alertas)
+    ilegible = FALLO.replace("Medellín, doce (12) de marzo de dos mil veintisiete (2027)", "Medellín, 12 de marzo de ²⁰²⁷")
+    escribir(tmp_path, P1 + "004Fallo.txt", ilegible)
+    ing = ingerir(tmp_path, Config())
+    assert ing.metadatos.fechas.fallo_a_quo is None
+    assert any("No se pudo leer la fecha del fallo de primera instancia" in a for a in ing.alertas)
+
+
+SENUELOS_DE_FECHA = ["Fecha: 15/06/2026", "15 de junio de 2026", "Fecha de la providencia: 15 de junio de 2026"]
+
+
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+@pytest.mark.parametrize("antes", [False, True])
+@pytest.mark.parametrize(
+    "encabezado,iso",
+    [
+        ("Lugar y fecha: Medellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Ciudad y fecha: Medellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("Fecha: Medellín, 28 de septiembre de 2026", "2026-09-28"),
+        ("FECHA: Medellín, septiembre 28 de 2026", "2026-09-28"),
+        ("Lugar y fecha: Medellín - Antioquia, veintiocho (28) de septiembre de dos mil veintiséis (2026)", "2026-09-28"),
+        # el rótulo no vuelve legible un encabezado ilegible, y la fecha del señuelo tampoco lo sustituye
+        ("Lugar y fecha: Medellín, 28.IX.2026", None),
+        ("Fecha: Medellín, Sept. 28/26", None),
+        ("Lugar y fecha: Medellín 28 de septiembre de 2026", None),
+    ],
+)
+def test_encabezado_con_rotulo_de_lugar_y_fecha_no_se_sustituye_por_otra_fecha(encabezado, iso, antes, senuelo):
+    linea = [encabezado, senuelo] if not antes else [senuelo, encabezado]
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(linea) + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == iso
+
+
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+@pytest.mark.parametrize(
+    "encabezado", ["Medellín, 15¹ de septiembre de 2026", "Medellín, 28② de septiembre de 2026", "Medellín, 28* de septiembre de 2026"]
+)
+def test_signo_pegado_al_dia_del_encabezado_lo_vuelve_ilegible_y_no_lo_sustituye_otra_fecha(encabezado, senuelo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + senuelo + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) is None
+
+
+# Encabezado con fecha que no se lee y que no es «Ciudad, fecha» (un título o un número antes del lugar, el día entre
+# paréntesis sin resolver, un resto en minúsculas tras la fecha): tiene forma de encabezado, así que ningún «Fecha:» ni
+# fecha sola cerca (señuelo) lo sustituye. Main los leía cuando eran la primera fecha del texto.
+ENCABEZADOS_CON_TITULO_O_SEPARADOR = [
+    "Sentencia No. 123 - Medellín, 28 de septiembre de 2026",
+    "Sentencia de tutela No. 123, Medellín, 28 de septiembre de 2026",
+    "Sentencia de primera instancia No. 123, Medellín, 28 de septiembre de 2026",
+    "Medellín, Antioquia: 28 de septiembre de 2026",  # con una coma o un título antes, los dos puntos sí dan forma de encabezado
+    "Sentencia No. 123, Medellín: 28 de septiembre de 2026",
+    "Medellín, diez y seis (16) de septiembre de dos mil veintiséis (2026)",
+    "Medellín, veinte y ocho (28) de septiembre de dos mil veintiséis (2026)",
+    "Medellín, (28) de septiembre de 2026",
+    "Medellín - Antioquia - 28 de septiembre de 2026",
+    "Medellín (Ant) - 28 de septiembre de 2026",
+    "Bogotá D.C. - 28 de septiembre de 2026",
+    "SENTENCIA No. 12 / Medellín, 28 de septiembre de 2026",
+    "Medellín, veintiocho (28) de septiembre de dos mil veintiséis (2026), siendo las 10:00 a.m.",
+]
+
+
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+@pytest.mark.parametrize("antes", [False, True])
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_CON_TITULO_O_SEPARADOR)
+def test_encabezado_con_titulo_o_separador_que_no_se_lee_no_se_sustituye_por_un_senuelo(encabezado, antes, senuelo):
+    linea = [senuelo, encabezado] if antes else [encabezado, senuelo]
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(linea) + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) is None
+
+
+# «Medellín: <fecha>» tiene la misma forma que «Admitida: <fecha>»: con solo los dos puntos no se sabe si hay un lugar. Es una
+# señal más débil que las de arriba y solo vuelve ilegible el encabezado si va antes de la fecha que se leería (la fecha
+# sola o «Fecha:»). Si el señuelo va antes no se distingue de un encabezado legible con otra fecha tras él: se lee el señuelo.
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+def test_encabezado_con_dos_puntos_no_se_sustituye_por_un_senuelo_que_va_despues(senuelo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín: 28 de septiembre de 2026\n" + senuelo + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) is None
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_encabezado_con_dos_puntos_sin_otra_fecha_no_se_sustituye_por_una_del_cuerpo():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín: 28 de septiembre de 2026" + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_fecha_del_encabezado_con_otra_fecha_con_rotulo_no_listado_no_pierde_la_fecha_del_encabezado():
+    # «Admitida:» no es un lugar ni un rótulo de la lista: tiene la forma de «Medellín: <fecha>». Con la fecha del
+    # encabezado («Fecha:» o sola) antes, esa otra fecha no la vuelve ilegible (antes: None y aviso falso)
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nFecha: 28 de septiembre de 2026\nAdmitida: 15 de junio de 2026\n"
+        "Radicado: 05001\nHECHOS\nPrimero. El 20 de agosto de 2026 pidió.\n"
+    )
+    assert ingest._leer_encabezado(texto) == ("2026-09-28", False)
+
+
+ROTULOS_DE_OTRA_FECHA_NO_LISTADOS = ["Remitida", "Concedida", "Impugnación", "Anexo", "Sala", "Accionante"]
+ENCABEZADOS_CON_FECHA_SOLA = ["Fecha: 28 de septiembre de 2026", "28 de septiembre de 2026", "Fecha de la providencia: 28/09/2026"]
+
+
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_CON_FECHA_SOLA)
+@pytest.mark.parametrize("rotulo", ROTULOS_DE_OTRA_FECHA_NO_LISTADOS)
+def test_otra_fecha_con_rotulo_no_listado_tras_el_encabezado_con_fecha_sola_no_lo_vuelve_ilegible(encabezado, rotulo):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + rotulo + ": 15 de junio de 2026" + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == ("2026-09-28", False)
+
+
+@pytest.mark.parametrize("encabezado", ENCABEZADOS_CON_FECHA_SOLA)
+@pytest.mark.parametrize("rotulo", ROTULOS_DE_OTRA_FECHA_NO_LISTADOS)
+def test_otra_fecha_con_rotulo_no_listado_antes_del_encabezado_con_fecha_sola_nunca_da_esa_otra_fecha(encabezado, rotulo):
+    # va antes y tiene la forma de «Medellín: <fecha>»: no se lee ninguna (vacío y aviso), nunca la otra fecha
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + rotulo + ": 15 de junio de 2026\n" + encabezado + CUERPO_CON_FECHAS
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_numero_de_sentencia_antes_del_lugar_no_deja_que_el_renglon_fecha_que_sigue_sea_el_encabezado():
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nSentencia No. 123 - Medellín, 28 de septiembre de 2026\n"
+        "Fecha: 15/06/2026\nRadicado: 05001408800920260012300\nHECHOS\nPrimero. El 20 de agosto de 2026 la accionante pidió.\n"
+    )
+    assert ingest._fecha_encabezado(texto) is None
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+@pytest.mark.parametrize("senuelo", SENUELOS_DE_FECHA)
+def test_fecha_con_rotulo_junto_a_otro_texto_del_renglon_no_se_sustituye_por_un_senuelo(senuelo):
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nRadicado: 05001408800920260012300      Fecha: 28 de septiembre de 2026\n"
+        + senuelo + CUERPO_CON_FECHAS
+    )
+    assert ingest._fecha_encabezado(texto) is None
+
+
+# Lo que sí se lee: una línea con otra fecha y su rótulo («Fecha de radicación:», «Reparto:», «Asunto: …el <fecha>»)
+# no es un encabezado ilegible, y «Ciudad, fecha» manda sobre ella.
+LINEAS_CON_OTRA_FECHA = [
+    "Asunto: Tutela por hechos ocurridos el 15 de junio de 2026",
+    "Asunto: Tutela, hechos del 15 de junio de 2026",
+    "Fecha de radicación: 15 de junio de 2026",
+    "Fecha de Radicación: 15 de junio de 2026",
+    "FECHA DE REPARTO: 15 de junio de 2026",
+    "Reparto: 15 de junio de 2026",
+    "Radicación: 15 de junio de 2026",
+    "Vence: 20 de octubre de 2026",
+    "Recibido: 15 de junio de 2026",
+    "Admitida: 15 de junio de 2026",
+    "Admisión: 15 de junio de 2026",
+    "Presentada: 15 de junio de 2026",
+    "Audiencia: 15 de junio de 2026",
+    "Informe: 15 de junio de 2026",
+    "Plazo: 15 de junio de 2026",
+]
+
+
+@pytest.mark.parametrize("antes", [False, True])
+@pytest.mark.parametrize("linea", LINEAS_CON_OTRA_FECHA)
+@pytest.mark.parametrize("rotulo", ["Fecha: 28 de septiembre de 2026", "28 de septiembre de 2026", "Fecha de la providencia: 28/09/2026"])
+def test_otra_fecha_con_su_rotulo_no_vuelve_ilegible_un_encabezado_con_fecha_sola(linea, antes, rotulo):
+    lineas = [linea, rotulo] if antes else [rotulo, linea]
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(lineas) + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+@pytest.mark.parametrize("linea", LINEAS_CON_OTRA_FECHA)
+def test_otra_fecha_con_su_rotulo_no_desplaza_un_encabezado_con_ciudad(linea):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + linea + "\nMedellín, 28 de septiembre de 2026" + CUERPO_CON_FECHAS
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+# «<Palabra(s)>. <fecha>» no es un «Ciudad, fecha»: un punto sin coma no separa un lugar de la fecha. Solo se lee con un
+# departamento o región tras una coma («Medellín, Antioquia. 28 de …»). Una línea de informe, constancia o referencia
+# («Informe secretarial. 15 de junio de …», «Rad. 15/06/2026», «Ref.», «Fdo.») jamás sustituye a un encabezado que main leía.
+COLA_DEL_FALLO = "Radicado: 05001408800920260012300\nHECHOS\nPrimero. El 20 de agosto de 2026 la accionante pidió.\n"
+
+
+def test_informe_secretarial_con_punto_y_fecha_antes_del_encabezado_no_lo_sustituye():
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nINFORME SECRETARIAL. 15 de junio de 2026. Al Despacho del señor Juez la acción de tutela.\n"
+        "Medellín, 28 de septiembre de 2026\nSENTENCIA\n" + COLA_DEL_FALLO
+    )
+    assert ingest._leer_encabezado(texto) == (None, True)  # main leía 2026-09-28: vacío y aviso, nunca el informe
+
+
+def test_constancia_secretarial_con_punto_y_fecha_tras_el_encabezado_con_fecha_no_lo_sustituye():
+    texto = (
+        "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nFecha: 28 de septiembre de 2026\n"
+        "Constancia Secretarial. 15 de junio de 2026. Se deja constancia del reparto.\n" + COLA_DEL_FALLO
+    )
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_rad_con_punto_y_fecha_tras_una_fecha_sola_no_la_sustituye():
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n28 de septiembre de 2026\nRad. 15/06/2026\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+ROTULOS_CON_PUNTO = [
+    "Informe Secretarial", "INFORME SECRETARIAL", "Constancia Secretarial", "Constancia", "Rad", "Ref", "Exp", "Fdo", "Of",
+    "Notif", "Vto", "Reparto", "Fecha Reparto", "Fecha de Reparto", "Admitida", "Radicado", "Sentencia", "Providencia",
+]
+FECHAS_CON_PUNTO = [
+    "15 de junio de 2026",
+    "15 de junio de 2026. Al Despacho del señor Juez la acción de tutela.",
+    "15/06/2026",
+    "junio 15 de 2026",
+    "quince (15) de junio de dos mil veintiséis (2026)",
+]
+ENCABEZADOS_CON_OTRA_FECHA_CON_PUNTO = [
+    "Medellín, 28 de septiembre de 2026",
+    "Medellín, Antioquia, 28 de septiembre de 2026",
+    "Fecha: 28 de septiembre de 2026",
+    "Fecha de la providencia: 28 de septiembre de 2026",
+    "28 de septiembre de 2026",
+]
+
+
+@pytest.mark.parametrize("fecha", FECHAS_CON_PUNTO)
+@pytest.mark.parametrize("rotulo", ROTULOS_CON_PUNTO)
+def test_palabra_con_punto_y_otra_fecha_nunca_sustituye_al_encabezado(rotulo, fecha):
+    mal = []
+    for encabezado in ENCABEZADOS_CON_OTRA_FECHA_CON_PUNTO:
+        for antes in (False, True):
+            linea = [f"{rotulo}. {fecha}", encabezado] if antes else [encabezado, f"{rotulo}. {fecha}"]
+            texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + "\n".join(linea) + "\n" + COLA_DEL_FALLO
+            leido = ingest._fecha_encabezado(texto)
+            if leido not in (None, "2026-09-28"):
+                mal.append((antes, encabezado, leido))
+    assert not mal, mal
+
+
+@pytest.mark.parametrize("fecha", FECHAS_CON_PUNTO)
+@pytest.mark.parametrize("rotulo", ROTULOS_CON_PUNTO)
+def test_palabra_con_punto_y_otra_fecha_tras_un_encabezado_con_ciudad_no_lo_desplaza(rotulo, fecha):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\nMedellín, 28 de septiembre de 2026\n" + f"{rotulo}. {fecha}\n" + COLA_DEL_FALLO
+    assert ingest._fecha_encabezado(texto) == "2026-09-28"
+
+
+@pytest.mark.parametrize(
+    "encabezado,iso",
+    [
+        ("Medellín, Antioquia. 28 de septiembre de 2026", "2026-09-28"),
+        ("Bogotá, Cundinamarca. 28 de septiembre de 2026", "2026-09-28"),
+        ("Santiago de Cali, Valle del Cauca. 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia. a 28 de septiembre de 2026", "2026-09-28"),
+        ("Medellín, Antioquia. martes 29 de septiembre de 2026", "2026-09-29"),
+        ("Lugar y fecha: Medellín, Antioquia. 29 de septiembre de 2026", "2026-09-29"),
+    ],
+)
+def test_ciudad_con_departamento_tras_una_coma_y_un_punto_se_sigue_leyendo(encabezado, iso):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (iso, False)
+
+
+@pytest.mark.parametrize("encabezado", ["Bogotá D.C. 28 de septiembre de 2026", "Medellín. 28 de septiembre de 2026", "Medellín - Antioquia. 28 de septiembre de 2026"])
+def test_lugar_con_punto_y_sin_coma_no_se_lee_como_encabezado(encabezado):
+    texto = "JUZGADO NOVENO PENAL MUNICIPAL\nSENTENCIA\n" + encabezado + "\n" + COLA_DEL_FALLO
+    assert ingest._leer_encabezado(texto) == (None, True)
+
+
+def test_encabezado_ilegible_con_titulo_tras_un_oficio_no_da_la_fecha_del_oficio():
+    texto = (
+        "Medellín, veintiuno (21) de agosto de dos mil veintisiete (2027)\n\nOficio No. 986\n"
+        "Les adjunto el fallo de tutela.\n\f"
+        "JUZGADO TREINTA Y TRES PENAL MUNICIPAL DE MEDELLÍN\n"
+        "Sentencia No. 123 - Medellín, 20 de agosto de 2027\nFecha: 15/06/2027\n"
+        "Radicado 05001408800920270012300\nACCIÓN DE TUTELA. ANTECEDENTES. RESUELVE: PRIMERO. Niega.\n"
+    )
+    assert ingest._fecha_encabezado(texto) is None
+
+
+def _docx_con_tabla(ruta: Path, celdas: list[str], resto: str = "HECHOS") -> None:
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    doc = Document()
+    tabla = doc.add_table(rows=1, cols=len(celdas))
+    for i, texto in enumerate(celdas):
+        tabla.rows[0].cells[i].text = texto
+    doc.add_paragraph("SENTENCIA")
+    for linea in (resto + CUERPO_CON_FECHAS.split("HECHOS", 1)[1]).splitlines():
+        doc.add_paragraph(linea)
+    doc.save(ruta)
+
+
+@pytest.mark.parametrize(
+    "celdas,iso",
+    [
+        (["JUZGADO NOVENO PENAL MUNICIPAL DE MEDELLÍN", "Medellín, 28 de septiembre de 2026"], "2026-09-28"),
+        (["JUZGADO NOVENO PENAL MUNICIPAL DE MEDELLÍN", "Sentencia No. 12", "Medellín, 28 de septiembre de 2026"], "2026-09-28"),
+        (["", "Medellín, 28 de septiembre de 2026"], "2026-09-28"),
+        (["Medellín, 28 de septiembre de 2026", "Sentencia No. 12"], "2026-09-28"),
+        (["JUZGADO NOVENO PENAL MUNICIPAL DE MEDELLÍN", "Medellín, septiembre 28 de 2026"], "2026-09-28"),
+        (["JUZGADO NOVENO PENAL MUNICIPAL DE MEDELLÍN", "Medellín, 28.IX.2026"], None),  # ilegible: vacío, no la del cuerpo
+    ],
+)
+def test_fecha_del_encabezado_en_una_fila_de_tabla_de_un_docx(tmp_path, celdas, iso):
+    ruta = tmp_path / "004Fallo.docx"
+    _docx_con_tabla(ruta, celdas)
+    texto = "\n".join(ingest._textos_docx(ruta))
+    assert " | " in texto or len(celdas) == 1  # las celdas de una fila se unen con « | »
+    assert ingest._fecha_encabezado(texto) == iso
 
 
 def test_partes_tabla_sin_documento_y_nombre_en_dos_lineas():

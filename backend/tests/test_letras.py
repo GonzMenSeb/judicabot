@@ -62,3 +62,20 @@ def test_letras_a_numero(texto, esperado):
 def test_ida_y_vuelta():
     for n in range(1, 200):
         assert letras.letras_a_numero(letras.numero_titulo(n)) == n
+
+
+@pytest.mark.parametrize(
+    "texto,esperado",
+    [
+        ("dos mil veintiséis", 2026), ("dos mil veintiuno", 2021), ("dos mil", 2000),
+        ("mil novecientos noventa y nueve", 1999), ("Dos Mil Veintisiete", 2027),
+        ("veintiocho", 28), ("treinta y uno", 31), ("ciento cinco mil doscientos", 105200),
+        ("", None), ("el treinta", None), ("dos mil veintiséis y pico", None),
+    ],
+)
+def test_letras_a_entero(texto, esperado):
+    assert letras.letras_a_entero(texto) == esperado
+
+
+def test_letras_a_entero_ida_y_vuelta():
+    assert all(letras.letras_a_entero(letras.numero_a_letras(n)) == n for n in (1, 21, 100, 999, 1000, 2026, 12345, 999999))
