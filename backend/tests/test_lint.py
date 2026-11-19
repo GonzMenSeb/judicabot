@@ -1352,6 +1352,30 @@ def test_el_determinante_de_lo_que_se_niega_no_retrocede_de_forma_catastrofica(e
     assert segundos < _LIMITE_S, f"{expresion}: {segundos:.3f} s"
 
 
+# Auditoría de las demás expresiones que añade o cambia este PR. Ninguna tiene alternativas solapadas bajo un cuantificador,
+# cuantificadores anidados ni «\s*,?\s*»: cada una se prueba con 300 repeticiones de lo que más la hace dudar y sin casar.
+_ENTRADAS_ADVERSARIAS = {
+    # raíz de NEGAR: alternativas «a|an», «ia|ian» sin cuantificador encima; cada «neg…» se descarta en el «\b».
+    "_RAIZ_NEGAR": (lambda t: lint._contiene_raiz(t, lint._RAIZ_NEGAR), "negarlasx negarianx negandox negaronx negox " * 300),
+    # «\w*» y «\s+» no se solapan, y la búsqueda solo arranca al comienzo de una palabra.
+    "_RAIZ_CONCEDER": (lambda t: lint._contiene_raiz(t, lint._RAIZ_CONCEDER), "concedera la tutx concedieron la x " * 300),
+    "_CONCESION": (lambda t: list(lint._CONCESION.finditer(t)), "ampararanx amparandox amparax tutelarx conceder la x " * 300),
+    "_SIN_COMPLEMENTO": (lambda t: lint._SIN_COMPLEMENTO.match(t), " " * 300 + "tratamiento integral"),
+    # la excepción de «pretensiones de…» es una búsqueda hacia delante de longitud fija
+    "_ES_EL_AMPARO": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "las " * 300 + "pretensiones de la de la de la x"),
+    # un adverbio en «-mente» larguísimo: «[a-zñ]+mente» retrocede letra a letra una sola vez
+    "_DETERMINANTE": (lambda t: lint._ES_EL_AMPARO.match(t), " " + "mente" * 300 + " x."),
+}
+
+
+@pytest.mark.parametrize("nombre", sorted(_ENTRADAS_ADVERSARIAS))
+def test_las_expresiones_nuevas_de_la_coherencia_no_retroceden_de_forma_catastrofica(nombre):
+    usar, texto = _ENTRADAS_ADVERSARIAS[nombre]
+    assert not usar(texto), "la entrada debe no casar: es el peor caso del retroceso"
+    segundos = _segundos(usar, texto)
+    assert segundos < _LIMITE_S, f"{nombre}: {segundos:.3f} s"
+
+
 @pytest.mark.parametrize("repeticiones", [24, 300])
 def test_coherencia_decision_con_un_determinante_repetido_termina_a_tiempo(repeticiones):
     # Entrada de la revisión: con N=24 tardaba 19,5 s y con N=300 no terminaba; en main, 2 ms.
