@@ -570,24 +570,42 @@ _CONCESION = re.compile(
 )
 # Qué se niega. Si es el amparo mismo, la negación contradice AMPARAR; si es una pretensión accesoria («el tratamiento
 # integral», «la exoneración de copagos»), es una negación parcial legítima.
-# El adverbio en «-mente» lleva tilde a menudo («íntegramente», «únicamente»): si no entrara aquí, la palabra sustantiva lo
-# tomaría por el objeto y la negación del amparo mismo pasaría por accesoria.
-# Cada determinante se lee de una sola forma: «la totalidad de» no absorbe el artículo que sigue (lo toma la iteración
-# siguiente). Si lo absorbiera, «la totalidad de la» admitiría dos lecturas y un texto que no casa costaría 2^n pasos.
-_DETERMINANTE = (
-    r"(?:(?:[a-zñáéíóú]+mente|también|además|asimismo|entonces|el|la|los|las|su|sus|un|una|todas?|todos?|tales"
-    r"|dich[oa]s?|estas?|estos?|este|esas?|esos?|ese|aquel(?:l[ao]s?)?|la\s+totalidad\s+de)\s+)*"
+# Eso se decide por el núcleo («amparo», «tutela», «acción»…), no por las palabras que lo preceden: tras el determinante caben
+# hasta tres palabras sueltas («el citado amparo», «la presente acción de tutela», «cualquier tutela», «ahora el amparo») y, si
+# tras ellas viene el núcleo, lo que se niega es el amparo mismo. Solo si antes del núcleo hay una preposición o una conjunción
+# («el tratamiento integral de la tutela», «el transporte pues la tutela…»), o más de tres palabras, el núcleo es de otra frase y
+# lo negado es una pretensión accesoria. Decidirlo por una lista de determinantes dejaba pasar la negación del amparo mismo con
+# cada palabra que la lista no traía, y la lista no se acababa nunca.
+# Cada palabra se lee de una sola forma (determinante, palabra suelta o corte): «la totalidad de» no absorbe el artículo que sigue
+# (lo toma la iteración siguiente) y las palabras sueltas excluyen a los determinantes. Con alternativas solapadas bajo un
+# cuantificador, un texto que no casa costaría 2^n pasos.
+_DET_PALABRA = (
+    r"(?:[a-zñáéíóú]+mente|también|además|asimismo|entonces|el|la|los|las|su|sus|un|una|todas?|todos?|tales"
+    r"|dich[oa]s?|estas?|estos?|este|esas?|esos?|ese|aquel(?:l[ao]s?)?)"
 )
+_DETERMINANTE = rf"(?:(?:{_DET_PALABRA}|la\s+totalidad\s+del?)\s+)*"
+# Las preposiciones y conjunciones de las que nace una frase nueva. `_SIN_COMPLEMENTO` (lo que sigue a «negará») y
+# `_CORTE` (lo que corta las palabras sueltas) parten de la misma lista para no desalinearse. `_CORTE` añade los relativos y
+# subordinantes («cuando», «cuyo», «donde»…) y los pronombres «se», «le», «les», que también abren una frase nueva.
+_NEXO = r"por|en|con|pues|porque|ya|dado|sin|para|ante|al|a|y|e|o|que|como|aunque|pero|si"
+_CORTE = (
+    rf"(?:{_NEXO}|de|del|u|ni|se|le|les|respecto|sobre|contra|desde|hasta|entre|seg[uú]n|cuando|mientras|mediante|durante"
+    r"|tras|bajo|hacia|salvo|excepto|donde|cual(?:es)?|quienes?|cuy[oa]s?)"
+)
+# Una palabra suelta no es determinante ni corte: así cada palabra tiene una sola lectura y las palabras sueltas son un `{0,3}`
+# aparte, no una alternativa más del `(?:…)*`. Los determinantes que siguen a una palabra suelta («solo el amparo») no gastan
+# ninguna de las tres.
+_RELLENO = rf"(?:(?!{_DET_PALABRA}\b|{_CORTE}\b)[a-zñáéíóú]+\s+{_DETERMINANTE}){{0,3}}"
 _PRETENSION_GENERICA = r"(?:pretensi[oó]n(?:es)?|s[uú]plicas?|solicitud(?:es)?|petici[oó]n(?:es)?|pedimentos?|reclamaci[oó]n(?:es)?|demanda)"
+# «las pretensiones accesorias» no es el amparo mismo: la pretensión que el adjetivo califica de accesoria es la que se niega.
+_ADJETIVO_ACCESORIO = r"(?:accesori|adicional|subsidiari|complementari)"
 _AMPARO_COMO_OBJETO = r"(?:la\s+|el\s+)?(?:amparo|tutela|acci[oó]n|protecci[oó]n|accionante|actor|actora|demandante|peticionari\w+)"
 _ES_EL_AMPARO = re.compile(
-    rf"\s*{_DETERMINANTE}(?:(?:amparo|tutela|protecci[oó]n|acci[oó]n|derechos?)\b"
-    rf"|{_PRETENSION_GENERICA}\b(?!\s+(?:de|del)\s+(?!{_AMPARO_COMO_OBJETO}\b))"
+    rf"\s*{_DETERMINANTE}{_RELLENO}(?:(?:amparos?|tutelas?|protecci(?:[oó]n|ones)|acci(?:[oó]n|ones)|derechos?)\b"
+    rf"|{_PRETENSION_GENERICA}\b(?!\s+(?:de|del)\s+(?!{_AMPARO_COMO_OBJETO}\b))(?!\s+{_ADJETIVO_ACCESORIO})"
     r"|lo\s+(?:solicitado|pedido|pretendido|impetrado|reclamado|demandado))"
 )
-_SIN_COMPLEMENTO = re.compile(
-    r"\s*(?:$|[,.;:!?)»\"]|(?:por|en|con|pues|porque|ya|dado|toda|sin|para|ante|al|a|y|e|o|que|como|aunque|pero|si)\b)"
-)
+_SIN_COMPLEMENTO = re.compile(rf"\s*(?:$|[,.;:!?)»\"]|(?:{_NEXO}|toda\s+vez)\b)")
 _PALABRA_SUSTANTIVA = re.compile(rf"\s*{_DETERMINANTE}(?:lo\s+)?[a-zñáéíóú]{{3,}}")
 
 
