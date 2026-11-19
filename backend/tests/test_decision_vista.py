@@ -20,7 +20,7 @@ from test_graph import DECISION, Verificador, ingesta_sintetica
 from tutela2 import api, decision_vista, formulas, ingest, salidas, server
 from tutela2 import citas as citas_real
 from tutela2.config import Config, LLMConfig
-from tutela2.models import Decision, DisposicionReparo, Metadatos, Orden, colapsar_texto, normalizar_decision
+from tutela2.models import MSG_DERECHOS_AMPARAR, Decision, DisposicionReparo, Metadatos, Orden, colapsar_texto, normalizar_decision
 
 SEMILLA = 20261103
 VALIDAS_RESULTADO = ("CONFIRMAR", "REVOCAR", "MODIFICAR")
@@ -462,6 +462,41 @@ def test_advertir_y_prevenir_sin_amparar_no_se_rechazan(sustitutiva, causal):
     assert _texto_de(salida, "orden:1") == "PREVENIR al Banco X para que responda oportunamente."
 
 
+def test_amparar_sin_derecho_amparado_es_faltante_de_derechos():
+    salida = _vista(derechos=[{"derecho": "salud", "disposicion": "NIEGA"}])
+    assert salida["faltantes"] == [{"campo": "derechos", "mensaje": MSG_DERECHOS_AMPARAR}]
+    assert salida["errores"] == [MSG_DERECHOS_AMPARAR]
+    assert "⟦FALTA: derechos⟧" in _texto_de(salida, "sustitutiva")
+    assert _texto_de(salida, "negacion").startswith("NEGAR el amparo solicitado por ")
+
+
+def test_amparo_parcial_muestra_el_numeral_de_negacion_en_la_vista():
+    salida = _vista(derechos=[{"derecho": "salud"}, {"derecho": "mínimo vital", "disposicion": "NIEGA"}])
+    assert salida["faltantes"] == [] and salida["advertencias"] == []
+    assert [n["clave"] for n in salida["numerales"]] == ["resultado", "sustitutiva", "negacion", "orden:0", "notificar", "remitir"]
+    assert _texto_de(salida, "negacion") == (
+        "NEGAR el amparo solicitado por ⟦FALTA: ACCIONANTE⟧ respecto del derecho fundamental al mínimo vital, "
+        "por las razones expuestas en este proveído."
+    )
+    reordenada = _vista(
+        derechos=[{"derecho": "salud"}, {"derecho": "mínimo vital", "disposicion": "NIEGA"}],
+        orden_numerales=["resultado", "sustitutiva", "orden:0", "negacion"],
+    )
+    assert reordenada["faltantes"] == []
+    assert [n["clave"] for n in reordenada["numerales"]][:4] == ["resultado", "sustitutiva", "orden:0", "negacion"]
+
+
+def test_negar_mixto_advierte_en_derechos():
+    salida = _vista(
+        sustitutiva="NEGAR",
+        ordenes=[],
+        derechos=[{"derecho": "salud"}, {"derecho": "mínimo vital", "disposicion": "NIEGA"}],
+    )
+    assert [a["campo"] for a in salida["advertencias"]] == ["derechos"]
+    assert "salud" in salida["advertencias"][0]["mensaje"] and "«Niega»" in salida["advertencias"][0]["mensaje"]
+    assert salida["errores"] == [] and salida["faltantes"] == []
+
+
 MSG_VACIO = "Decidido por está vacío: en la declaración de uso de IA constará «no consta»."
 MSG_PLACEHOLDER = "Decidido por parece un valor de prueba: confirme que sea el nombre de quien decide."
 
@@ -741,7 +776,7 @@ def test_fuzz_con_semilla_fija_nunca_falla_y_reporta_lo_que_falta(rapido):
         assert decision_vista.ERROR_INTERNO not in salida["errores"]
         assert set(salida) == CLAVES_VISTA
         assert salida["numerales"], d
-        assert {a["campo"] for a in salida["advertencias"]} <= {"decidido_por"}
+        assert {a["campo"] for a in salida["advertencias"]} <= {"decidido_por", "derechos", "por_reparo"}
         assert not {a["mensaje"] for a in salida["advertencias"]} & set(salida["errores"])
         assert isinstance(salida["encabezado"], str) and salida["encabezado"]
         for n in salida["numerales"]:

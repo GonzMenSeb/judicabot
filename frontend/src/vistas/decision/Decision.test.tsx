@@ -575,6 +575,54 @@ describe("Decisión: interacción principal", () => {
     expect(run?.cuerpo.decision.derechos).toEqual([{ derecho: "la salud integral", disposicion: "AMPARA" }]);
   });
 
+  it("AMPARAR con todos los derechos en «Niega» no está listo para enviar", async () => {
+    servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Por qué, en pocas líneas", "Procede parcialmente.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+    fireEvent.change(screen.getByLabelText("Disposición del derecho salud"), { target: { value: "NIEGA" } });
+    await waitFor(() => expect(estadoBarra()).toContain("Para enviar falta: al menos un derecho en «Ampara»."));
+    fireEvent.change(screen.getByLabelText("Disposición del derecho salud"), { target: { value: "AMPARA" } });
+    await waitFor(() => expect(estadoBarra()).toContain("Listo para enviar."));
+  });
+
+  it("al enviar sin derecho amparado muestra el motivo bajo la lista y enfoca el primer selector", async () => {
+    servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Amparar");
+    escribir("Por qué, en pocas líneas", "Procede parcialmente.");
+    escribir("Destinatario", "la EPS HORIZONTE");
+    escribir("Qué debe hacer", "autorice el medicamento");
+    fireEvent.change(screen.getByLabelText("Disposición del derecho salud"), { target: { value: "NIEGA" } });
+    await waitFor(() => expect(estadoBarra()).toContain("Para enviar falta: al menos un derecho en «Ampara»."));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar decisión y redactar" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Disposición del derecho salud")));
+    const ayuda = Array.from(document.querySelectorAll("small.dec-error")).map((x) => x.textContent);
+    expect(ayuda).toContain("Al amparar, deje al menos un derecho en «Ampara» (si no hay ninguno, agréguelo en «Otro derecho»).");
+  });
+
+  it("al negar, los derechos se ofrecen en «Niega» y el agregado nace en «Niega»", async () => {
+    const llamadas = servidor();
+    await montar();
+    elegir("Revocar");
+    elegir("Negar");
+    expect((screen.getByLabelText("Disposición del derecho salud") as HTMLSelectElement).value).toBe("NIEGA");
+    escribir("Otro derecho", "debido proceso");
+    fireEvent.click(screen.getByRole("button", { name: "Agregar derecho" }));
+    expect((screen.getByLabelText("Disposición del derecho debido proceso") as HTMLSelectElement).value).toBe("NIEGA");
+    await waitFor(() =>
+      expect(ultimaVista(llamadas)?.derechos).toEqual([
+        { derecho: "salud", disposicion: "NIEGA" },
+        { derecho: "debido proceso", disposicion: "NIEGA" },
+      ]),
+    );
+  });
+
   it("explica en pantalla cómo forzar el artículo del derecho y del órgano", async () => {
     servidor();
     await montar();

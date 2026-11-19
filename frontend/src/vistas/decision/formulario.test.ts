@@ -15,11 +15,13 @@ import {
   fechaLarga,
   formularioInicial,
   hallazgosLocales,
+  idDeCampo,
   leerHallazgos,
   MSG,
   moverClave,
   ordinal,
   plazoEnviado,
+  resumenCorto,
   sanear,
   validar,
 } from "./formulario";
@@ -335,6 +337,95 @@ describe("aDecision (claves del legado)", () => {
     const base = { ...completo(), compulsa: true, respectoDe: " el señor Pérez " };
     expect(aDecision(base).compulsa).toEqual({ respecto_de: "el señor Pérez", hechos_ref: "" });
     expect(aDecision({ ...base, organo: "Otro órgano" }).compulsa?.organo).toBe("Otro órgano");
+  });
+});
+
+describe("disposición de los derechos y amparo parcial (#20)", () => {
+  const disposiciones = (f: Formulario) => f.derechos.map((d) => [d.nombre, d.disposicion]);
+  const parcial = (): Formulario => {
+    const f = completo();
+    return { ...f, derechos: f.derechos.map((d) => (d.nombre === "mínimo vital" ? { ...d, disposicion: "NIEGA" as const } : d)) };
+  };
+
+  it("al negar, los derechos pasan a «Niega» y los agregados nacen en «Niega»", () => {
+    const negado = elegirSustitutiva({ ...inicial(), resultado: "REVOCAR" }, "NEGAR");
+    expect(disposiciones(negado)).toEqual([["salud", "NIEGA"], ["mínimo vital", "NIEGA"]]);
+    const agregado = agregarDerecho(negado, "debido proceso");
+    expect(agregado.derechos.at(-1)).toMatchObject({ nombre: "debido proceso", disposicion: "NIEGA", propio: true });
+    const amparado = elegirSustitutiva(agregado, "AMPARAR");
+    expect(disposiciones(amparado)).toEqual([["salud", "AMPARA"], ["mínimo vital", "AMPARA"], ["debido proceso", "AMPARA"]]);
+  });
+
+  it("agregar un derecho al amparar o sin sustitutiva lo deja en «Ampara»", () => {
+    expect(agregarDerecho(inicial(), "debido proceso").derechos.at(-1)?.disposicion).toBe("AMPARA");
+    expect(agregarDerecho(completo(), "debido proceso").derechos.at(-1)?.disposicion).toBe("AMPARA");
+  });
+
+  it("al negar no toca los «Sin pronunciamiento» y al volver a amparar tampoco", () => {
+    const base = inicial();
+    const f: Formulario = { ...base, resultado: "REVOCAR", derechos: base.derechos.map((d) => (d.nombre === "salud" ? { ...d, disposicion: "SIN_PRONUNCIAMIENTO" as const } : d)) };
+    const negado = elegirSustitutiva(f, "NEGAR");
+    expect(disposiciones(negado)).toEqual([["salud", "SIN_PRONUNCIAMIENTO"], ["mínimo vital", "NIEGA"]]);
+    expect(disposiciones(elegirSustitutiva(negado, "AMPARAR"))).toEqual([["salud", "SIN_PRONUNCIAMIENTO"], ["mínimo vital", "AMPARA"]]);
+  });
+
+  it("un amparo parcial se conserva al pasar por otra sustitutiva", () => {
+    const f = parcial();
+    const de_vuelta = elegirSustitutiva(elegirSustitutiva(f, "IMPROCEDENTE"), "AMPARAR");
+    expect(disposiciones(de_vuelta)).toEqual([["salud", "AMPARA"], ["mínimo vital", "NIEGA"]]);
+    expect(disposiciones(elegirSustitutiva(f, "AMPARAR"))).toEqual([["salud", "AMPARA"], ["mínimo vital", "NIEGA"]]);
+  });
+
+  it("validar exige un derecho en «Ampara» al amparar", () => {
+    const f = completo();
+    expect(mensajes(f)).not.toContain(MSG.derechosAmparar);
+    const todosNiegan = { ...f, derechos: f.derechos.map((d) => ({ ...d, disposicion: "NIEGA" as const })) };
+    expect(mensajes(todosNiegan)).toContain(MSG.derechosAmparar);
+    expect(hallazgosLocales(todosNiegan).find((h) => h.mensaje === MSG.derechosAmparar)?.campo).toBe("derechos");
+    const sinPronunciar = { ...f, derechos: f.derechos.map((d) => ({ ...d, disposicion: "SIN_PRONUNCIAMIENTO" as const })) };
+    expect(mensajes(sinPronunciar)).toContain(MSG.derechosAmparar);
+    expect(mensajes({ ...f, derechos: [] })).toContain(MSG.derechosAmparar);
+    expect(mensajes(parcial())).not.toContain(MSG.derechosAmparar);
+    expect(mensajes(elegirSustitutiva(todosNiegan, "NEGAR"))).not.toContain(MSG.derechosAmparar);
+    expect(mensajes({ ...todosNiegan, resultado: "CONFIRMAR" })).not.toContain(MSG.derechosAmparar);
+  });
+
+  it("el texto del bloqueo es el del servidor y la barra lo resume", () => {
+    expect(MSG.derechosAmparar).toBe("Al amparar, deje al menos un derecho en «Ampara» (si no hay ninguno, agréguelo en «Otro derecho»).");
+    expect(resumenCorto({ campo: "derechos", mensaje: MSG.derechosAmparar })).toBe("al menos un derecho en «Ampara»");
+  });
+
+  it("el error de derechos lleva el foco al primer selector, o al cuadro «Otro derecho» si no hay derechos", () => {
+    const f = completo();
+    expect(idDeCampo(f, "derechos")).toBe(`dec-derecho-${f.derechos[0]?.id}-disposicion`);
+    expect(idDeCampo({ ...f, derechos: [] }, "derechos")).toBe("dec-derecho-nuevo");
+  });
+
+  it("clavesVigentes incluye «negacion» tras «sustitutiva» en el amparo parcial", () => {
+    const f = parcial();
+    const claves = clavesVigentes(f);
+    expect(claves.slice(0, 3)).toEqual(["resultado", "sustitutiva", "negacion"]);
+    expect(clavesVigentes(completo())).not.toContain("negacion");
+    expect(clavesVigentes(elegirSustitutiva(f, "NEGAR"))).not.toContain("negacion");
+    expect(clavesVigentes({ ...f, resultado: "CONFIRMAR" })).not.toContain("negacion");
+    const sinPronunciar = { ...f, derechos: f.derechos.map((d) => (d.disposicion === "NIEGA" ? { ...d, disposicion: "SIN_PRONUNCIAMIENTO" as const } : d)) };
+    expect(clavesVigentes(sinPronunciar)).not.toContain("negacion");
+  });
+
+  it("el numeral de negación se puede mover y viaja en el orden", () => {
+    const f = moverClave(parcial(), "negacion", 1);
+    expect(clavesOrdenadas(f).slice(0, 4)).toEqual(["resultado", "sustitutiva", `orden#${f.ordenes[0]?.id}`, "negacion"]);
+    expect(aDecision(f).orden_numerales.slice(0, 4)).toEqual(["resultado", "sustitutiva", "orden:0", "negacion"]);
+    expect(aClaveInterna(f, "negacion")).toBe("negacion");
+    expect(aClaveApi(f, "negacion")).toBe("negacion");
+  });
+
+  it("al reabrir bajo NEGAR, un derecho nuevo de la extracción nace en «Niega»", () => {
+    const negado = elegirSustitutiva({ ...inicial(), resultado: "REVOCAR" }, "NEGAR");
+    const f = sanear(negado, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(f?.derechos.map((d) => [d.nombre, d.disposicion])).toEqual([["salud", "NIEGA"], ["vida", "NIEGA"]]);
+    const alAmparar = sanear({ ...inicial(), resultado: "REVOCAR", sustitutiva: "AMPARAR" }, { ...payload, derechos_invocados: ["salud", "vida"] });
+    expect(alAmparar?.derechos.map((d) => [d.nombre, d.disposicion])).toEqual([["salud", "AMPARA"], ["vida", "AMPARA"]]);
   });
 });
 
